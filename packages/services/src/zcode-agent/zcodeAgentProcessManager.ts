@@ -377,13 +377,18 @@ function resolveBundledWorkspaceZCodeAgentCommand(
   }
 
   const sourceEntrypoint = findUpward("apps/zcode-cli/packages/cli/src/main.ts");
-  const tsxEntrypoint = findUpward("node_modules/.bin/tsx");
-  if (!sourceEntrypoint || !tsxEntrypoint) {
+  // 用 node 直接执行 tsx 的 CLI 入口，而不是 node_modules/.bin/tsx。
+  // Windows 上 .bin/tsx 是无扩展名的 POSIX shell 脚本（同目录只有 tsx.CMD/tsx.ps1），
+  // Node 的 spawn 无法直接执行它，会以 ENOENT 失败：表现为 agent 进程永远起不来，
+  // 会话/存储（SQLite startup failed: transport_closed）与切模型（重启 workspace）全部失效。
+  // node_modules/tsx/dist/cli.mjs 就是该 bin 字段指向的真实入口，跨平台一致。
+  const tsxCliEntrypoint = findUpward("node_modules/tsx/dist/cli.mjs");
+  if (!sourceEntrypoint || !tsxCliEntrypoint) {
     return null;
   }
   return {
-    command: tsxEntrypoint,
-    args: [sourceEntrypoint, "app-server", "--stdio"],
+    command: process.execPath,
+    args: [tsxCliEntrypoint, sourceEntrypoint, "app-server", "--stdio"],
     cwd: context.workspacePath,
   };
 }
