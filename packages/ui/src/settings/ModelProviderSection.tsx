@@ -1094,6 +1094,11 @@ export function ModelProviderSection({
           onCreateCustom={(label) => {
             return handleCreateProvider({ providerName: label });
           }}
+          onNewApiCreated={(providerId) => {
+            setPendingCreatedProviderId(providerId);
+            setSelectedNodeKey(createCustomProviderNodeKey(providerId));
+            setTemplatePickerOpen(false);
+          }}
         />
       ) : (
         <ModelProviderSectionDetail

@@ -9,6 +9,7 @@ import { Loader2Icon, LoaderIcon, TriangleAlertIcon } from "lucide-react";
 import {
   type OAuthProviderMeta,
   BIGMODEL_PROVIDER_ID,
+  TID_LOGIN_NEW_API_ENTRY_BUTTON,
   TID_LOGIN_USE_API_KEY_BUTTON,
   TID_OAUTH_CANCEL,
   TID_OAUTH_ERROR,
@@ -22,6 +23,7 @@ import { ZCodeAboutLogo } from "@/components/ui/ZCodeAboutLogo.js";
 import { useOAuth } from "./hooks/useOAuth.js";
 import { useZCodeIntl } from "./i18n/IntlProvider.js";
 import { LoginApiKeyForm } from "./login/LoginApiKeyForm.js";
+import { LoginNewApiForm } from "./login/LoginNewApiForm.js";
 import { renderOAuthProviderIcon } from "./lib/oauthProviderIcon.js";
 import { ThemeHeroVisual } from "./openWorkspacePageThemeHero.js";
 import { useZCodeStore } from "./store/StoreProvider.js";
@@ -89,7 +91,7 @@ function LoginPanel({ active, onComplete }: LoginPanelProps) {
   const loginEntryRequest = useZCodeStore((s) => s.loginEntryRequest);
   const clearLoginEntryRequest = useZCodeStore((s) => s.clearLoginEntryRequest);
   const markLoginEntryAttemptStatus = useZCodeStore((s) => s.markLoginEntryAttemptStatus);
-  const [loginMode, setLoginMode] = useState<"providers" | "apiKey">("providers");
+  const [loginMode, setLoginMode] = useState<"providers" | "apiKey" | "newApi">("providers");
   const wasActiveRef = useRef(active);
   const consumedLoginRequestRef = useRef<number | null>(null);
   const observedOAuthSuccessSeqRef = useRef(oauthSuccessSeq);
@@ -349,6 +351,17 @@ function LoginPanel({ active, onComplete }: LoginPanelProps) {
                 >
                   {intl.formatMessage({ id: "login.useApiKey" })}
                 </Button>
+                <Button
+                  variant="outline"
+                  className="h-10 w-full text-ui-base"
+                  size="lg"
+                  data-testid={TID_LOGIN_NEW_API_ENTRY_BUTTON}
+                  onClick={() => {
+                    setLoginMode("newApi");
+                  }}
+                >
+                  {intl.formatMessage({ id: "login.newApi.entry" })}
+                </Button>
               </div>
             ) : null}
           </div>
@@ -364,6 +377,16 @@ function LoginPanel({ active, onComplete }: LoginPanelProps) {
             onSkipped={() => {
               resetApiKeyForm();
               return onComplete("skip");
+            }}
+          />
+        ) : null}
+
+        {status === "idle" && loginMode === "newApi" ? (
+          <LoginNewApiForm
+            onCancel={() => setLoginMode("providers")}
+            onSaved={() => {
+              resetApiKeyForm();
+              return onComplete("apiKey");
             }}
           />
         ) : null}

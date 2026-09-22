@@ -21,7 +21,7 @@ export type SettingsSectionId =
   | "automations"
   | "shortcuts";
 
-type SettingsUsageTabTarget = "app" | "codingPlan";
+type SettingsUsageTabTarget = "app" | "newApi" | "codingPlan";
 type SettingsPluginTabTarget = "plugins" | "mcps" | "skills" | "commands";
 type SettingsPluginNavigationOrigin = "plugin-store";
 

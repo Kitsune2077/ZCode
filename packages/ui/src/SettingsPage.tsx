@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button.js";
 import { toast } from "@/components/ui/toast.js";
 import { DesktopWindowFrame } from "@/DesktopWindowFrame.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useNewApiConnection } from "@/hooks/useNewApiAccount.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { getPathLeaf } from "@/lib/path.js";
 import { useProviderSettingsView } from "@/hooks/useProviderSettingsView.js";
@@ -137,10 +138,12 @@ function runSettingsActionAsync<T>(options: {
 function SettingsUsageProviderTabs({
   activeTab,
   codingPlanSources,
+  showNewApiTab,
   onTabChange,
 }: {
   activeTab: UsageStatsSectionTab;
   codingPlanSources: CodingPlanUsageSource[];
+  showNewApiTab: boolean;
   onTabChange: (tab: UsageStatsSectionTab) => void;
 }) {
   const { intl } = useZCodeIntl();
@@ -149,6 +152,15 @@ function SettingsUsageProviderTabs({
       id: "app" as const,
       label: intl.formatMessage({ id: "settings.usage.tab.appUsage" }),
     },
+    // NewAPI 只有存在连接时才出现；未连接的用户不该看到空标签。
+    ...(showNewApiTab
+      ? [
+          {
+            id: "newApi" as const,
+            label: intl.formatMessage({ id: "settings.usage.tab.newApi" }),
+          },
+        ]
+      : []),
     ...codingPlanSources.map((source, index) => ({
       id: createSettingsUsageCodingPlanTabId(source.id),
       label: resolveSettingsUsageCodingPlanTabLabel({
@@ -451,6 +463,9 @@ export function SettingsPage({
     const pendingTab = consumePendingSettingsUsageTab();
     return pendingTab === "codingPlan" ? "codingPlan" : (pendingTab ?? "app");
   });
+  // NewAPI 标签只在存在连接时出现；这里只读凭据，不发网络请求。
+  const usageNewApiConnection = useNewApiConnection();
+  const newApiUsageConnected = Boolean(usageNewApiConnection.connection);
   const usagePersonalCodingPlanSources = useMemo(() => {
     const sources: CodingPlanUsageSource[] = [];
     if (
@@ -578,6 +593,9 @@ export function SettingsPage({
   useEffect(() => {
     if (
       usageActiveTab === "app" ||
+      // NewAPI 与 app 一样不依赖 Coding Plan 来源；漏掉它会让刚选中的 NewAPI 标签
+      // 因为没有 selectedUsageCodingPlanSource 被立刻重置回 app，表现为页签点了没反应。
+      usageActiveTab === "newApi" ||
       usageActiveTab === "codingPlan" ||
       selectedUsageCodingPlanSource
     ) {
@@ -718,7 +736,10 @@ export function SettingsPage({
   useEffect(() => {
     if (
       !shouldFallbackSettingsUsageTabToApp({
-        activeTab: usageActiveTab === "app" ? "app" : "codingPlan",
+        // 只有 codingPlan 家族会在没有套餐时回退；newApi 不是 codingPlan 兜底目标，
+        // 之前把所有非 app tab 都当成 codingPlan，导致 NewAPI 标签刚选中就被切回 App 用量。
+        activeTab:
+          usageActiveTab === "app" || usageActiveTab === "newApi" ? usageActiveTab : "codingPlan",
         checkingCodingPlanTab: checkingUsageCodingPlanTab,
         loadingModelProviders: usageProviderSettingsLoading,
         showCodingPlanTab: showUsageCodingPlanTab,
@@ -1641,6 +1662,7 @@ export function SettingsPage({
                               <SettingsUsageProviderTabs
                                 activeTab={usageActiveTab}
                                 codingPlanSources={usageCodingPlanSources}
+                                showNewApiTab={newApiUsageConnected}
                                 onTabChange={handleUsageTabSelect}
                               />
                             ) : null}

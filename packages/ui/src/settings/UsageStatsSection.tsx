@@ -3,8 +3,9 @@ import {
   CodingPlanUsagePanel,
   type CodingPlanUsageSource,
 } from "@/settings/usage-stats/CodingPlanUsagePanel.js";
+import { NewApiUsagePanel } from "@/settings/usage-stats/NewApiUsagePanel.js";
 
-export type UsageStatsSectionTab = "app" | "codingPlan" | `codingPlan:${string}`;
+export type UsageStatsSectionTab = "app" | "newApi" | "codingPlan" | `codingPlan:${string}`;
 
 export function UsageStatsSection({
   activeTab,
@@ -21,6 +22,10 @@ export function UsageStatsSection({
 }) {
   if (activeTab === "app") {
     return <AppUsagePanel />;
+  }
+
+  if (activeTab === "newApi") {
+    return <NewApiUsagePanel />;
   }
 
   return (

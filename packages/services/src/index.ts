@@ -10,6 +10,19 @@ export {
   type ProviderSettingsView,
 } from "./model-provider/providerFacadeServices.js";
 export {
+  NewApiProvisioningError,
+  type NewApiApiFormat,
+  type NewApiProvisioningErrorCode,
+  type ProvisionNewApiProviderInput,
+  type ProvisionNewApiProviderResult,
+} from "./model-provider/newApiProvisioning.js";
+export {
+  type NewApiAccountInfo,
+  type NewApiAccountInfoInput,
+  type NewApiDailyUsagePoint,
+  type NewApiRoleLabel,
+} from "./model-provider/newApiAccount.js";
+export {
   createAccountRequestAuthService,
   type IAccountRequestAuthService,
   type AccountRequestAuthInput,

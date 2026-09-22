@@ -1,7 +1,7 @@
 import type { ProviderSettingsView } from "@zcode/services";
-import { ArrowLeftIcon, ChevronRightIcon, PlusIcon } from "lucide-react";
+import { ArrowLeftIcon, ChevronRightIcon, PlusIcon, ServerIcon } from "lucide-react";
 import { resolveProviderTemplateName } from "@zcode/provider";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   TID_MODEL_PROVIDER_TEMPLATE_BACK_BUTTON,
   TID_MODEL_PROVIDER_TEMPLATE_ITEM,
@@ -9,30 +9,36 @@ import {
   testId,
 } from "@zcode/shared";
 import { Button } from "@/components/ui/button.js";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { logger } from "@/logger.js";
+import { LoginNewApiForm } from "@/login/LoginNewApiForm.js";
 import { ProviderLogo } from "./ProviderLogo.js";
 import { useProviderDetailFeedback } from "./ProviderDetailFeedback.js";
 
 type ProviderTemplateCreate = (templateId: string) => Promise<void>;
 type CustomProviderCreate = (label: string) => Promise<void>;
+type NewApiProviderCreated = (providerId: string) => void | Promise<void>;
 
 export function ProviderTemplatePicker({
   templates,
   onBack,
   onCreateFromTemplate,
   onCreateCustom,
+  onNewApiCreated,
   creating,
 }: {
   templates: ProviderSettingsView["providerTemplates"];
   onBack: () => void;
   onCreateFromTemplate: ProviderTemplateCreate;
   onCreateCustom: CustomProviderCreate;
+  onNewApiCreated: NewApiProviderCreated;
   creating: boolean;
 }) {
   const { intl, locale } = useZCodeIntl();
   const { dismissFeedback, showFeedback } = useProviderDetailFeedback();
+  const [newApiOpen, setNewApiOpen] = useState(false);
   const customLabel = intl.formatMessage({ id: "settings.modelProvider.newProviderName" });
   const zhipuIds = ["bigmodel-api", "zai-api", "bigmodel-standard-api", "zai-standard-api"];
   const groups = [
@@ -69,67 +75,98 @@ export function ProviderTemplatePicker({
     }
   };
   return (
-    <section className="space-y-5" data-testid={TID_MODEL_PROVIDER_TEMPLATE_PICKER}>
-      <div className="flex items-center gap-3">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          data-testid={TID_MODEL_PROVIDER_TEMPLATE_BACK_BUTTON}
-          aria-label={intl.formatMessage({ id: "settings.modelProvider.templatePickerBack" })}
-          onClick={onBack}
-        >
-          <ArrowLeftIcon className="size-4" aria-hidden="true" />
-        </Button>
-        <h2 className="text-ui-lg font-semibold text-foreground">
-          {intl.formatMessage({ id: "settings.modelProvider.templatePickerTitle" })}
-        </h2>
-      </div>
+    <>
+      <section className="space-y-5" data-testid={TID_MODEL_PROVIDER_TEMPLATE_PICKER}>
+        <div className="flex items-center gap-3">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            data-testid={TID_MODEL_PROVIDER_TEMPLATE_BACK_BUTTON}
+            aria-label={intl.formatMessage({ id: "settings.modelProvider.templatePickerBack" })}
+            onClick={onBack}
+          >
+            <ArrowLeftIcon className="size-4" aria-hidden="true" />
+          </Button>
+          <h2 className="text-ui-lg font-semibold text-foreground">
+            {intl.formatMessage({ id: "settings.modelProvider.templatePickerTitle" })}
+          </h2>
+        </div>
 
-      <div className="space-y-6">
-        {groups.map((group) => (
-          <section key={group.id} data-provider-template-group={group.id} className="space-y-3">
-            <h3 className="text-ui-base font-medium text-foreground-subtle">
-              {intl.formatMessage({ id: `settings.modelProvider.templateGroup.${group.id}` })}
-            </h3>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {group.id === "other" ? (
-                <ProviderTemplateCard
-                  label={intl.formatMessage({ id: "settings.modelProvider.createCustomProvider" })}
-                  disabled={creating}
-                  testId={testId(TID_MODEL_PROVIDER_TEMPLATE_ITEM, "custom")}
-                  icon={
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-hover">
-                      <PlusIcon className="size-4" aria-hidden="true" />
-                    </span>
-                  }
-                  onClick={() => void createWithFeedback(() => onCreateCustom(customLabel))}
-                />
-              ) : null}
-              {group.templates.map((template) => {
-                const label = resolveProviderTemplateName(template.templateId, template, locale);
-                return (
-                  <ProviderTemplateCard
-                    key={template.templateId}
-                    label={label}
-                    disabled={creating}
-                    testId={testId(TID_MODEL_PROVIDER_TEMPLATE_ITEM, template.templateId)}
-                    icon={
-                      <span className="flex size-9 shrink-0 items-center justify-center">
-                        <ProviderLogo logo={template.config.logo} className="size-8" />
-                      </span>
-                    }
-                    onClick={() =>
-                      void createWithFeedback(() => onCreateFromTemplate(template.templateId))
-                    }
-                  />
-                );
-              })}
-            </div>
-          </section>
-        ))}
-      </div>
-    </section>
+        <div className="space-y-6">
+          {groups.map((group) => (
+            <section key={group.id} data-provider-template-group={group.id} className="space-y-3">
+              <h3 className="text-ui-base font-medium text-foreground-subtle">
+                {intl.formatMessage({ id: `settings.modelProvider.templateGroup.${group.id}` })}
+              </h3>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {group.id === "other" ? (
+                  <>
+                    <ProviderTemplateCard
+                      label={intl.formatMessage({ id: "login.newApi.entry" })}
+                      disabled={creating}
+                      testId={testId(TID_MODEL_PROVIDER_TEMPLATE_ITEM, "newapi")}
+                      icon={
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-hover">
+                          <ServerIcon className="size-4" aria-hidden="true" />
+                        </span>
+                      }
+                      onClick={() => setNewApiOpen(true)}
+                    />
+                    <ProviderTemplateCard
+                      label={intl.formatMessage({
+                        id: "settings.modelProvider.createCustomProvider",
+                      })}
+                      disabled={creating}
+                      testId={testId(TID_MODEL_PROVIDER_TEMPLATE_ITEM, "custom")}
+                      icon={
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-hover">
+                          <PlusIcon className="size-4" aria-hidden="true" />
+                        </span>
+                      }
+                      onClick={() => void createWithFeedback(() => onCreateCustom(customLabel))}
+                    />
+                  </>
+                ) : null}
+                {group.templates.map((template) => {
+                  const label = resolveProviderTemplateName(template.templateId, template, locale);
+                  return (
+                    <ProviderTemplateCard
+                      key={template.templateId}
+                      label={label}
+                      disabled={creating}
+                      testId={testId(TID_MODEL_PROVIDER_TEMPLATE_ITEM, template.templateId)}
+                      icon={
+                        <span className="flex size-9 shrink-0 items-center justify-center">
+                          <ProviderLogo logo={template.config.logo} className="size-8" />
+                        </span>
+                      }
+                      onClick={() =>
+                        void createWithFeedback(() => onCreateFromTemplate(template.templateId))
+                      }
+                    />
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
+      </section>
+      <Dialog open={newApiOpen} onOpenChange={setNewApiOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{intl.formatMessage({ id: "login.newApi.title" })}</DialogTitle>
+          </DialogHeader>
+          <LoginNewApiForm
+            onCancel={() => setNewApiOpen(false)}
+            onSaved={async (providerId) => {
+              setNewApiOpen(false);
+              await onNewApiCreated(providerId);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

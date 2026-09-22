@@ -19,6 +19,16 @@ import {
 import { createServiceDescriptor } from "../descriptors.js";
 import type { ModelConnectivityResult } from "@zcode/shared";
 import { createServiceLogger } from "../logger/serviceLogger.js";
+import {
+  provisionNewApiProvider,
+  type ProvisionNewApiProviderInput,
+  type ProvisionNewApiProviderResult,
+} from "./newApiProvisioning.js";
+import {
+  fetchNewApiAccountInfo,
+  type NewApiAccountInfo,
+  type NewApiAccountInfoInput,
+} from "./newApiAccount.js";
 
 export type {
   ProviderSettingsProviderView,
@@ -68,6 +78,12 @@ export interface IProviderSettingsService {
   testModelConnectivity(
     input: ProviderSettingsConnectivityRequest,
   ): Promise<ModelConnectivityResult>;
+  /** 用 NewAPI 访问令牌换取 API Key + 模型列表，并落成一个个人 Provider。 */
+  provisionNewApiProvider(
+    input: ProvisionNewApiProviderInput,
+  ): Promise<ProvisionNewApiProviderResult>;
+  /** 读取 NewAPI 账号信息与近 7 天用量趋势，供左下角身份与用量页展示。 */
+  getNewApiAccountInfo(input: NewApiAccountInfoInput): Promise<NewApiAccountInfo>;
 }
 
 export const IProviderSettingsService = createServiceDescriptor<IProviderSettingsService>(
@@ -110,6 +126,7 @@ export function createProviderSettingsService(
   facade: ProviderSettingsFacade,
   ensureReady: () => Promise<void> = async () => {},
   testConnectivity?: ProviderSettingsConnectivityTester,
+  hostFetch?: typeof fetch,
 ): IProviderSettingsService {
   return {
     onDidChange: toEvent((listener) => facade.onDidChange(listener)),
@@ -205,6 +222,23 @@ export function createProviderSettingsService(
         providerId: input.providerId,
         modelId: input.modelId,
       });
+    },
+    provisionNewApiProvider: async (input) => {
+      await ensureReady();
+      return provisionNewApiProvider(
+        {
+          createPersonalProvider: (createInput) =>
+            facade
+              .createPersonalProvider(createInput)
+              .then((created) => ({ providerId: created.providerId })),
+        },
+        { fetch: hostFetch ?? globalThis.fetch },
+        input,
+      );
+    },
+    getNewApiAccountInfo: async (input) => {
+      await ensureReady();
+      return fetchNewApiAccountInfo({ fetch: hostFetch ?? globalThis.fetch }, input);
     },
   };
 }

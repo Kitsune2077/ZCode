@@ -39,6 +39,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { usePlatform } from "@/hooks/usePlatform.js";
+import { useNewApiAccount } from "@/hooks/useNewApiAccount.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useShortcutCommandLabel } from "@/shortcuts/useShortcutBindings.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
@@ -70,16 +71,27 @@ function getSidebarProfileName(user?: UserInfo | null): string {
 function getSidebarProfileBadge(
   user: UserInfo | null | undefined,
   formatMessage: ReturnType<typeof useZCodeIntl>["intl"]["formatMessage"],
+  newApiAccountName?: string | null,
 ): string {
   if (user) {
     return getSidebarProfileName(user);
   }
 
+  // 未登录 ZCode 账号时，用 NewAPI 账号名作为标识；没有连接才回落「未登录」。
+  const trimmedNewApiName = newApiAccountName?.trim();
+  if (trimmedNewApiName) {
+    return trimmedNewApiName;
+  }
+
   return formatMessage({ id: "sidebar.profile.notLoggedIn" });
 }
 
-function getAvatarFallbackText(user: UserInfo | null | undefined): string {
-  const source = user?.displayName?.trim() || user?.username?.trim() || "Z";
+function getAvatarFallbackText(
+  user: UserInfo | null | undefined,
+  newApiAccountName?: string | null,
+): string {
+  const source =
+    user?.displayName?.trim() || user?.username?.trim() || newApiAccountName?.trim() || "Z";
   return source[0]?.toUpperCase() ?? "Z";
 }
 
@@ -130,10 +142,17 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
   const zoomOutShortcutLabel = useShortcutCommandLabel("zoomOut");
   const resetZoomShortcutLabel = useShortcutCommandLabel("resetZoom");
   const isRestoringOAuthSession = useZCodeStore((state) => state.isRestoringOAuthSession);
-  const profileBadge = getSidebarProfileBadge(user, intl.formatMessage);
-  const avatarFallbackText = getAvatarFallbackText(user);
-  const avatarKey = user?.avatarUrl ?? user?.id ?? "guest";
-  const showAuthRestoreLoading = !user && isRestoringOAuthSession;
+  // 只在未登录 ZCode 账号时才探测 NewAPI：已登录时左下角必须保持 ZCode 账号语义。
+  const newApiAccount = useNewApiAccount({ enabled: !user });
+  const newApiAccountName =
+    !user && newApiAccount.state.status === "ready"
+      ? newApiAccount.state.info.displayName?.trim() || newApiAccount.state.info.username
+      : null;
+  const profileBadge = getSidebarProfileBadge(user, intl.formatMessage, newApiAccountName);
+  const avatarFallbackText = getAvatarFallbackText(user, newApiAccountName);
+  const avatarKey =
+    user?.avatarUrl ?? user?.id ?? (newApiAccountName ? `newapi:${newApiAccountName}` : "guest");
+  const showAuthRestoreLoading = !user && !newApiAccountName && isRestoringOAuthSession;
   const usageSummaryState = useWorkspaceSidebarFooterUsageSummaryState({
     enabled: true,
     workspaceIdentity,

@@ -25,6 +25,20 @@ export const TID_LOGIN_API_KEY_CANCEL_BUTTON = "login-api-key-cancel-button";
 export const TID_LOGIN_API_KEY_SKIP_BUTTON = "login-api-key-skip-button";
 /** API Key 登录错误提示 */
 export const TID_LOGIN_API_KEY_ERROR = "login-api-key-error";
+/** 登录页切换到 NewAPI 自动配置入口按钮 */
+export const TID_LOGIN_NEW_API_ENTRY_BUTTON = "login-new-api-entry-button";
+/** NewAPI 服务地址输入框 */
+export const TID_LOGIN_NEW_API_BASE_URL_INPUT = "login-new-api-base-url-input";
+/** NewAPI 访问令牌输入框 */
+export const TID_LOGIN_NEW_API_ACCESS_TOKEN_INPUT = "login-new-api-access-token-input";
+/** NewAPI API 格式选择触发器 */
+export const TID_LOGIN_NEW_API_FORMAT_TRIGGER = "login-new-api-format-trigger";
+/** NewAPI 自动配置提交按钮 */
+export const TID_LOGIN_NEW_API_SUBMIT_BUTTON = "login-new-api-submit-button";
+/** NewAPI 自动配置取消按钮 */
+export const TID_LOGIN_NEW_API_CANCEL_BUTTON = "login-new-api-cancel-button";
+/** NewAPI 自动配置错误提示 */
+export const TID_LOGIN_NEW_API_ERROR = "login-new-api-error";
 /** OAuth 弹窗内的登录按钮 */
 export const TID_OAUTH_LOGIN_BUTTON = "oauth-login-button";
 /** OAuth 弹窗取消按钮 */
@@ -419,6 +433,8 @@ export const TID_SUBAGENT_ROW = "subagent-row";
 export const TID_SUBAGENT_BUILT_IN_MODEL_TRIGGER = "subagent-built-in-model-trigger";
 /** 设置页使用统计顶层 tab（动态后缀为 usage tab id） */
 export const TID_SETTINGS_USAGE_TAB = "settings-usage-tab";
+/** 设置页 NewAPI 账号与用量面板 */
+export const TID_SETTINGS_USAGE_NEWAPI_PANEL = "settings-usage-newapi-panel";
 /** 侧边栏头像菜单剩余额度子菜单入口 */
 export const TID_SIDEBAR_USAGE_REMAINING_TRIGGER = "sidebar-usage-remaining-trigger";
 /** 侧边栏头像菜单使用统计入口 */
