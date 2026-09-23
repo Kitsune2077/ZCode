@@ -15,6 +15,7 @@ export function useProviderAvailabilityLoginEntryGuard({
   user,
   isRestoringOAuthSession,
   providerFamilyDomain,
+  providerFamilyDomainMigrationComplete,
   modelSelectionView,
   modelSelectionError,
   refreshProviderState,
@@ -25,6 +26,8 @@ export function useProviderAvailabilityLoginEntryGuard({
   user: UserInfo | null;
   isRestoringOAuthSession: boolean;
   providerFamilyDomain: string | null | undefined;
+  /** providerFamilyDomain 迁移是否已给出结论（结论也可以是"不属于智谱家族"）。 */
+  providerFamilyDomainMigrationComplete: boolean;
   modelSelectionView: ModelSelectionView | null;
   modelSelectionError?: Error;
   refreshProviderState: () => Promise<void>;
@@ -54,7 +57,12 @@ export function useProviderAvailabilityLoginEntryGuard({
         : modelSelectionView;
       const availability = resolveProviderAvailabilityState({ modelSelectionView: refreshedView });
       const { hasUsableProvider, providerCount } = availability;
-      const shouldOpenLoginEntry = !providerFamilyDomain || (!user && !hasUsableProvider);
+      // providerFamilyDomain 为空有两种含义：迁移还没给出结论（首次运行，需要引导用户
+      // 连接账号或选择家族），或者迁移已完成、结论就是"不属于 zai/bigmodel 家族"
+      // （用户用的是自建 NewAPI / 自定义 Provider）。只有前者才该强制登录入口；
+      // 否则这类用户每次启动都会被弹回连接账号页，即使已经有可用模型。
+      const familyDomainPending = !providerFamilyDomain && !providerFamilyDomainMigrationComplete;
+      const shouldOpenLoginEntry = familyDomainPending || (!user && !hasUsableProvider);
 
       // 未登录且没有可用模型配置时必须引导用户连接账号或填写 API Key。
       // 启动检查、API Key 设置回流等入口统一走这里，避免各处复制判断后语义分叉。
@@ -65,6 +73,7 @@ export function useProviderAvailabilityLoginEntryGuard({
         hasUsableProvider,
         hasUser: Boolean(user),
         hasProviderFamilyDomain: Boolean(providerFamilyDomain),
+        familyDomainPending,
         shouldOpenLoginEntry,
       });
       setLoginEntryOpen(shouldOpenLoginEntry);
@@ -78,6 +87,7 @@ export function useProviderAvailabilityLoginEntryGuard({
       enabled,
       modelSelectionView,
       providerFamilyDomain,
+      providerFamilyDomainMigrationComplete,
       refreshProviderState,
       readModelSelectionView,
       setLoginEntryOpen,
