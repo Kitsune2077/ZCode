@@ -30,6 +30,8 @@ const DEV_AUTO_UPDATE_ENV = "ZCODE_AUTO_UPDATE_DEV";
 const DEV_AUTO_UPDATE_SWITCH = "--zcode-auto-update-dev";
 const DEV_AUTO_UPDATE_VERSION_ENV = "ZCODE_AUTO_UPDATE_DEV_VERSION";
 const DEV_AUTO_UPDATE_VERSION_SWITCH = "--zcode-auto-update-dev-version";
+const DISABLE_AUTO_UPDATE_ENV = "ZCODE_DESKTOP_DISABLE_UPDATE";
+const DISABLE_AUTO_UPDATE_SWITCH = "--zcode-desktop-disable-update";
 let readyUpdateVersion: string | null = null;
 let readyUpdateReleaseNotes: PostUpdateReleaseNotesPayload | null = null;
 let readyUpdateRestoredFromPendingReleaseNotes = false;
@@ -149,6 +151,35 @@ function isDevAutoUpdateEnabled(): boolean {
     isTruthyRuntimeFlag(process.env[DEV_AUTO_UPDATE_ENV]) ||
     readCommandLineSwitchValue(DEV_AUTO_UPDATE_SWITCH) !== null
   );
+}
+
+/**
+ * 显式关闭自动更新（`ZCODE_DESKTOP_DISABLE_UPDATE=1` 或 `--zcode-desktop-disable-update`）。
+ *
+ * 与 `ZCODE_UPDATE_FEED_URL` 的区别是**打包态同样生效**：那条 guard 防的是"更新请求被
+ * 环境变量/启动参数改道到别的地址"，而这里只是让本机不再检查更新，请求不会发往别处，
+ * 因此没有同样的改道风险。默认（未设置）行为完全不变。
+ *
+ * 语义与仓库其它开关一致：env 取 `1`/`true`/`yes`；开关裸写即开启，
+ * 显式 `=0` 可关闭（便于脚本统一传参）。
+ */
+export function isAutoUpdateDisabledByRuntimeSwitch(
+  env: Record<string, string | undefined> = process.env,
+  argv: readonly string[] = process.argv,
+): boolean {
+  if (isTruthyRuntimeFlag(env[DISABLE_AUTO_UPDATE_ENV])) {
+    return true;
+  }
+  const equalsPrefix = `${DISABLE_AUTO_UPDATE_SWITCH}=`;
+  for (const arg of argv) {
+    if (arg === DISABLE_AUTO_UPDATE_SWITCH) {
+      return true;
+    }
+    if (arg.startsWith(equalsPrefix)) {
+      return isTruthyRuntimeFlag(arg.slice(equalsPrefix.length));
+    }
+  }
+  return false;
 }
 
 function canUseAutoUpdaterInCurrentRuntime(): boolean {

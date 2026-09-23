@@ -90,6 +90,7 @@ import {
   getAutoUpdaterState,
   hydratePendingPostUpdateReleaseNotes,
   initAutoUpdater,
+  isAutoUpdateDisabledByRuntimeSwitch,
   onAutoUpdaterStateChanged,
   refreshAutoUpdaterReleaseChannel,
   resolveUpdateFeedSourceFromStartupConfig,
@@ -1942,8 +1943,16 @@ app.whenReady().then(async () => {
   // 启动自动更新检查（后台执行，不阻塞主界面）
   // Preview 身份无论连接哪个后端都不自动更新：stable feed 上只分发正式 ZCode 安装包，
   // 不向 Preview 渠道提供更新。
+  // 此外允许显式关闭：自建/私有构建不希望被官方 feed 提示更新时，
+  // 用 ZCODE_DESKTOP_DISABLE_UPDATE=1 或 --zcode-desktop-disable-update 关掉（打包态同样生效）。
+  const autoUpdateDisabledByRuntimeSwitch = isAutoUpdateDisabledByRuntimeSwitch();
+  if (autoUpdateDisabledByRuntimeSwitch) {
+    logger.info(
+      "[auto-update] disabled by ZCODE_DESKTOP_DISABLE_UPDATE / --zcode-desktop-disable-update",
+    );
+  }
   void initAutoUpdater({
-    enabled: ZCODE_PRODUCT_FLAVOR === "production",
+    enabled: ZCODE_PRODUCT_FLAVOR === "production" && !autoUpdateDisabledByRuntimeSwitch,
     onBeforeQuitAndInstall: async () => {
       notifyStabilityLifecycle("update_install");
       await prepareAppQuit("auto-update quitAndInstall", "update-install");
