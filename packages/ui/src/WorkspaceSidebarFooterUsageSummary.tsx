@@ -399,6 +399,11 @@ export function useWorkspaceSidebarFooterUsageSummaryState({
     currentUsageSource?.providerId ??
     availableCodingPlanProviders[0]?.providerId ??
     resolveSidebarCodingPlanUpgradeFallbackProviderId(providerFamilyDomain);
+  // 升级入口面向智谱 Coding Plan。既没有 family domain、又没有任何可用的
+  // Coding Plan Provider 时（典型是自建 NewAPI / 自定义 Provider 用户），
+  // 这里没有可升级的对象，继续显示只会误导；有任一智谱上下文时保持始终显示。
+  const shouldShowCodingPlanUpgradeEntry =
+    Boolean(providerFamilyDomain) || availableCodingPlanProviders.length > 0;
   return {
     audience: currentUsageSource?.audience,
     availableCodingPlanProviders,
@@ -406,6 +411,7 @@ export function useWorkspaceSidebarFooterUsageSummaryState({
     providerEntitlements,
     profilePlanBadge,
     selectedProviderId,
+    shouldShowCodingPlanUpgradeEntry,
     upgradeTargetProviderId,
     usageState: visibleUsageState,
   };
@@ -450,33 +456,36 @@ export function WorkspaceSidebarFooterUsageSummaryContent({
         <BarChart3Icon className="size-4" />
         {intl.formatMessage({ id: "sidebar.usage.plan.openStats" })}
       </DropdownMenuItem>
-      {/* 产品要求：升级入口始终显示；未解析出当前套餐时由当前 provider family 决定品牌。 */}
-      <DropdownMenuItem
-        data-testid={TID_SIDEBAR_CODING_PLAN_UPGRADE_BUTTON}
-        disabled={entryGate.status === "loading"}
-        aria-busy={entryGate.status === "loading"}
-        onSelect={() => {
-          if (entryGate.status !== "ready") {
-            entryGate.retry?.();
-            return;
-          }
-          onUpgradeClick?.(
-            upgradeTargetProviderId,
-            createCodingPlanFunnelContext({
-              providerId: upgradeTargetProviderId,
-              upgradeSource: "profile_menu",
-              eventRegion: "app.profile",
-              eventText: intl.formatMessage({ id: upgradeActionLabelId }),
-              entryPlanState: resolveCodingPlanEntryPlanState({
-                snapshot: upgradeProviderSnapshot,
+      {/* 升级入口对有智谱上下文的用户始终显示；非智谱用户（自建 NewAPI / 自定义
+          Provider）没有可升级的套餐，整项隐藏。 */}
+      {state.shouldShowCodingPlanUpgradeEntry ? (
+        <DropdownMenuItem
+          data-testid={TID_SIDEBAR_CODING_PLAN_UPGRADE_BUTTON}
+          disabled={entryGate.status === "loading"}
+          aria-busy={entryGate.status === "loading"}
+          onSelect={() => {
+            if (entryGate.status !== "ready") {
+              entryGate.retry?.();
+              return;
+            }
+            onUpgradeClick?.(
+              upgradeTargetProviderId,
+              createCodingPlanFunnelContext({
+                providerId: upgradeTargetProviderId,
+                upgradeSource: "profile_menu",
+                eventRegion: "app.profile",
+                eventText: intl.formatMessage({ id: upgradeActionLabelId }),
+                entryPlanState: resolveCodingPlanEntryPlanState({
+                  snapshot: upgradeProviderSnapshot,
+                }),
               }),
-            }),
-          );
-        }}
-      >
-        <RocketIcon className="size-4" />
-        {entryGate.label ?? intl.formatMessage({ id: upgradeActionLabelId })}
-      </DropdownMenuItem>
+            );
+          }}
+        >
+          <RocketIcon className="size-4" />
+          {entryGate.label ?? intl.formatMessage({ id: upgradeActionLabelId })}
+        </DropdownMenuItem>
+      ) : null}
     </>
   );
 }
