@@ -15,15 +15,22 @@ export interface NewApiConnectionState {
   readonly loading: boolean;
 }
 
+export interface NewApiConnectionResult extends NewApiConnectionState {
+  /** 凭据被外部改写后（例如退出 NewAPI 登录）强制重读。 */
+  readonly refresh: () => void;
+}
+
 /**
  * 读取当前 NewAPI 连接。只有凭据读写，不发网络请求。
  * 依赖 apiKeyLoginSuccessSeq：NewAPI 登录成功会自增该计数，避免登录后仍读到旧凭据。
  */
-export function useNewApiConnection(): NewApiConnectionState {
+export function useNewApiConnection(): NewApiConnectionResult {
   const { credentialService } = useServices();
   const apiKeyLoginSuccessSeq = useZCodeStore((state) => state.apiKeyLoginSuccessSeq);
   const [connection, setConnection] = useState<NewApiConnection | null>(null);
   const [loading, setLoading] = useState(true);
+  const [revision, setRevision] = useState(0);
+  const refresh = useCallback(() => setRevision((current) => current + 1), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,9 +50,9 @@ export function useNewApiConnection(): NewApiConnectionState {
     return () => {
       cancelled = true;
     };
-  }, [apiKeyLoginSuccessSeq, credentialService]);
+  }, [apiKeyLoginSuccessSeq, credentialService, revision]);
 
-  return { connection, loading };
+  return { connection, loading, refresh };
 }
 
 export type NewApiAccountState =
@@ -59,12 +66,18 @@ export interface NewApiAccountResult {
   readonly connection: NewApiConnection | null;
   /** 手动重试；令牌失效或网络失败后由 UI 触发。 */
   readonly refresh: () => void;
+  /** 退出 NewAPI 登录后重读连接（连接为空会同时把账号状态归零）。 */
+  readonly refreshConnection: () => void;
 }
 
 export function useNewApiAccount(options: { enabled?: boolean } = {}): NewApiAccountResult {
   const enabled = options.enabled !== false;
   const { providerSettingsService } = useServices();
-  const { connection, loading: connectionLoading } = useNewApiConnection();
+  const {
+    connection,
+    loading: connectionLoading,
+    refresh: refreshConnection,
+  } = useNewApiConnection();
   const [state, setState] = useState<NewApiAccountState>({ status: "idle" });
   const [revision, setRevision] = useState(0);
   const refresh = useCallback(() => setRevision((current) => current + 1), []);
@@ -101,5 +114,5 @@ export function useNewApiAccount(options: { enabled?: boolean } = {}): NewApiAcc
     };
   }, [connection, connectionLoading, enabled, providerSettingsService, revision]);
 
-  return { connection, refresh, state };
+  return { connection, refresh, refreshConnection, state };
 }

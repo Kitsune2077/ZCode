@@ -55,6 +55,8 @@ export const TID_LOCALE_TOGGLE = "locale-toggle";
 export const TID_THEME_TOGGLE = "theme-toggle";
 /** 退出登录按钮 */
 export const TID_LOGOUT_BUTTON = "logout-button";
+/** 退出 NewAPI 登录（断开 NewAPI 连接）按钮 */
+export const TID_LOGOUT_NEW_API_BUTTON = "logout-new-api-button";
 /** 终端显隐切换按钮 */
 export const TID_TERMINAL_TOGGLE = "terminal-toggle";
 export const TID_SIDE_PANE_TOGGLE = "side-pane-toggle";

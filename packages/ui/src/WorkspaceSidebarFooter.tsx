@@ -6,6 +6,7 @@ import {
   TID_LOGIN_MENU_ITEM,
   TID_LOGIN_TRIGGER,
   TID_LOGOUT_BUTTON,
+  TID_LOGOUT_NEW_API_BUTTON,
   TID_TASK_SETTINGS_BUTTON,
 } from "@zcode/shared";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
@@ -40,7 +41,10 @@ import {
 } from "lucide-react";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { useNewApiAccount } from "@/hooks/useNewApiAccount.js";
+import { useServices } from "@/hooks/useServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { clearNewApiConnection } from "@/lib/newApiConnection.js";
+import { logger } from "@/logger.js";
 import { useShortcutCommandLabel } from "@/shortcuts/useShortcutBindings.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
 import { normalizeInterfaceMode } from "@/lib/interfaceMode.js";
@@ -142,12 +146,26 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
   const zoomOutShortcutLabel = useShortcutCommandLabel("zoomOut");
   const resetZoomShortcutLabel = useShortcutCommandLabel("resetZoom");
   const isRestoringOAuthSession = useZCodeStore((state) => state.isRestoringOAuthSession);
+  const { credentialService } = useServices();
   // 只在未登录 ZCode 账号时才探测 NewAPI：已登录时左下角必须保持 ZCode 账号语义。
   const newApiAccount = useNewApiAccount({ enabled: !user });
   const newApiAccountName =
     !user && newApiAccount.state.status === "ready"
       ? newApiAccount.state.info.displayName?.trim() || newApiAccount.state.info.username
       : null;
+  const newApiConnection = user ? null : newApiAccount.connection;
+  const refreshNewApiConnection = newApiAccount.refreshConnection;
+  const disconnectNewApi = useCallback(async () => {
+    if (!newApiConnection) return;
+    try {
+      await clearNewApiConnection(credentialService, newApiConnection.providerId);
+    } catch (error) {
+      logger.error("[SidebarFooter] 退出 NewAPI 登录失败", { error });
+    } finally {
+      // 无论删除是否成功都重读一次：失败时凭据仍在，UI 会回到已连接状态而不是假装退出。
+      refreshNewApiConnection();
+    }
+  }, [credentialService, newApiConnection, refreshNewApiConnection]);
   const profileBadge = getSidebarProfileBadge(user, intl.formatMessage, newApiAccountName);
   const avatarFallbackText = getAvatarFallbackText(user, newApiAccountName);
   const avatarKey =
@@ -367,12 +385,26 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
               onUsageClick={usageButtonClick}
               onUpgradeClick={onUpgradeClick}
             />
-            {onLogin && !user ? (
+            {onLogin && !user && !newApiConnection ? (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={onLogin} data-testid={TID_LOGIN_MENU_ITEM}>
                   <LogInIcon className="size-4" />
                   {intl.formatMessage({ id: "app.login" })}
+                </DropdownMenuItem>
+              </>
+            ) : null}
+            {/* 已经通过 NewAPI 连接时，底部该给的是"退出登录"而不是再邀请连接；
+                退出只清凭据，Provider 与已导入模型保持不变。 */}
+            {!user && newApiConnection ? (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={() => void disconnectNewApi()}
+                  data-testid={TID_LOGOUT_NEW_API_BUTTON}
+                >
+                  <LogOut className="size-4" />
+                  {intl.formatMessage({ id: "app.logout" })}
                 </DropdownMenuItem>
               </>
             ) : null}

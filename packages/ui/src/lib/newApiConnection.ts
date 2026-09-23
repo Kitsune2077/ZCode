@@ -25,6 +25,7 @@ export interface NewApiConnection {
 }
 
 export type NewApiCredentialStore = Pick<ICredentialService, "load" | "save">;
+export type NewApiCredentialStoreWithDelete = Pick<ICredentialService, "load" | "save" | "delete">;
 
 export async function saveNewApiConnection(
   store: NewApiCredentialStore,
@@ -53,4 +54,23 @@ export async function loadNewApiConnection(
     return null;
   }
   return { providerId, baseUrl: trimmedBaseUrl, accessToken: trimmedAccessToken };
+}
+
+/**
+ * 断开 NewAPI 登录：删除访问令牌、API 根地址与连接指针。
+ *
+ * 只清凭据，不删除 Provider —— 与 ZCode 账号退出登录一致：Provider 配置仍由用户拥有，
+ * 已导入的模型继续可用（模型请求用的是 Provider 里的 `sk-` Key）。断开后左下角恢复
+ * 「未登录」，用量页的 NewAPI 标签页与「使用 NewAPI」入口一并回到未连接状态。
+ */
+export async function clearNewApiConnection(
+  store: NewApiCredentialStoreWithDelete,
+  providerId: string,
+): Promise<void> {
+  const trimmedProviderId = providerId.trim();
+  if (trimmedProviderId) {
+    await store.delete(newApiBaseUrlCredentialKey(trimmedProviderId));
+    await store.delete(newApiAccessTokenCredentialKey(trimmedProviderId));
+  }
+  await store.delete(NEW_API_ACTIVE_PROVIDER_KEY);
 }
