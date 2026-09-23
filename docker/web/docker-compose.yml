@@ -1,0 +1,39 @@
+# 本地起一份 ZCode Web 端容器。
+#
+#   export ZCODE_SERVER_AUTH_TOKEN=$(openssl rand -hex 32)
+#   export ZCODE_WORKSPACE=$PWD
+#   docker compose -f docker/web/docker-compose.yml up --build
+#
+# 然后浏览器打开 http://127.0.0.1:3030/?token=<ZCODE_SERVER_AUTH_TOKEN>
+
+services:
+  zcode-web:
+    build:
+      # 构建上下文必须是仓库根目录：根 .dockerignore 与 monorepo 布局都按这个前提写。
+      context: ../..
+      dockerfile: docker/web/Dockerfile
+      args:
+        ZCODE_ENV: production
+    image: zcode-web:local
+
+    ports:
+      - "3030:3030"
+
+    environment:
+      # 监听非本机地址时默认要求访问令牌；不设令牌就等于把 Agent 暴露给整个网络。
+      ZCODE_SERVER_AUTH_TOKEN: "${ZCODE_SERVER_AUTH_TOKEN:?请先导出 ZCODE_SERVER_AUTH_TOKEN，可用 openssl rand -hex 32 生成}"
+      ZCODE_SERVER_WORKSPACE: /workspace
+      ZCODE_DATA_BASE_DIR: /data
+      # 显示在 Web 界面里的服务名，可留空。
+      # ZCODE_SERVER_NAME: zcode-docker
+
+    volumes:
+      # 会话、Provider 配置、凭据等都在 /data/.zcode 下，必须持久化。
+      - zcode-data:/data
+      # 要打开的项目目录；容器内以 uid 1000 运行，见 README 的权限说明。
+      - "${ZCODE_WORKSPACE:?请先导出 ZCODE_WORKSPACE，指向要打开的项目目录}:/workspace"
+
+    restart: unless-stopped
+
+volumes:
+  zcode-data:

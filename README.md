@@ -138,6 +138,19 @@ node apps/zcode-cli/packages/cli/dist/zcode.cjs --help
 
 第三方声明生成、发行校验流程及声明在发行物中的位置见 [third-party/README.md](third-party/README.md)。
 
+### Web 端（Docker）
+
+Web 端可以打成一个容器镜像：同一个进程托管 Web 前端与 Agent 后端，浏览器直接访问该端口。
+
+```bash
+export ZCODE_SERVER_AUTH_TOKEN=$(openssl rand -hex 32)
+export ZCODE_WORKSPACE=/path/to/your/project
+docker compose -f docker/web/docker-compose.yml up --build
+# 打开 http://127.0.0.1:3030/?token=<上面的令牌>
+```
+
+端口、卷、环境变量、权限与限制见 [docker/web/README.md](docker/web/README.md)。
+
 ### 桌面版
 
 ```bash
