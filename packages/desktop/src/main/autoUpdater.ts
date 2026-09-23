@@ -154,11 +154,15 @@ function isDevAutoUpdateEnabled(): boolean {
 }
 
 /**
- * 显式关闭自动更新（`ZCODE_DESKTOP_DISABLE_UPDATE=1` 或 `--zcode-desktop-disable-update`）。
+ * 显式关闭更新相关行为（`ZCODE_DESKTOP_DISABLE_UPDATE=1` 或 `--zcode-desktop-disable-update`）：
+ *
+ * 1. 不启动自动更新检查（`initAutoUpdater({ enabled: false })`）；
+ * 2. 跳过启动前的远端强制升级 gate，不再由线上 `minimalVersion` 决定本机能否启动。
+ *    两条一起关，否则关掉自动更新后仍会被官方配置拦在启动前，开关就形同虚设。
  *
  * 与 `ZCODE_UPDATE_FEED_URL` 的区别是**打包态同样生效**：那条 guard 防的是"更新请求被
- * 环境变量/启动参数改道到别的地址"，而这里只是让本机不再检查更新，请求不会发往别处，
- * 因此没有同样的改道风险。默认（未设置）行为完全不变。
+ * 环境变量/启动参数改道到别的地址"，而这里只是让本机不再检查/接受远端更新决策，
+ * 请求不会发往别处，因此没有同样的改道风险。默认（未设置）行为完全不变。
  *
  * 语义与仓库其它开关一致：env 取 `1`/`true`/`yes`；开关裸写即开启，
  * 显式 `=0` 可关闭（便于脚本统一传参）。

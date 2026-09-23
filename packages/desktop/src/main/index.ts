@@ -2193,9 +2193,14 @@ app.whenReady().then(async () => {
   // 分支不 bump 版本），会被 release minimalVersion 误判为"需强制升级"而启动秒退。force-update
   // 是面向打包发布客户端的安全门，对未打包 dev 运行时无意义。打包版 app.isPackaged === true，
   // gate 照常生效，对真实用户零影响。
+  // 显式开关（ZCODE_DESKTOP_DISABLE_UPDATE / --zcode-desktop-disable-update）同样跳过该 gate：
+  // 自建/私有构建既不接官方更新，也不接受官方 minimalVersion 决定自己能不能启动，
+  // 否则关掉自动更新后仍会被线上配置拦在启动前，开关形同虚设。
   const skipForceUpdateForLocalDevRuntime = !app.isPackaged;
   const forceUpdateGuardResult =
-    ZCODE_PRODUCT_FLAVOR === "production" && !skipForceUpdateForLocalDevRuntime
+    ZCODE_PRODUCT_FLAVOR === "production" &&
+    !skipForceUpdateForLocalDevRuntime &&
+    !autoUpdateDisabledByRuntimeSwitch
       ? await maybeBlockStartupForForceUpdate({
           locale: currentApplicationLocale,
           logger,
@@ -2209,6 +2214,10 @@ app.whenReady().then(async () => {
     logger.info("[force-update] Preview 跳过远端强制升级检查");
   } else if (skipForceUpdateForLocalDevRuntime) {
     logger.info("[force-update] 本地 dev 构建（未打包）跳过远端强制升级检查");
+  } else if (autoUpdateDisabledByRuntimeSwitch) {
+    logger.info(
+      "[force-update] disabled by ZCODE_DESKTOP_DISABLE_UPDATE / --zcode-desktop-disable-update",
+    );
   }
   if (forceUpdateGuardResult.blocked) {
     return;
