@@ -137,4 +137,9 @@ sudo chown -R 1000:1000 /path/to/your/project
   server 的 external 依赖都需要），预计 2 GB 量级。
 - 拉取依赖时 workspace 会一并安装桌面端依赖（含 Electron）；如需精简可改为
   `pnpm install --frozen-lockfile --filter "!@zcode/desktop"`，但未在 CI 验证。
-- 本文件与 Dockerfile 未在本仓库 CI 中执行构建验证。
+- `--frozen-lockfile` 依赖清单与 lockfile 一致；若仓库的 manifest 改动过而 lockfile 未更新，
+  构建会在 install 阶段失败，此时改用 `--no-frozen-lockfile`（会改写镜像内 lockfile，不在宿主机）。
+- `/app` 在运行层是 root 属主、`node` 只读。正常读写都落在 `/data` 与 `/workspace`；
+  若某个组件尝试写入 `/app` 而报 `EACCES`，可在 Dockerfile 运行阶段补
+  `RUN chown -R node:node /app`（代价是这一层会把整棵 `/app` 复制一遍，镜像再大一圈）。
+- 本目录未在本仓库 CI 中执行构建验证。
