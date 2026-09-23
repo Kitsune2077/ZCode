@@ -66,11 +66,16 @@ provisionNewApiProvider(input: {
 
 ## 重复登录的替换语义
 
-每次连接都新建会堆出 `NewAPI` / `NewAPI2` / `NewAPI3`。因此重新登录时按
-`replaceProviderId` 先删除上一次的 Provider 再创建：
+每次连接都新建会堆出 `NewAPI` / `NewAPI2` / `NewAPI3`。因此重新登录时**先删除遗留
+Provider 再创建**。删除命中两类目标：
 
-- 删除只针对"凭据里记录的、并且当前仍然存在"的 id。凭据指针只由本流程写入，
-  用户手工删除后自动跳过；Host 未提供删除能力时退回只创建。
+1. 凭据里记录的上一次 Provider id（`replaceProviderId`）；
+2. endpoint 与本服务相同的个人 Provider —— 只按记录 id 删除会漏掉历史遗留的
+   `NewAPI` / `NewAPI2`，下一次登录又变成 `NewAPI3`，所以必须按 endpoint 收敛。
+
+endpoint 只归一化尾部斜杠后精确比对，因此另一台自建 NewAPI 不受影响；凭据指针只由
+本流程写入，用户手工删除后自动跳过；Host 未提供删除能力时退回只创建。
+
 - **先删后建**是为了复用同一个 `providerId`：基础 id（`new-provider`）被删除后重新空闲，
   下一次创建会再次拿到它，因此用户已保存的默认模型选择不会因 id 变化而失效。
 - 代价：删除与创建之间存在一个没有该 Provider 的窗口。创建是本地配置写入，

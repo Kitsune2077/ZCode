@@ -235,12 +235,17 @@ export function createProviderSettingsService(
             await facade.deletePersonalProvider(providerId);
           },
           // personalConfig 存在说明该 Provider 有 Personal 层，可以被删除；
-          // 只用来判断"上次的 NewAPI Provider 是否还在"，不做其他身份推断。
-          listPersonalProviderIds: async () =>
+          // 连同 endpoint 一起返回，供同一 NewAPI 服务上的重复 Provider 收敛。
+          listPersonalProviders: async () =>
             facade
               .getView()
               .providers.filter((provider) => provider.personalConfig !== undefined)
-              .map((provider) => provider.providerId),
+              .map((provider) => ({
+                providerId: provider.providerId,
+                ...(provider.effectiveConfig.api?.baseUrl
+                  ? { baseUrl: provider.effectiveConfig.api.baseUrl }
+                  : {}),
+              })),
         },
         { fetch: hostFetch ?? globalThis.fetch },
         input,

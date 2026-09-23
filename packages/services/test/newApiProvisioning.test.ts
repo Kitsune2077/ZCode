@@ -274,7 +274,9 @@ test("re-login replaces the previous NewAPI provider instead of adding another",
         calls.push(`delete:${providerId}`);
         createdId = "new-provider";
       },
-      listPersonalProviderIds: async () => ["new-provider"],
+      listPersonalProviders: async () => [
+        { baseUrl: "https://newapi.example.com/v1", providerId: "new-provider" },
+      ],
     },
     { fetch },
     {
@@ -302,7 +304,9 @@ test("a stale replaceProviderId is skipped and the provider is only created", as
       deletePersonalProvider: async (providerId) => {
         calls.push(`delete:${providerId}`);
       },
-      listPersonalProviderIds: async () => ["some-other-provider"],
+      listPersonalProviders: async () => [
+        { baseUrl: "https://other.example.com/v1", providerId: "some-other-provider" },
+      ],
     },
     { fetch },
     {
@@ -313,8 +317,41 @@ test("a stale replaceProviderId is skipped and the provider is only created", as
     },
   );
 
+  // 记录 id 不在、endpoint 也不同：不应删掉别人的 Provider。
   assert.deepEqual(calls, ["create"]);
   assert.equal(result.providerId, "new-provider");
+});
+
+test("providers left on the same NewAPI endpoint are all collapsed", async () => {
+  const { fetch } = createFetchMock({});
+  const calls: string[] = [];
+
+  await provisionNewApiProvider(
+    {
+      createPersonalProvider: async () => {
+        calls.push("create");
+        return { providerId: "new-provider" };
+      },
+      deletePersonalProvider: async (providerId) => {
+        calls.push(`delete:${providerId}`);
+      },
+      // 历史遗留：同一 endpoint 上两个 Provider，尾部斜杠写法还不一致。
+      listPersonalProviders: async () => [
+        { baseUrl: "https://newapi.example.com/v1", providerId: "new-provider" },
+        { baseUrl: "https://newapi.example.com/v1/", providerId: "new-provider-2" },
+        { baseUrl: "https://another.example.com/v1", providerId: "unrelated" },
+      ],
+    },
+    { fetch },
+    {
+      accessToken: "access-token",
+      apiFormat: "openai-chat-completions",
+      baseUrl: "https://newapi.example.com",
+      replaceProviderId: "new-provider-2",
+    },
+  );
+
+  assert.deepEqual(calls, ["delete:new-provider", "delete:new-provider-2", "create"]);
 });
 
 test("a host without delete capability keeps the create-only behaviour", async () => {

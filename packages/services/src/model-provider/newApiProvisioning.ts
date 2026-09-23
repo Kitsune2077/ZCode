@@ -50,8 +50,10 @@ export interface NewApiProvisioningHost {
     readonly providerName?: string;
     readonly initialConfig: ProviderConfigObject;
   }): Promise<{ readonly providerId: string }>;
-  /** 当前存在的个人 Provider id；用于判断上次的 NewAPI Provider 是否还在。 */
-  listPersonalProviderIds?(): Promise<readonly string[]>;
+  /** 当前个人 Provider 及其 endpoint；用于收敛同一 NewAPI 服务上的重复 Provider。 */
+  listPersonalProviders?(): Promise<
+    readonly { readonly providerId: string; readonly baseUrl?: string }[]
+  >;
   deletePersonalProvider?(providerId: string): Promise<void>;
 }
 
@@ -254,7 +256,7 @@ export async function provisionNewApiProvider(
   const baseUrl = `${connection.apiRoot}/v1`;
   let providerId: string;
   try {
-    await removePreviousNewApiProvider(host, input.replaceProviderId);
+    await removePreviousNewApiProvider(host, input.replaceProviderId, baseUrl);
     const created = await host.createPersonalProvider({
       providerName: input.providerName?.trim() || DEFAULT_PROVIDER_NAME,
       initialConfig: {
@@ -276,22 +278,37 @@ export async function provisionNewApiProvider(
 }
 
 /**
- * 删除上一次 NewAPI 登录创建的 Provider。
+ * 删除该 NewAPI 服务上遗留的 Provider。
  *
- * 只删除"凭据里记录的、并且当前仍然存在"的那个 id：凭据指针只由本流程写入，
- * 用户手工删掉后这里自然跳过；host 未提供删除能力时也保持只创建旧行为。
+ * 命中两类目标：
+ *   1. 凭据里记录的上一次 Provider id；
+ *   2. endpoint 与本服务相同的个人 Provider —— 历史版本每次登录都新建，
+ *      只按记录 id 删除会留下 `NewAPI` / `NewAPI2`，下一次又变成 `NewAPI3`。
+ *
+ * 按 endpoint 精确匹配（只归一化尾部斜杠），因此另一台自建 NewAPI 不受影响。
+ * 凭据指针只由本流程写入，用户手工删除后自动跳过；Host 未提供删除能力时退回只创建。
  */
 async function removePreviousNewApiProvider(
   host: NewApiProvisioningHost,
   replaceProviderId: string | undefined,
+  targetBaseUrl: string,
 ): Promise<void> {
-  const target = replaceProviderId?.trim();
-  if (!target || !host.deletePersonalProvider || !host.listPersonalProviderIds) {
+  if (!host.deletePersonalProvider || !host.listPersonalProviders) {
     return;
   }
-  const existing = await host.listPersonalProviderIds();
-  if (!existing.includes(target)) {
-    return;
+  const existing = await host.listPersonalProviders();
+  const recorded = replaceProviderId?.trim();
+  const normalizedTarget = normalizeEndpoint(targetBaseUrl);
+  const targets = existing.filter(
+    (provider) =>
+      provider.providerId === recorded ||
+      (provider.baseUrl !== undefined && normalizeEndpoint(provider.baseUrl) === normalizedTarget),
+  );
+  for (const provider of targets) {
+    await host.deletePersonalProvider(provider.providerId);
   }
-  await host.deletePersonalProvider(target);
+}
+
+function normalizeEndpoint(value: string): string {
+  return value.trim().replace(/\/+$/u, "");
 }
