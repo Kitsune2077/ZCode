@@ -257,3 +257,85 @@ test("a catalogue with no chat models fails loudly instead of creating an empty 
     (error) => error instanceof NewApiProvisioningError && error.code === "no-chat-models",
   );
 });
+
+test("re-login replaces the previous NewAPI provider instead of adding another", async () => {
+  const { fetch } = createFetchMock({});
+  const calls: string[] = [];
+  // 先删后建让基础 id 重新空闲，因此下一次创建再次拿到同一个 providerId。
+  let createdId = "new-provider-2";
+
+  const result = await provisionNewApiProvider(
+    {
+      createPersonalProvider: async () => {
+        calls.push("create");
+        return { providerId: createdId };
+      },
+      deletePersonalProvider: async (providerId) => {
+        calls.push(`delete:${providerId}`);
+        createdId = "new-provider";
+      },
+      listPersonalProviderIds: async () => ["new-provider"],
+    },
+    { fetch },
+    {
+      accessToken: "access-token",
+      apiFormat: "openai-chat-completions",
+      baseUrl: "https://newapi.example.com",
+      replaceProviderId: "new-provider",
+    },
+  );
+
+  assert.deepEqual(calls, ["delete:new-provider", "create"]);
+  assert.equal(result.providerId, "new-provider");
+});
+
+test("a stale replaceProviderId is skipped and the provider is only created", async () => {
+  const { fetch } = createFetchMock({});
+  const calls: string[] = [];
+
+  const result = await provisionNewApiProvider(
+    {
+      createPersonalProvider: async () => {
+        calls.push("create");
+        return { providerId: "new-provider" };
+      },
+      deletePersonalProvider: async (providerId) => {
+        calls.push(`delete:${providerId}`);
+      },
+      listPersonalProviderIds: async () => ["some-other-provider"],
+    },
+    { fetch },
+    {
+      accessToken: "access-token",
+      apiFormat: "openai-chat-completions",
+      baseUrl: "https://newapi.example.com",
+      replaceProviderId: "new-provider",
+    },
+  );
+
+  assert.deepEqual(calls, ["create"]);
+  assert.equal(result.providerId, "new-provider");
+});
+
+test("a host without delete capability keeps the create-only behaviour", async () => {
+  const { fetch } = createFetchMock({});
+  const calls: string[] = [];
+
+  await provisionNewApiProvider(
+    {
+      createPersonalProvider: async () => {
+        calls.push("create");
+        return { providerId: "new-provider" };
+      },
+    },
+    { fetch },
+    {
+      accessToken: "access-token",
+      apiFormat: "openai-chat-completions",
+      baseUrl: "https://newapi.example.com",
+      replaceProviderId: "new-provider",
+    },
+  );
+
+  assert.deepEqual(calls, ["create"]);
+});

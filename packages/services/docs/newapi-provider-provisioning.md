@@ -57,16 +57,47 @@ provisionNewApiProvider(input: {
   accessToken: string;
   apiFormat: "openai-chat-completions" | "anthropic-messages";
   providerName?: string;
+  /** 上一次 NewAPI 登录落下的 Provider id；存在且仍然有效时先删后建。 */
+  replaceProviderId?: string;
 }): Promise<{ providerId: string; modelIds: string[]; baseUrl: string }>;
 ```
 
 失败以 `NewApiProvisioningError`（带稳定 `code`）抛出，文案经 i18n 呈现。
 
+## 重复登录的替换语义
+
+每次连接都新建会堆出 `NewAPI` / `NewAPI2` / `NewAPI3`。因此重新登录时按
+`replaceProviderId` 先删除上一次的 Provider 再创建：
+
+- 删除只针对"凭据里记录的、并且当前仍然存在"的 id。凭据指针只由本流程写入，
+  用户手工删除后自动跳过；Host 未提供删除能力时退回只创建。
+- **先删后建**是为了复用同一个 `providerId`：基础 id（`new-provider`）被删除后重新空闲，
+  下一次创建会再次拿到它，因此用户已保存的默认模型选择不会因 id 变化而失效。
+- 代价：删除与创建之间存在一个没有该 Provider 的窗口。创建是本地配置写入，
+  失败可通过重新登录恢复。
+- 模型成员只能由领域操作更新（`withModelMembershipFrom` 明确不拥有成员变更），
+  所以替换成员必须走"重建 Provider"，不能靠字段保存。
+
+## 登录入口与家族域
+
+`providerFamilyDomain` 只接受 `zai` / `bigmodel`。非智谱家族的用户（自建 NewAPI /
+自定义 Provider）迁移完成后该字段仍然是空，而登录入口守卫原先把"空"等同于"还没决定"，
+于是每次启动都强制弹回连接账号页。
+
+守卫改为只有在"迁移尚未给出结论"时才因该字段强制登录入口：
+
+```ts
+const familyDomainPending = !providerFamilyDomain && !providerFamilyDomainMigrationComplete;
+const shouldOpenLoginEntry = familyDomainPending || (!user && !hasUsableProvider);
+```
+
+迁移已完成 + 有可用 Provider 的用户不再被拦；没有任何可用 Provider 时行为不变。
+
 ## 不变量
 
 - 不持久化访问令牌；仅持久化换取的 `sk-` Key。
 - 未命中 NewAPI 时不影响既有 OAuth / Coding Plan 流程。
-- 同一访问令牌重复调用不产生重复 Provider（每次调用创建新 Provider 是显式行为，UI 负责引导）。
+- 同一账号反复登录始终只保留一个 NewAPI Provider。
 
 ## 验收场景
 
@@ -77,3 +108,6 @@ provisionNewApiProvider(input: {
 - E：`/api/pricing` 不可用 → 仍按模型名过滤，导入成功。
 - F：目录里混合对话与非对话模型 → 只导入对话模型，`filteredModelIds` 记录被排除项。
 - G：目录里没有任何对话模型 → 抛 `no-chat-models`，不创建空 Provider。
+- H：第二次登录（`replaceProviderId` 命中现存 Provider）→ 先删除再创建，`providerId` 不变。
+- I：`replaceProviderId` 指向已不存在的 Provider → 跳过删除，只创建。
+- J：非智谱家族用户（迁移完成、`providerFamilyDomain` 为空）且有可用 Provider → 启动不再被弹回连接账号页。

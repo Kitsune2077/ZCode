@@ -231,6 +231,16 @@ export function createProviderSettingsService(
             facade
               .createPersonalProvider(createInput)
               .then((created) => ({ providerId: created.providerId })),
+          deletePersonalProvider: async (providerId) => {
+            await facade.deletePersonalProvider(providerId);
+          },
+          // personalConfig 存在说明该 Provider 有 Personal 层，可以被删除；
+          // 只用来判断"上次的 NewAPI Provider 是否还在"，不做其他身份推断。
+          listPersonalProviderIds: async () =>
+            facade
+              .getView()
+              .providers.filter((provider) => provider.personalConfig !== undefined)
+              .map((provider) => provider.providerId),
         },
         { fetch: hostFetch ?? globalThis.fetch },
         input,

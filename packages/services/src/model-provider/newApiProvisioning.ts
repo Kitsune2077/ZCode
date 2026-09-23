@@ -27,6 +27,14 @@ export interface ProvisionNewApiProviderInput {
   readonly accessToken: string;
   readonly apiFormat: NewApiApiFormat;
   readonly providerName?: string;
+  /**
+   * 上一次 NewAPI 登录落下的 Provider id。存在且仍然有效时先删除再创建，
+   * 避免每次重新登录都堆出 NewAPI2 / NewAPI3。
+   *
+   * 先删后建可以复用同一个 providerId：基础 id（`new-provider`）被删除后重新空闲，
+   * 下一次创建会再次拿到它，因此用户已保存的模型选择不会因为 id 变化而失效。
+   */
+  readonly replaceProviderId?: string;
 }
 
 export interface ProvisionNewApiProviderResult {
@@ -42,6 +50,9 @@ export interface NewApiProvisioningHost {
     readonly providerName?: string;
     readonly initialConfig: ProviderConfigObject;
   }): Promise<{ readonly providerId: string }>;
+  /** 当前存在的个人 Provider id；用于判断上次的 NewAPI Provider 是否还在。 */
+  listPersonalProviderIds?(): Promise<readonly string[]>;
+  deletePersonalProvider?(providerId: string): Promise<void>;
 }
 
 const DEFAULT_PROVIDER_NAME = "NewAPI";
@@ -233,7 +244,7 @@ export async function resolveNewApiConnection(
   return { apiKey, apiRoot, filteredModelIds, modelIds: chatModelIds };
 }
 
-/** 完整流程：换取 Key + 拉模型 + 落成个人 Provider。 */
+/** 完整流程：换取 Key + 拉模型 + 落成个人 Provider（必要时替换上次的 NewAPI Provider）。 */
 export async function provisionNewApiProvider(
   host: NewApiProvisioningHost,
   network: NewApiHttpNetwork,
@@ -243,6 +254,7 @@ export async function provisionNewApiProvider(
   const baseUrl = `${connection.apiRoot}/v1`;
   let providerId: string;
   try {
+    await removePreviousNewApiProvider(host, input.replaceProviderId);
     const created = await host.createPersonalProvider({
       providerName: input.providerName?.trim() || DEFAULT_PROVIDER_NAME,
       initialConfig: {
@@ -261,4 +273,25 @@ export async function provisionNewApiProvider(
     );
   }
   return { baseUrl, modelIds: connection.modelIds, providerId };
+}
+
+/**
+ * 删除上一次 NewAPI 登录创建的 Provider。
+ *
+ * 只删除"凭据里记录的、并且当前仍然存在"的那个 id：凭据指针只由本流程写入，
+ * 用户手工删掉后这里自然跳过；host 未提供删除能力时也保持只创建旧行为。
+ */
+async function removePreviousNewApiProvider(
+  host: NewApiProvisioningHost,
+  replaceProviderId: string | undefined,
+): Promise<void> {
+  const target = replaceProviderId?.trim();
+  if (!target || !host.deletePersonalProvider || !host.listPersonalProviderIds) {
+    return;
+  }
+  const existing = await host.listPersonalProviderIds();
+  if (!existing.includes(target)) {
+    return;
+  }
+  await host.deletePersonalProvider(target);
 }

@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/select.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
-import { saveNewApiConnection } from "@/lib/newApiConnection.js";
+import { saveNewApiConnection, loadNewApiConnection } from "@/lib/newApiConnection.js";
 import { logger } from "@/logger.js";
 import { buildLoginApiKeyDefaultModelPreferenceFromSelection } from "@/login/LoginApiKeyForm.helpers.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
@@ -65,10 +65,15 @@ export function LoginNewApiForm({ onCancel, onSaved }: LoginNewApiFormProps) {
     setSaving(true);
     setError(null);
     try {
+      // 重新登录时替换上一次落下的 NewAPI Provider，而不是再建一个：
+      // 否则每次连接都会堆出 NewAPI2 / NewAPI3。凭据里的 providerId 只由本流程写入，
+      // 用户手工删掉后服务端会跳过删除，直接新建。
+      const previousConnection = await loadNewApiConnection(credentialService);
       const created = await providerSettingsService.provisionNewApiProvider({
         accessToken,
         apiFormat,
         baseUrl,
+        ...(previousConnection ? { replaceProviderId: previousConnection.providerId } : {}),
       });
       // 先落凭据再标记登录成功：登录计数自增会触发左下角/用量页重新读取 NewAPI 连接，
       // 顺序反了会读到旧凭据（首次登录时为空）。
