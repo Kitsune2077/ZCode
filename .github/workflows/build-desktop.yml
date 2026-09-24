@@ -133,13 +133,20 @@ jobs:
       - name: Collect release info
         # 跨平台逻辑放在脚本里（Windows/macOS/Linux 三种 runner 都跑同一份代码），
         # 本地可用真实 dist 目录验证；详见 scripts/ci/desktop-release-info.mjs。
-        run: node scripts/ci/desktop-release-info.mjs collect --dist-dir packages/desktop/dist --os ${{ matrix.target_os }} --arch ${{ matrix.arch }} --out build-info-${{ matrix.target_os }}-${{ matrix.arch }}.json
+        # 刻意写进 dist：与安装包同一目录，upload-artifact 的公共祖先才落在 dist 上，
+        # 产物在 artifact 内是扁平文件名（否则会嵌套出 packages/desktop/dist/ 前缀）。
+        run: >-
+          node scripts/ci/desktop-release-info.mjs collect
+          --dist-dir packages/desktop/dist
+          --os ${{ matrix.target_os }}
+          --arch ${{ matrix.arch }}
+          --out packages/desktop/dist/build-info-${{ matrix.target_os }}-${{ matrix.arch }}.json
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
           name: zcode-${{ matrix.target_os }}-${{ matrix.arch }}
-          # 只挑主产物与 blockmap；win-unpacked 等中间目录体积巨大且无需分发。
+          # 只挑主产物、blockmap 与 build-info；win-unpacked 等中间目录体积巨大且无需分发。
           path: |
             packages/desktop/dist/*.exe
             packages/desktop/dist/*.dmg
@@ -149,7 +156,7 @@ jobs:
             packages/desktop/dist/*.rpm
             packages/desktop/dist/*.pkg.tar.zst
             packages/desktop/dist/*.blockmap
-            build-info-${{ matrix.target_os }}-${{ matrix.arch }}.json
+            packages/desktop/dist/build-info-*.json
           if-no-files-found: error
           compression-level: 0
 
@@ -178,10 +185,30 @@ jobs:
           merge-multiple: true
           path: release-assets
 
+      - name: Flatten artifacts
+        # upload-artifact 会保留「本次所有上传路径的公共祖先」之下的目录结构：
+        # 上传项里既有 packages/desktop/dist/*.exe 又有仓库根的 build-info.json，
+        # 公共祖先就是工作区根，于是安装包落进了 release-assets/packages/desktop/dist/。
+        # 之前这里直接对顶层做 find，结果只看到 build-info.json，被 "! -name '*.json'" 过滤后
+        # 判定为「没有可发布的产物」。先摊平，让后续 find / render / gh 都用稳定文件名。
+        run: |
+          set -euo pipefail
+          mkdir -p release-flat
+
+          duplicates=$(find release-assets -type f -printf '%f\n' | sort | uniq -d)
+          if [ -n "$duplicates" ]; then
+            echo "::error::资产文件名重复，摊平会互相覆盖：$duplicates"
+            exit 1
+          fi
+
+          find release-assets -type f -print0 | xargs -0 -I{} mv {} release-flat/
+          echo "摊平后的资产："
+          find release-flat -maxdepth 1 -type f -printf '  %f\n' | sort
+
       - name: Render release notes
         run: |
           node scripts/ci/desktop-release-info.mjs render \
-            --info-dir release-assets \
+            --info-dir release-flat \
             --out release-notes.md
           cat release-notes.md
 
@@ -194,7 +221,7 @@ jobs:
           version=$(node -p "require('./package.json').version")
 
           # 安装包与 blockmap 一起上传，供 electron-updater 做增量更新。
-          mapfile -t files < <(find release-assets -maxdepth 1 -type f \
+          mapfile -t files < <(find release-flat -maxdepth 1 -type f \
             ! -name '*.json' ! -name 'release-notes.md' | sort)
           if [ ${#files[@]} -eq 0 ]; then
             echo "::error::没有可发布的产物"

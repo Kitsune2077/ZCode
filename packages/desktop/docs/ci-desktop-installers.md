@@ -84,10 +84,25 @@ Release job 用 `render` 汇总成说明正文（平台/架构/产物/大小/SHA
 跨平台逻辑刻意放在 Node 脚本里而不是 workflow 的 shell 步骤：三种 runner 跑同一份代码，
 且**能在本地用真实 dist 目录验证**——workflow 本身在仓库里无法执行验证。
 
+### artifact 内的目录结构（踩过一次）
+
+`actions/upload-artifact` 会保留「本次所有上传路径的**公共祖先**」之下的目录结构。
+最初 `collect` 把 build-info 写在仓库根，与 `packages/desktop/dist/*.exe` 一起上传，
+公共祖先成了工作区根，于是安装包在 artifact 内是 `packages/desktop/dist/X.exe`。
+发布 job 当时对下载目录做 `find … -maxdepth 1`，只看得到顶层那份 build-info（又被
+`! -name '*.json'` 过滤掉），因此报「没有可发布的产物」。
+
+现在两处一起兜住：
+
+1. build-info 改写到 `packages/desktop/dist/` 下，全部上传路径同属该目录，artifact 内即扁平；
+2. 发布 job 仍然先做一次摊平（并检查同名冲突），兼容将来又出现嵌套的情况。
+
 ## 验证状况
 
-- 已本地实测：`collect`（识别主产物与 blockmap、计算 sha256、读取飞书 CLI 来源）、
+- 已本地实测：`collect`（识别主产物、便携包与 blockmap、计算 sha256、读取飞书 CLI 来源）、
   `render`（表格与说明生成）、workflow YAML 可被 `yaml` 解析且矩阵/env/步骤结构正确。
+- **CI 实测反馈**：首次真实运行中，构建与产物上传三步通过，发布步骤因上面的 artifact 嵌套问题失败；
+  已按上述方式修复（修复本身尚未再跑过 Actions）。
 - **未实测**：workflow 本身没有在 GitHub Actions 上跑过。最可能的失败点，按概率排序：
   1. Linux 的 `rpm` / `pacman` 目标：已安装 `rpm`、`fakeroot`、`libarchive-tools`，但上游工具链要求可能更多；
      若仍失败，可考虑把这两个目标改为按需构建（需要改 electron-builder 配置，属产品决策）。
