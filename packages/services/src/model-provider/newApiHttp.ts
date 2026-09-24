@@ -19,6 +19,8 @@ export type NewApiProvisioningErrorCode =
   | "provider-create-failed"
   | "account-info-failed"
   | "usage-data-failed"
+  // 浏览器登录得到的会话 cookie 换令牌失败（cookie 过期 / IP-UA 绑定不匹配 / 端点缺失）。
+  | "session-exchange-failed"
   | "network-error";
 
 export class NewApiProvisioningError extends Error {
@@ -85,13 +87,18 @@ interface RemoteEnvelope<T> {
 }
 
 export interface NewApiJsonRequestOptions {
-  readonly url: string;
-  readonly method: "GET" | "POST";
-  readonly authorization?: string;
-  readonly body?: unknown;
-  readonly code: NewApiProvisioningErrorCode;
   /** 部分部署的 System Access Token 需要 New-Api-User 头；登录令牌场景可省略。 */
   readonly extraHeaders?: Record<string, string>;
+  /**
+   * 读取响应头的机会。会话刷新会轮换 refresh cookie（旧值随即失效），调用方必须
+   * 从 Set-Cookie 取回新值；把响应头暴露在这一处，避免为它另开一条 NewAPI 请求路径。
+   */
+  readonly captureResponseHeaders?: (headers: Headers) => void;
+  readonly code: NewApiProvisioningErrorCode;
+  readonly body?: unknown;
+  readonly method: "GET" | "POST";
+  readonly url: string;
+  readonly authorization?: string;
 }
 
 /** 发一次 NewAPI 请求并解包 `data`；失败一律抛 NewApiProvisioningError。 */
@@ -127,6 +134,8 @@ export async function requestNewApiJson<T>(
   } finally {
     clearTimeout(timer);
   }
+
+  options.captureResponseHeaders?.(response.headers);
 
   const text = await response.text();
   if (!response.ok) {
