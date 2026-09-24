@@ -5,7 +5,7 @@
 NewAPI 支持 OAuth 登录（例如用 TinyAuth 作为 OIDC 提供方）。但要注意角色：
 
 - **TinyAuth 是 NewAPI 的登录方式**，不是 ZCode 的。NewAPI 在 TinyAuth 里注册为 OIDC 客户端，
-  可信 redirect URI 指向 **NewAPI 自己的域**（如 `https://<newapi-host>/oauth/<provider>`）。
+  可信 redirect URI 指向 **NewAPI 自己的域**（形如 `https://<newapi-host>/oauth/<provider>`）。
 - 因此 ZCode **不能**、也不需要自己直连 TinyAuth 做 OIDC 握手：那样只能拿到 TinyAuth 的
   token，NewAPI 不认，拿不到模型密钥。
 
@@ -20,7 +20,7 @@ NewAPI 支持 OAuth 登录（例如用 TinyAuth 作为 OIDC 提供方）。但�
 | `middleware.UserAuth()` / `TryUserAuth()` **同时接受** `Authorization: Bearer <PAT>` 与 dashboard 会话 | `middleware/auth.go`                          |
 | 会话凭据是 cookie `new_api_refresh`（另有可被脚本读取的 `new_api_has_session`）                        | `service/auth_session.go`                     |
 | `POST /api/user/auth/refresh` 用该 cookie 兑换令牌，返回 JSON 并**轮换** cookie                        | `controller/auth_session.go`                  |
-| 线上实测：伪造 cookie 请求该端点返回 `{"code":"AUTH_UNAUTHORIZED"}` / 401（端点存在）                  | `自建实例`                       |
+| 线上实测：伪造 cookie 请求该端点返回 `{"code":"AUTH_UNAUTHORIZED"}` / 401（端点存在）                  | 对自建实例探测                                |
 
 因为 dashboard 接口同时接受会话与 PAT，现有的 NewAPI 适配链路
 （`/api/user/self`、`/api/token/`、对话模型过滤导入、左下角身份、用量页）**可以整体复用**，
