@@ -26,14 +26,27 @@ const LARK_CLI_DIR_NAME = "lark-cli";
 const LARK_CLI_META_FILE = "lark-cli-bundle.json";
 
 // 主产物后缀；blockmap / latest.yml / builder-debug.yml 属辅助文件，不进说明表格。
+// Windows 同时产出 nsis 安装包与便携 zip，两者都是主产物。
 const PRIMARY_ARTIFACT_EXTENSIONS = {
   linux: [".appimage", ".deb", ".rpm", ".pkg.tar.zst"],
   mac: [".dmg", ".zip"],
-  win: [".exe"],
+  win: [".exe", ".zip"],
 };
 const AUXILIARY_ARTIFACT_EXTENSIONS = [".blockmap"];
 
 const OS_LABELS = { linux: "Linux", mac: "macOS", win: "Windows" };
+
+// 同一平台可能有多种形态（安装包 / 便携包 / 系统包），说明里必须区分，否则用户不知道下载哪个。
+const ARTIFACT_FORMS = {
+  linux: {
+    ".appimage": "便携可执行（AppImage）",
+    ".deb": "Debian 包",
+    ".pkg.tar.zst": "Arch 包（pacman）",
+    ".rpm": "RPM 包",
+  },
+  mac: { ".dmg": "磁盘映像", ".zip": "便携 ZIP" },
+  win: { ".exe": "安装包（NSIS）", ".zip": "便携 ZIP（解压即用）" },
+};
 
 function readArg(name) {
   const prefix = `--${name}=`;
@@ -90,6 +103,13 @@ function resolveLarkCliProvenance() {
   }
 }
 
+function resolveArtifactForm(targetOs, lowerName) {
+  const forms = ARTIFACT_FORMS[targetOs] ?? {};
+  return (
+    Object.entries(forms).find(([extension]) => lowerName.endsWith(extension))?.[1] ?? "其他产物"
+  );
+}
+
 function classifyArtifacts(distDir, targetOs) {
   const primary = new Set(PRIMARY_ARTIFACT_EXTENSIONS[targetOs] ?? []);
   const entries = readdirSync(distDir).filter((name) => {
@@ -107,6 +127,7 @@ function classifyArtifacts(distDir, targetOs) {
     if (!isPrimary && !isAuxiliary) continue;
     const full = join(distDir, name);
     artifacts.push({
+      ...(isPrimary ? { form: resolveArtifactForm(targetOs, lower) } : {}),
       kind: isPrimary ? "installer" : "auxiliary",
       name,
       sha256: sha256File(full),
@@ -160,16 +181,18 @@ function collect() {
   }
 }
 
-function renderPlatformRow(info) {
-  const installer = info.artifacts.find((artifact) => artifact.kind === "installer");
-  if (!installer) return null;
-  return {
-    arch: info.arch,
-    name: installer.name,
-    os: OS_LABELS[info.os] ?? info.os,
-    sha256: installer.sha256,
-    size: formatMiB(installer.sizeBytes),
-  };
+/** 一个平台可能有多份主产物（如 Windows 的 nsis 安装包 + 便携 zip），逐份出一行。 */
+function renderPlatformRows(info) {
+  return info.artifacts
+    .filter((artifact) => artifact.kind === "installer")
+    .map((artifact) => ({
+      arch: info.arch,
+      form: artifact.form ?? "其他产物",
+      name: artifact.name,
+      os: OS_LABELS[info.os] ?? info.os,
+      sha256: artifact.sha256,
+      size: formatMiB(artifact.sizeBytes),
+    }));
 }
 
 function render() {
@@ -192,9 +215,12 @@ function render() {
   const remoteAssetsIncluded = infos.every((info) => info.remoteAssetsIncluded);
 
   const rows = infos
-    .map(renderPlatformRow)
-    .filter(Boolean)
-    .sort((left, right) => `${left.os}-${left.arch}`.localeCompare(`${right.os}-${right.arch}`));
+    .flatMap(renderPlatformRows)
+    .sort((left, right) =>
+      `${left.os}-${left.arch}-${left.name}`.localeCompare(
+        `${right.os}-${right.arch}-${right.name}`,
+      ),
+    );
 
   const lines = [];
   lines.push(`ZCode ${version} 桌面安装包。`);
@@ -205,10 +231,12 @@ function render() {
       : `由本地脚本渲染（commit \`${commit}\`）`,
   );
   lines.push("");
-  lines.push("| 平台 | 架构 | 产物 | 大小 | SHA256 |");
-  lines.push("| --- | --- | --- | --- | --- |");
+  lines.push("| 平台 | 架构 | 形态 | 产物 | 大小 | SHA256 |");
+  lines.push("| --- | --- | --- | --- | --- | --- |");
   for (const row of rows) {
-    lines.push(`| ${row.os} | ${row.arch} | \`${row.name}\` | ${row.size} | \`${row.sha256}\` |`);
+    lines.push(
+      `| ${row.os} | ${row.arch} | ${row.form} | \`${row.name}\` | ${row.size} | \`${row.sha256}\` |`,
+    );
   }
   lines.push("");
   lines.push("### 说明");
@@ -217,6 +245,10 @@ function render() {
   lines.push(
     "- **未签名**：Windows 首次运行需在 SmartScreen 选「仍要运行」；macOS 需手动去隔离后打开：" +
       "`sudo xattr -rd com.apple.quarantine /Applications/ZCode.app`。",
+  );
+  lines.push(
+    "- Windows 便携 ZIP：解压到任意目录后直接双击 `ZCode.exe` 即可运行，无需安装、不写注册表" +
+      "（应用数据仍保存在用户目录的 `.zcode` 下）。",
   );
   if (larkCli) {
     lines.push(

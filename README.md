@@ -11,8 +11,6 @@
   简体中文 | <a href="README.en.md">English</a>
 </p>
 
-
-
 ZCode 是 AI 编程工作台，提供桌面应用、浏览器界面和终端 Agent。本仓库包含客户端、后端服务、共享 UI，以及 Agent CLI 与运行时源码。
 
 ## 更新
@@ -163,6 +161,10 @@ pnpm bundle:desktop -- --help
 ```
 
 默认目标为 macOS arm64，默认输出目录为 `packages/desktop/dist/`。`--os` 支持 `mac`、`win`、`linux`，`--arch` 支持 `x64`、`arm64`；实际打包与签名需要目标平台对应的工具和配置。
+
+Windows 目标同时产出 NSIS 安装包（`.exe`）与便携 ZIP：解压到任意目录后直接双击 `ZCode.exe` 即可运行，无需安装、不写注册表（应用数据仍保存在用户目录的 `.zcode` 下）。
+
+桌面安装包也可以交给 GitHub Actions 构建并发布到 Releases（多平台矩阵、缓存加速、产物附带 sha256 与来源说明），见 [packages/desktop/docs/ci-desktop-installers.md](packages/desktop/docs/ci-desktop-installers.md)。
 
 安装：双击打开产物 DMG，将 ZCode 拖入"应用程序"。本地构建未签名，首次打开若被 macOS 拦截，执行：
 

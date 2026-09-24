@@ -29,14 +29,27 @@
 
 ## 矩阵与产物目标
 
-| runner              | 目标        | 产物                                                     |
-| ------------------- | ----------- | -------------------------------------------------------- |
-| `windows-latest`    | win / x64   | NSIS `.exe`                                              |
-| `macos-14`（arm64） | mac / arm64 | `.dmg` + `.zip`                                          |
-| `ubuntu-22.04`      | linux / x64 | `.AppImage` + `.deb` + `.rpm` + `.pkg.tar.zst`（pacman） |
+| runner              | 目标        | 产物                                                                   |
+| ------------------- | ----------- | ---------------------------------------------------------------------- |
+| `windows-latest`    | win / x64   | NSIS 安装包 `.exe` + **便携 ZIP**（解压即用，内容等同 `win-unpacked`） |
+| `macos-14`（arm64） | mac / arm64 | `.dmg` + `.zip`                                                        |
+| `ubuntu-22.04`      | linux / x64 | `.AppImage`（便携）+ `.deb` + `.rpm` + `.pkg.tar.zst`（pacman）        |
 
 产物目标由 `packages/desktop/electron-builder.config.js` 决定，矩阵只选择平台与架构。
 Intel macOS 需要 `macos-13`，workflow 里保留了注释掉的条目。
+
+### 便携 ZIP
+
+Windows 的 `zip` target 与 `nsis` 并列输出，zip 内就是 `win-unpacked` 那棵目录树
+（`ZCode.exe` + `resources/`）：解压到任意位置双击 `ZCode.exe` 即可运行，不需要管理员权限、
+不写注册表；应用数据仍保存在用户目录的 `.zcode` 下，因此与安装版共享同一份配置。
+体积与安装包接近（都约 150 MB 量级），Release 说明里用「形态」列区分两者。
+
+加入第二个产物不影响既有打包流程：`bundle.mjs` 的 `findBuiltArtifact` 只认
+`artifactExtensionsByOs`（win 为 `[".exe"]`），体积审计仍固定审计 NSIS 安装包。
+
+`scripts/ci/desktop-release-info.mjs` 把 win 的 `.zip` 也视为主产物，并按扩展名标注「形态」，
+因此 Release 说明会同时列出安装包与便携包。
 
 ## 构建期环境
 

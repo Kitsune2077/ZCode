@@ -705,7 +705,9 @@ export default {
     ],
   },
   win: {
-    target: ["nsis"],
+    // nsis：常规安装包；zip：便携包，内容与 win-unpacked 一致，解压后直接双击 ZCode.exe 即可运行
+    // （用户不需要管理员权限，也不写注册表；应用数据仍落在用户目录的 .zcode 下）。
+    target: ["nsis", "zip"],
     artifactName: buildDesktopArtifactName("win"),
   },
   linux: {
