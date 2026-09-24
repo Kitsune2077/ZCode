@@ -29,6 +29,13 @@ import {
   type NewApiAccountInfo,
   type NewApiAccountInfoInput,
 } from "./newApiAccount.js";
+import {
+  exchangeNewApiSessionForAccessToken,
+  type NewApiSessionExchangeInput,
+  type NewApiSessionExchangeResult,
+} from "./newApiSession.js";
+
+export type { NewApiSessionExchangeInput, NewApiSessionExchangeResult } from "./newApiSession.js";
 
 export type {
   ProviderSettingsProviderView,
@@ -84,6 +91,13 @@ export interface IProviderSettingsService {
   ): Promise<ProvisionNewApiProviderResult>;
   /** 读取 NewAPI 账号信息与近 7 天用量趋势，供左下角身份与用量页展示。 */
   getNewApiAccountInfo(input: NewApiAccountInfoInput): Promise<NewApiAccountInfo>;
+  /**
+   * 用浏览器登录得到的会话 cookie 换取访问令牌。
+   *
+   * 必须在 Host 侧执行：请求要走 Host 的网络出口（代理 / CA），renderer 直连既过不了
+   * 企业网络，也会被浏览器的同源策略拦住。
+   */
+  exchangeNewApiSession(input: NewApiSessionExchangeInput): Promise<NewApiSessionExchangeResult>;
 }
 
 export const IProviderSettingsService = createServiceDescriptor<IProviderSettingsService>(
@@ -254,6 +268,11 @@ export function createProviderSettingsService(
     getNewApiAccountInfo: async (input) => {
       await ensureReady();
       return fetchNewApiAccountInfo({ fetch: hostFetch ?? globalThis.fetch }, input);
+    },
+    exchangeNewApiSession: async (input) => {
+      await ensureReady();
+      // 与其它 NewAPI 调用共用同一 fetch：代理 / 自定义 CA / 超时策略都收口在这一层。
+      return exchangeNewApiSessionForAccessToken({ fetch: hostFetch ?? globalThis.fetch }, input);
     },
   };
 }

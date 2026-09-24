@@ -11,6 +11,7 @@
  *   并让其它的客户端立即失效，且需要额外 security proof。
  */
 
+import { NEW_API_REFRESH_COOKIE_NAME } from "@zcode/shared";
 import {
   NewApiProvisioningError,
   normalizeNewApiApiRoot,
@@ -18,7 +19,11 @@ import {
   type NewApiHttpNetwork,
 } from "./newApiHttp.js";
 
-export const NEW_API_REFRESH_COOKIE_NAME = "new_api_refresh";
+/**
+ * cookie 名的单一所有者在 @zcode/shared：main 侧要知道监听哪个 cookie，这里要知道用哪个
+ * 名字发 Cookie 头，两边必须一致。这里只做转发，便于调用方从 services 侧也能拿到。
+ */
+export { NEW_API_REFRESH_COOKIE_NAME } from "@zcode/shared";
 
 /** 会话 cookie 名可能随 NewAPI 版本变化，实现里统一从这里取，便于单点调整。 */
 export function resolveNewApiRefreshCookieName(): string {

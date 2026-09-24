@@ -65,6 +65,7 @@ import type {
   ZCodeStdioTapDevState,
   LoadCliMcpFromUserDirectoryRequest,
   MigrateLegacyCommonMcpRequest,
+  NewApiBrowserLoginRequest,
   SaveCliMcpToUserDirectoryRequest,
   SaveFileRequest,
   SaveFileResult,
@@ -282,6 +283,9 @@ contextBridge.exposeInMainWorld("zcode", {
     ipcRenderer.invoke(PlatformChannels.SaveMcpToUserDirectory, payload),
   migrateLegacyCommonMcp: (payload?: MigrateLegacyCommonMcpRequest) =>
     ipcRenderer.invoke(PlatformChannels.MigrateLegacyCommonMcp, payload ?? {}),
+  /** 打开 NewAPI 登录窗口并取回会话 cookie；只在用户显式点击登录时调用 */
+  openNewApiLoginWindow: (payload: NewApiBrowserLoginRequest) =>
+    ipcRenderer.invoke(PlatformChannels.OpenNewApiLoginWindow, payload),
   /** renderer 日志通过 IPC 传到 main 进程统一存储 */
   log: (level: "info" | "warn" | "error", args: unknown[]) =>
     ipcRenderer.send(PlatformChannels.Log, { level, args }),

@@ -15,6 +15,7 @@ import {
   type Locale,
   type LoadCliMcpFromUserDirectoryRequest,
   type MigrateLegacyCommonMcpRequest,
+  type NewApiBrowserLoginRequest,
   type OpenInEditorOptions,
   type SaveCliMcpToUserDirectoryRequest,
   type CreateTempTextAttachmentRequest,
@@ -55,6 +56,7 @@ import { createTempTextAttachment } from "./tempTextAttachment.js";
 import { registerDesktopSaveFileIpcHandler } from "./desktopSaveFile.js";
 import { registerDesktopPrintToPdfIpcHandler } from "./desktopPrintToPdf.js";
 import { registerCuaPipActiveSessionIpc } from "./desktopCuaPipIpc.js";
+import { openNewApiLoginWindow } from "./newApiLoginWindow.js";
 
 export function registerPlatformIpcHandlers(options: {
   fetchHelpConfig?: () => Promise<unknown>;
@@ -209,6 +211,15 @@ export function registerPlatformIpcHandlers(options: {
     PlatformChannels.MigrateLegacyCommonMcp,
     async (_event, payload?: MigrateLegacyCommonMcpRequest) => {
       return migrateLegacyCommonMcp(payload);
+    },
+  );
+
+  ipcMain.handle(
+    PlatformChannels.OpenNewApiLoginWindow,
+    async (_event, payload: NewApiBrowserLoginRequest) => {
+      // 登录窗口只在用户显式点击登录时打开；结果（含取消/超时）一律作为返回值交给 renderer 判断，
+      // 不在这里转成异常——"用户主动取消"不是错误。
+      return openNewApiLoginWindow(payload, { logger: options.logger });
     },
   );
 

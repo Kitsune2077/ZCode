@@ -39,6 +39,10 @@ export const TID_LOGIN_NEW_API_SUBMIT_BUTTON = "login-new-api-submit-button";
 export const TID_LOGIN_NEW_API_CANCEL_BUTTON = "login-new-api-cancel-button";
 /** NewAPI 自动配置错误提示 */
 export const TID_LOGIN_NEW_API_ERROR = "login-new-api-error";
+/** NewAPI 浏览器登录（内嵌登录窗口）按钮 */
+export const TID_LOGIN_NEW_API_BROWSER_BUTTON = "login-new-api-browser-button";
+/** NewAPI OAuth provider 名（可选）输入框 */
+export const TID_LOGIN_NEW_API_PROVIDER_INPUT = "login-new-api-provider-input";
 /** OAuth 弹窗内的登录按钮 */
 export const TID_OAUTH_LOGIN_BUTTON = "oauth-login-button";
 /** OAuth 弹窗取消按钮 */

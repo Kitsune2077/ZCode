@@ -17,6 +17,16 @@ export function newApiAccessTokenCredentialKey(providerId: string): string {
   return `newapi:${providerId}:access_token`;
 }
 
+/**
+ * 浏览器登录留下的会话 cookie（`new_api_refresh`）。
+ *
+ * 存下来是为了 access token 过期时能自动续期，而不必再让用户登录一次。
+ * 服务端每次刷新都会轮换它（旧值随即失效），因此刷新后必须覆盖写入。
+ */
+export function newApiRefreshCookieCredentialKey(providerId: string): string {
+  return `newapi:${providerId}:refresh_cookie`;
+}
+
 export interface NewApiConnection {
   readonly providerId: string;
   /** NewAPI API 根地址；允许带 `/v1`，读取方会自行归一化。 */
@@ -36,8 +46,27 @@ export async function saveNewApiConnection(
   await store.save(newApiAccessTokenCredentialKey(connection.providerId), connection.accessToken);
 }
 
-/** 读取当前 NewAPI 连接；指针或任一字段缺失都按「未连接」处理。 */
-export async function loadNewApiConnection(
+/** 保存浏览器登录得到的会话 cookie；空值不写入，避免把"没拿到"落成一条空凭据。 */
+export async function saveNewApiRefreshCookie(
+  store: NewApiCredentialStore,
+  input: { readonly providerId: string; readonly refreshCookie: string },
+): Promise<void> {
+  const trimmed = input.refreshCookie.trim();
+  if (!trimmed) {
+    return;
+  }
+  await store.save(newApiRefreshCookieCredentialKey(input.providerId), trimmed);
+}
+
+export async function loadNewApiRefreshCookie(
+  store: Pick<NewApiCredentialStore, "load">,
+  providerId: string,
+): Promise<string | null> {
+  const value = (await store.load(newApiRefreshCookieCredentialKey(providerId)))?.trim();
+  return value ? value : null;
+}
+
+/** 读取当前 NewAPI 连接；指针或任一字段缺失都按「未连接」处理。 */ export async function loadNewApiConnection(
   store: Pick<NewApiCredentialStore, "load">,
 ): Promise<NewApiConnection | null> {
   const providerId = (await store.load(NEW_API_ACTIVE_PROVIDER_KEY))?.trim();
@@ -57,7 +86,7 @@ export async function loadNewApiConnection(
 }
 
 /**
- * 断开 NewAPI 登录：删除访问令牌、API 根地址与连接指针。
+ * 断开 NewAPI 登录：删除访问令牌、会话 cookie、API 根地址与连接指针。
  *
  * 只清凭据，不删除 Provider —— 与 ZCode 账号退出登录一致：Provider 配置仍由用户拥有，
  * 已导入的模型继续可用（模型请求用的是 Provider 里的 `sk-` Key）。断开后左下角恢复
@@ -71,6 +100,9 @@ export async function clearNewApiConnection(
   if (trimmedProviderId) {
     await store.delete(newApiBaseUrlCredentialKey(trimmedProviderId));
     await store.delete(newApiAccessTokenCredentialKey(trimmedProviderId));
+    // 会话 cookie 同样必须清掉：留着它等于保留一份可续期的登录凭据，
+    // 用户点"断开连接"时期望它一并失效。
+    await store.delete(newApiRefreshCookieCredentialKey(trimmedProviderId));
   }
   await store.delete(NEW_API_ACTIVE_PROVIDER_KEY);
 }

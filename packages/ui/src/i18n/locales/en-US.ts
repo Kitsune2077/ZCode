@@ -899,7 +899,16 @@ const enUS: Record<string, string> = {
   "login.newApi.entry": "Use NewAPI",
   "login.newApi.title": "Connect to NewAPI",
   "login.newApi.description":
-    "Enter your NewAPI address and access token. ZCode will fetch or create an API key and import the model list automatically.",
+    "Enter your NewAPI address and sign in with your account (TinyAuth and other OAuth providers, or a password), or paste an access token. ZCode will fetch or create an API key and import the model list automatically.",
+  "login.newApi.browserLogin": "Sign in with NewAPI",
+  "login.newApi.browserLoginHint":
+    "Complete the sign-in in the popup; ZCode reads the account and keys automatically. Any login method the deployment supports works here.",
+  "login.newApi.providerLabel": "OAuth provider (optional)",
+  "login.newApi.providerPlaceholder": "e.g. tinyauth; leave empty to pick on the NewAPI login page",
+  "login.newApi.browserTimeout": "Timed out waiting for the sign-in. Please try again.",
+  "login.newApi.browserUnsupported":
+    "This platform does not support browser sign-in. Paste an access token instead.",
+  "login.newApi.manualSectionTitle": "Or paste an access token",
   "login.newApi.baseUrlLabel": "NewAPI base URL",
   "login.newApi.baseUrlPlaceholder": "https://newapi.example.com",
   "login.newApi.accessTokenLabel": "NewAPI access token",

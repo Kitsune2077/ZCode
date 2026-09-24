@@ -13,6 +13,7 @@ import type {
   SaveCliMcpToUserDirectoryRequest,
 } from "./mcp.js";
 import type { OAuthStateRegistration } from "./oauth.js";
+import type { NewApiBrowserLoginRequest, NewApiBrowserLoginResult } from "./newapi-login.js";
 import type { AppSettings, Locale } from "./protocol.js";
 import type { ArmsCustomEventPayload, RendererTelemetryEventPayload } from "./telemetry.js";
 import type {
@@ -630,6 +631,14 @@ export interface IPlatformService {
 
   /** 打开外部 URL（用于 OAuth 跳转浏览器） */
   openExternal(url: string): void;
+
+  /**
+   * 打开 NewAPI 登录窗口并取回该站点的会话 cookie（Desktop only）。
+   *
+   * 用于「用 NewAPI 账号登录」：窗口内完成 dashboard 登录（TinyAuth / GitHub / 密码… 均可），
+   * main 侧轮询约定名称的 cookie，命中即关窗返回。仅读取该名称的 cookie，不遍历导出其它 cookie。
+   */
+  openNewApiLoginWindow?(request: NewApiBrowserLoginRequest): Promise<NewApiBrowserLoginResult>;
 
   /** 按系统应用标识读取真实 App 图标；非 Desktop 平台可不实现。 */
   getApplicationIcon?(

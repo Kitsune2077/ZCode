@@ -4,9 +4,11 @@ import { Loader2Icon, TriangleAlertIcon } from "lucide-react";
 import {
   TID_LOGIN_NEW_API_ACCESS_TOKEN_INPUT,
   TID_LOGIN_NEW_API_BASE_URL_INPUT,
+  TID_LOGIN_NEW_API_BROWSER_BUTTON,
   TID_LOGIN_NEW_API_CANCEL_BUTTON,
   TID_LOGIN_NEW_API_ERROR,
   TID_LOGIN_NEW_API_FORMAT_TRIGGER,
+  TID_LOGIN_NEW_API_PROVIDER_INPUT,
   TID_LOGIN_NEW_API_SUBMIT_BUTTON,
 } from "@zcode/shared";
 import { Alert, AlertDescription } from "@/components/ui/alert.js";
@@ -19,9 +21,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select.js";
+import { usePlatform } from "@/hooks/usePlatform.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
-import { saveNewApiConnection, loadNewApiConnection } from "@/lib/newApiConnection.js";
+import {
+  loadNewApiConnection,
+  saveNewApiConnection,
+  saveNewApiRefreshCookie,
+} from "@/lib/newApiConnection.js";
 import { logger } from "@/logger.js";
 import { buildLoginApiKeyDefaultModelPreferenceFromSelection } from "@/login/LoginApiKeyForm.helpers.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
@@ -37,20 +44,91 @@ const API_FORMAT_OPTIONS: readonly NewApiApiFormat[] = [
 ];
 
 /**
- * NewAPI 自动配置入口：用访问令牌换取（必要时创建）API Key，拉取模型列表并落成个人 Provider。
- * 访问令牌与 API 根地址存入凭据服务，供左下角身份与用量页后续读取。
+ * NewAPI 自动配置入口。两条路径：
+ *
+ * 1. **浏览器登录**（推荐）：在独立登录窗口里完成 dashboard 登录——TinyAuth / GitHub / 密码等
+ *    任何 NewAPI 支持的登录方式都可用——再拿会话 cookie 换访问令牌。因此不限于某一家 OAuth。
+ * 2. **手动访问令牌**：老版本 NewAPI 没有 `new_api_refresh` 会话，或企业策略不允许内嵌登录时使用。
+ *
+ * 两条路径最终都落到同一条落库流程（换取 / 创建 API Key → 落成个人 Provider → 写凭据），
+ * 不各写一份。
  */
 export function LoginNewApiForm({ onCancel, onSaved }: LoginNewApiFormProps) {
   const { intl } = useZCodeIntl();
+  const platform = usePlatform();
   const { credentialService, modelSelectionService, providerSettingsService } = useServices();
   const markApiKeyLoginSuccess = useZCodeStore((state) => state.markApiKeyLoginSuccess);
   const [baseUrlValue, setBaseUrlValue] = useState("");
+  const [providerValue, setProviderValue] = useState("");
   const [accessTokenValue, setAccessTokenValue] = useState("");
   const [apiFormat, setApiFormat] = useState<NewApiApiFormat>("openai-chat-completions");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const submit = async () => {
+  /**
+   * 两条路径共用的落库流程。
+   *
+   * `refreshCookie` 只有浏览器登录才有：存下来供访问令牌过期后自动续期。
+   */
+  const persistConnection = async (input: {
+    baseUrl: string;
+    accessToken: string;
+    refreshCookie?: string;
+  }) => {
+    // 重新登录时替换上一次落下的 NewAPI Provider，而不是再建一个：
+    // 否则每次连接都会堆出 NewAPI2 / NewAPI3。凭据里的 providerId 只由本流程写入，
+    // 用户手工删掉后服务端会跳过删除，直接新建。
+    const previousConnection = await loadNewApiConnection(credentialService);
+    const created = await providerSettingsService.provisionNewApiProvider({
+      accessToken: input.accessToken,
+      apiFormat,
+      baseUrl: input.baseUrl,
+      ...(previousConnection ? { replaceProviderId: previousConnection.providerId } : {}),
+    });
+    // 先落凭据再标记登录成功：登录计数自增会触发左下角/用量页重新读取 NewAPI 连接，
+    // 顺序反了会读到旧凭据（首次登录时为空）。
+    await saveNewApiConnection(credentialService, {
+      accessToken: input.accessToken,
+      baseUrl: created.baseUrl,
+      providerId: created.providerId,
+    });
+    if (input.refreshCookie) {
+      await saveNewApiRefreshCookie(credentialService, {
+        providerId: created.providerId,
+        refreshCookie: input.refreshCookie,
+      });
+    }
+    const defaultModelPreference = buildLoginApiKeyDefaultModelPreferenceFromSelection(
+      await modelSelectionService.getView(),
+      created.providerId,
+    );
+    markApiKeyLoginSuccess(defaultModelPreference);
+    await onSaved(created.providerId);
+  };
+
+  const runPersist = async (input: {
+    baseUrl: string;
+    accessToken: string;
+    refreshCookie?: string;
+  }) => {
+    setSaving(true);
+    setError(null);
+    try {
+      await persistConnection(input);
+    } catch (saveError) {
+      logger.error("[LoginEntry] NewAPI 自动配置失败", { error: saveError });
+      setError(
+        intl.formatMessage(
+          { id: "login.newApi.saveError" },
+          { error: saveError instanceof Error ? saveError.message : String(saveError) },
+        ),
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitAccessToken = async () => {
     const baseUrl = baseUrlValue.trim();
     const accessToken = accessTokenValue.trim();
     if (!baseUrl) {
@@ -61,39 +139,58 @@ export function LoginNewApiForm({ onCancel, onSaved }: LoginNewApiFormProps) {
       setError(intl.formatMessage({ id: "login.newApi.emptyTokenError" }));
       return;
     }
+    await runPersist({ accessToken, baseUrl });
+  };
 
+  const loginWithBrowser = async () => {
+    const baseUrl = baseUrlValue.trim();
+    if (!baseUrl) {
+      setError(intl.formatMessage({ id: "login.newApi.emptyBaseUrlError" }));
+      return;
+    }
+    const openLoginWindow = platform.openNewApiLoginWindow;
+    if (!openLoginWindow) {
+      setError(intl.formatMessage({ id: "login.newApi.browserUnsupported" }));
+      return;
+    }
+
+    const provider = providerValue.trim();
     setSaving(true);
     setError(null);
     try {
-      // 重新登录时替换上一次落下的 NewAPI Provider，而不是再建一个：
-      // 否则每次连接都会堆出 NewAPI2 / NewAPI3。凭据里的 providerId 只由本流程写入，
-      // 用户手工删掉后服务端会跳过删除，直接新建。
-      const previousConnection = await loadNewApiConnection(credentialService);
-      const created = await providerSettingsService.provisionNewApiProvider({
-        accessToken,
-        apiFormat,
+      const result = await openLoginWindow({
         baseUrl,
-        ...(previousConnection ? { replaceProviderId: previousConnection.providerId } : {}),
+        ...(provider ? { provider } : {}),
       });
-      // 先落凭据再标记登录成功：登录计数自增会触发左下角/用量页重新读取 NewAPI 连接，
-      // 顺序反了会读到旧凭据（首次登录时为空）。
-      await saveNewApiConnection(credentialService, {
-        accessToken,
-        baseUrl: created.baseUrl,
-        providerId: created.providerId,
+      if (result.status === "cancelled") {
+        // 用户主动关闭窗口不是错误：保持安静，让用户可以重新点。
+        return;
+      }
+      if (result.status === "timeout") {
+        setError(intl.formatMessage({ id: "login.newApi.browserTimeout" }));
+        return;
+      }
+      if (result.status === "failed") {
+        setError(result.message);
+        return;
+      }
+
+      const session = await providerSettingsService.exchangeNewApiSession({
+        baseUrl: result.origin,
+        refreshCookie: result.cookieValue,
       });
-      const defaultModelPreference = buildLoginApiKeyDefaultModelPreferenceFromSelection(
-        await modelSelectionService.getView(),
-        created.providerId,
-      );
-      markApiKeyLoginSuccess(defaultModelPreference);
-      await onSaved(created.providerId);
-    } catch (saveError) {
-      logger.error("[LoginEntry] NewAPI 自动配置失败", { error: saveError });
+      // 服务端在兑换时可能已经轮换过会话 cookie；有轮换值就必须存新的，旧的已失效。
+      await runPersist({
+        accessToken: session.accessToken,
+        baseUrl: result.origin,
+        refreshCookie: session.rotatedRefreshCookie ?? result.cookieValue,
+      });
+    } catch (loginError) {
+      logger.error("[LoginEntry] NewAPI 浏览器登录失败", { error: loginError });
       setError(
         intl.formatMessage(
           { id: "login.newApi.saveError" },
-          { error: saveError instanceof Error ? saveError.message : String(saveError) },
+          { error: loginError instanceof Error ? loginError.message : String(loginError) },
         ),
       );
     } finally {
@@ -126,55 +223,94 @@ export function LoginNewApiForm({ onCancel, onSaved }: LoginNewApiFormProps) {
               setError(null);
             }}
           />
-          <Input
-            id="login-new-api-access-token"
-            type="password"
+        </div>
+      </div>
+
+      {/* 浏览器登录：NewAPI 支持的任何登录方式（含 TinyAuth 等 OAuth）都在弹窗内完成。 */}
+      <div className="space-y-2">
+        <p className="text-ui-xs text-foreground-subtle">
+          {intl.formatMessage({ id: "login.newApi.browserLoginHint" })}
+        </p>
+        <Input
+          id="login-new-api-provider"
+          size="lg"
+          className="h-10 w-full text-ui-base"
+          data-testid={TID_LOGIN_NEW_API_PROVIDER_INPUT}
+          aria-label={intl.formatMessage({ id: "login.newApi.providerLabel" })}
+          value={providerValue}
+          placeholder={intl.formatMessage({ id: "login.newApi.providerPlaceholder" })}
+          autoComplete="off"
+          disabled={saving}
+          onChange={(event) => {
+            setProviderValue(event.target.value);
+            setError(null);
+          }}
+        />
+        <Button
+          type="button"
+          className="h-10 w-full text-ui-base"
+          size="lg"
+          data-testid={TID_LOGIN_NEW_API_BROWSER_BUTTON}
+          disabled={!baseUrlValue.trim() || saving}
+          onClick={() => void loginWithBrowser()}
+        >
+          {saving ? <Loader2Icon className="size-4 animate-spin" /> : null}
+          {intl.formatMessage({ id: "login.newApi.browserLogin" })}
+        </Button>
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-ui-xs text-foreground-subtle">
+          {intl.formatMessage({ id: "login.newApi.manualSectionTitle" })}
+        </p>
+        <Input
+          id="login-new-api-access-token"
+          type="password"
+          size="lg"
+          className="h-10 w-full text-ui-base"
+          data-testid={TID_LOGIN_NEW_API_ACCESS_TOKEN_INPUT}
+          aria-label={intl.formatMessage({ id: "login.newApi.accessTokenLabel" })}
+          value={accessTokenValue}
+          placeholder={intl.formatMessage({ id: "login.newApi.accessTokenPlaceholder" })}
+          autoComplete="off"
+          disabled={saving}
+          onChange={(event) => {
+            setAccessTokenValue(event.target.value);
+            setError(null);
+          }}
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" &&
+              baseUrlValue.trim() &&
+              accessTokenValue.trim() &&
+              !saving
+            ) {
+              void submitAccessToken();
+            }
+          }}
+        />
+        <Select
+          value={apiFormat}
+          onValueChange={(value) => setApiFormat(value as NewApiApiFormat)}
+          disabled={saving}
+        >
+          <SelectTrigger
+            id="login-new-api-format"
             size="lg"
             className="h-10 w-full text-ui-base"
-            data-testid={TID_LOGIN_NEW_API_ACCESS_TOKEN_INPUT}
-            aria-label={intl.formatMessage({ id: "login.newApi.accessTokenLabel" })}
-            value={accessTokenValue}
-            placeholder={intl.formatMessage({ id: "login.newApi.accessTokenPlaceholder" })}
-            autoComplete="off"
-            disabled={saving}
-            onChange={(event) => {
-              setAccessTokenValue(event.target.value);
-              setError(null);
-            }}
-            onKeyDown={(event) => {
-              if (
-                event.key === "Enter" &&
-                baseUrlValue.trim() &&
-                accessTokenValue.trim() &&
-                !saving
-              ) {
-                void submit();
-              }
-            }}
-          />
-          <Select
-            value={apiFormat}
-            onValueChange={(value) => setApiFormat(value as NewApiApiFormat)}
-            disabled={saving}
+            data-testid={TID_LOGIN_NEW_API_FORMAT_TRIGGER}
+            aria-label={intl.formatMessage({ id: "login.newApi.apiFormatLabel" })}
           >
-            <SelectTrigger
-              id="login-new-api-format"
-              size="lg"
-              className="h-10 w-full text-ui-base"
-              data-testid={TID_LOGIN_NEW_API_FORMAT_TRIGGER}
-              aria-label={intl.formatMessage({ id: "login.newApi.apiFormatLabel" })}
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="end" className="rounded-lg">
-              {API_FORMAT_OPTIONS.map((format) => (
-                <SelectItem key={format} value={format} className="rounded-md">
-                  {intl.formatMessage({ id: `login.newApi.apiFormat.${format}` })}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="end" className="rounded-lg">
+            {API_FORMAT_OPTIONS.map((format) => (
+              <SelectItem key={format} value={format} className="rounded-md">
+                {intl.formatMessage({ id: `login.newApi.apiFormat.${format}` })}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {error ? (
@@ -187,18 +323,18 @@ export function LoginNewApiForm({ onCancel, onSaved }: LoginNewApiFormProps) {
       <div className="space-y-2">
         <Button
           type="button"
+          variant="outline"
           className="h-10 w-full text-ui-base"
           size="lg"
           data-testid={TID_LOGIN_NEW_API_SUBMIT_BUTTON}
           disabled={!baseUrlValue.trim() || !accessTokenValue.trim() || saving}
-          onClick={() => void submit()}
+          onClick={() => void submitAccessToken()}
         >
-          {saving ? <Loader2Icon className="size-4 animate-spin" /> : null}
           {intl.formatMessage({ id: "login.newApi.continue" })}
         </Button>
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           className="h-10 w-full text-ui-base"
           size="lg"
           data-testid={TID_LOGIN_NEW_API_CANCEL_BUTTON}

@@ -8,6 +8,7 @@ import type {
   SaveCliMcpToUserDirectoryRequest,
 } from "./index.js";
 import type { OAuthStateRegistration } from "./oauth.js";
+import type { NewApiBrowserLoginRequest, NewApiBrowserLoginResult } from "./newapi-login.js";
 import type { AppSettings, Locale } from "./protocol.js";
 import type { StorageCleanRequest, StorageCleanResult, StorageUsageSnapshot } from "./storage.js";
 import type {
@@ -426,6 +427,11 @@ export const PlatformChannels = {
   MigrateLegacyCommonMcp: "zcode:migrate-legacy-common-mcp",
   /** Renderer → Main：获取当前设备的稳定标识符（deviceMid） */
   GetDeviceId: "zcode:get-device-id",
+  /**
+   * Renderer → Main：打开 NewAPI 登录窗口，取回该站点的会话 cookie。
+   * 仅在用户显式点击登录时使用；窗口使用独立 partition，不与应用内其它浏览器共享存储。
+   */
+  OpenNewApiLoginWindow: "zcode:open-newapi-login-window",
 } as const;
 
 export type PlatformChannelName = (typeof PlatformChannels)[keyof typeof PlatformChannels];
@@ -763,6 +769,10 @@ export interface PlatformChannelMap {
   [PlatformChannels.MigrateLegacyCommonMcp]: {
     request: MigrateLegacyCommonMcpRequest;
     response: MigrateLegacyCommonMcpResult;
+  };
+  [PlatformChannels.OpenNewApiLoginWindow]: {
+    request: NewApiBrowserLoginRequest;
+    response: NewApiBrowserLoginResult;
   };
   [PlatformChannels.Log]: {
     request: { level: "info" | "warn" | "error"; args: unknown[] };
