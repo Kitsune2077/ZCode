@@ -43,6 +43,8 @@ export const TID_LOGIN_NEW_API_ERROR = "login-new-api-error";
 export const TID_LOGIN_NEW_API_BROWSER_BUTTON = "login-new-api-browser-button";
 /** NewAPI OAuth provider 名（可选）输入框 */
 export const TID_LOGIN_NEW_API_PROVIDER_INPUT = "login-new-api-provider-input";
+/** NewAPI 手动访问令牌「高级」折叠区开关（仅有浏览器登录能力的平台渲染） */
+export const TID_LOGIN_NEW_API_ADVANCED_TOGGLE = "login-new-api-advanced-toggle";
 /** OAuth 弹窗内的登录按钮 */
 export const TID_OAUTH_LOGIN_BUTTON = "oauth-login-button";
 /** OAuth 弹窗取消按钮 */

@@ -57,6 +57,28 @@ Electron 的 `session.cookies.get({ url })` **同时按路径匹配**。NewAPI �
 | 凭据持久化（refresh cookie、access token、连接指针） | `ICredentialService`，key 前缀沿用 `newapi:`                            |
 | 登录表单与流程编排                                   | `packages/ui/src/login/LoginNewApiForm.tsx`                             |
 
+## 平台能力边界：为什么 Web 没有浏览器登录
+
+`openNewApiLoginWindow` 是 `IPlatformService` 的**可选能力**，目前仅 Desktop 实现
+（desktopPlatform → preload → main 登录窗口）。普通浏览器页面无法复刻这条链路，
+这是浏览器安全模型的硬边界，不是待办：
+
+1. `new_api_refresh` cookie 属于 NewAPI 自己的 origin（且 Path 受限）；跨 origin 的
+   Web 页面没有任何 API 能读取其它站点的 cookie。
+2. NewAPI 的 OAuth 回调 URI 注册在 NewAPI 自己的域上，第三方 Web 前端拿不到带 code 的
+   回跳，也无法控制用户自建 NewAPI 的 OAuth 客户端注册。
+3. 从 Web origin 直接 `fetch` NewAPI 的 `/api/user/auth/refresh`（credentials: include）
+   同时被 SameSite（第三方上下文不带 cookie）与 CORS（无 `Allow-Credentials`）拦下。
+
+因此登录表单按能力自适应：
+
+- **有 `openNewApiLoginWindow`（Desktop）**：浏览器登录为主路径；手动访问令牌折叠在
+  「高级」区内，默认收起。
+- **无该能力（Web）**：不渲染浏览器登录入口，手动访问令牌即主路径，直接展开。
+
+文案规则：提示语不特指任何 OAuth 提供方（如 TinyAuth），统一用「任何 NewAPI 支持的
+登录方式」这类通用表述——具体支持哪些登录方式由目标部署决定，客户端不应背书。
+
 ## 连接与重连语义：一次只保留一个 NewAPI 连接
 
 NewAPI 连接按「账号接入」理解：应用同时只保留一个由本流程创建的 Provider。
@@ -101,10 +123,10 @@ exchangeNewApiSessionForAccessToken(network, {
 ## 流程
 
 ```
-用户在登录入口选「使用 NewAPI 账号登录」
+用户在登录入口选「使用 NewAPI 账号登录」（仅 Desktop 渲染该入口）
    ↓ 可选填写 provider（如 tinyauth）
 main 打开隔离分区的登录窗口 → {baseUrl}/login 或 {baseUrl}/oauth/<provider>
-   ↓ 用户在其中完成登录（TinyAuth / GitHub / 密码…）
+   ↓ 用户在其中完成登录（任何部署支持的登录方式）
 main 轮询该分区的 {cookieName}；命中即关闭窗口并返回 cookie
    ↓
 services 用 cookie 调 POST /api/user/auth/refresh → access token
@@ -121,7 +143,8 @@ services 用 cookie 调 POST /api/user/auth/refresh → access token
 - 登录窗口使用独立 partition，不与应用内其它浏览器共享存储；
 - 窗口在完成/取消/超时后必须关闭并释放分区，不留后台窗口；
 - 会话刷新失败只影响 NewAPI 相关功能，不阻断应用启动；
-- 仍保留"手动粘贴 access token"作为回退（老版本 NewAPI 无 `new_api_refresh`，或企业策略禁止此类登录）。
+- 仍保留"手动粘贴 access token"作为回退（老版本 NewAPI 无 `new_api_refresh`，或企业策略禁止此类登录）；
+  有浏览器登录能力的平台把它折叠进「高级」区，Web 等无能力平台则作为唯一主路径直接展开。
 
 ## 安全说明
 
@@ -140,7 +163,10 @@ services 用 cookie 调 POST /api/user/auth/refresh → access token
 - D：超时（默认 5 分钟）→ 返回 `timeout`，窗口关闭，凭据不变。
 - E：cookie 拿到但刷新被拒（如 IP/UA 不匹配）→ 明确提示"会话校验未通过，请用同一网络环境重新登录"。
 - F：已有连接的 refresh cookie 过期 → 自动刷新一次；仍失败则标记连接失效并提示重新登录，不影响其它 Provider。
-- G：老版本 NewAPI（无 `new_api_refresh`）→ 登录窗口仍可用（手动粘贴 access token 路径不变）。
+- G：老版本 NewAPI（无 `new_api_refresh`）→ 登录窗口等待超时或读不到 cookie；
+  用户展开「高级」手动粘贴 access token 仍可连接（该路径不变，只是默认折叠）。
+- G2：Web（无 `openNewApiLoginWindow` 能力）→ 表单不渲染浏览器登录入口，
+  手动访问令牌展开为主路径，提示文案说明当前环境不支持浏览器登录。
 - H：已连接账号 A（手动令牌）→ 「断开连接」→ 用 OAuth 登录账号 B 且**域名已变化** →
   账号 A 的 Provider 被替换，模型列表只剩账号 B 的模型，Provider 名回到 `NewAPI`（不再出现 `NewAPI 2`）；
   断开期间账号 A 的模型仍可用。
@@ -149,4 +175,6 @@ services 用 cookie 调 POST /api/user/auth/refresh → access token
 
 - 会话 cookie 的具体名称随 NewAPI 版本可能变化，实现时以运行时发现的值为准（当前版本为 `new_api_refresh`）；
 - 若将来 NewAPI 提供面向原生客户端的 token 端点，可去掉"读 cookie"这一步，退化为纯 OIDC/PKCE；
+- 手机远控 Web 端理论上可通过已连接的桌面 host attachment 转发 `openNewApiLoginWindow`
+  （在桌面弹窗、结果回传手机），需要跨 host 的能力转发设计，暂不在本功能范围内；
 - 本功能只覆盖 NewAPI；抽象到通用 OIDC 客户端（loopback + PKCE）留待后续。

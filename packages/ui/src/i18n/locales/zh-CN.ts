@@ -819,15 +819,16 @@ const zhCN: Record<string, string> = {
   "login.newApi.entry": "使用 NewAPI",
   "login.newApi.title": "连接 NewAPI",
   "login.newApi.description":
-    "填 NewAPI 地址后用账号登录（支持 TinyAuth 等 OAuth 或密码），或直接粘贴访问令牌；ZCode 会自动获取或创建 API Key，并导入模型列表。",
+    "填 NewAPI 地址后用账号登录，或手动粘贴访问令牌；ZCode 会自动获取或创建 API Key，并导入模型列表。",
   "login.newApi.browserLogin": "使用 NewAPI 账号登录",
   "login.newApi.browserLoginHint":
     "在弹窗中完成登录，ZCode 自动读取账号信息与密钥。任何 NewAPI 支持的登录方式都可用。",
   "login.newApi.providerLabel": "OAuth 提供方（可选）",
-  "login.newApi.providerPlaceholder": "如 tinyauth，留空则到 NewAPI 登录页自行选择",
+  "login.newApi.providerPlaceholder": "OAuth 提供方标识，留空则到 NewAPI 登录页自行选择",
   "login.newApi.browserTimeout": "登录等待超时，请重试。",
-  "login.newApi.browserUnsupported": "当前平台不支持浏览器登录，请手动填写访问令牌。",
-  "login.newApi.manualSectionTitle": "或手动填写访问令牌",
+  "login.newApi.advancedToggle": "高级：手动填写访问令牌",
+  "login.newApi.manualOnlyHint":
+    "当前环境不支持浏览器登录，请粘贴访问令牌（可在 NewAPI 控制台生成）。",
   "login.newApi.baseUrlLabel": "NewAPI 地址",
   "login.newApi.baseUrlPlaceholder": "https://newapi.example.com",
   "login.newApi.accessTokenLabel": "NewAPI 访问令牌",
