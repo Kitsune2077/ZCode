@@ -1,0 +1,218 @@
+# 构建桌面安装包（Windows / macOS / Linux）并发布到 GitHub Releases。
+#
+# 为什么用 CI 而不是本地脚本：
+#   - 三种平台各有原生工具链（NSIS / codesign+hdiutil / rpm+pacman），本地一台机器做不了全矩阵；
+#   - 产物、构建 info 与 Release 说明可追溯（含 commit、版本、内置飞书 CLI 来源与摘要）；
+#   - 依赖与 Electron 缓存可跨运行复用，比每次从零拉取快得多。
+#
+# 说明与已知风险见 packages/desktop/docs/ci-desktop-installers.md。
+name: Build desktop installers
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 发布到该 tag 的 Release（留空则只产出 workflow artifacts，不建 Release）
+        required: false
+        type: string
+      lark_cli_version:
+        description: 钉死内置飞书 CLI 版本（留空跟随 npm latest）
+        required: false
+        type: string
+      include_remote_assets:
+        description: 一并构建远端工作区预编译资源（mock-cdn）；Windows 上不推荐
+        required: false
+        default: false
+        type: boolean
+  push:
+    tags:
+      - "v*"
+
+# Release 需要写权限；其余步骤只要读。
+permissions:
+  contents: read
+
+# 同一 ref 同时只跑一条流水线，避免两个 Release 互相覆盖附件。
+concurrency:
+  group: build-desktop-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      # 单平台失败不能拖垮其它平台：Linux 的 rpm/pacman 与 macOS 的签名最容易出环境问题。
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            label: Windows x64
+            target_os: win
+            arch: x64
+            # Windows runner 上 bsdtar 解 .tar.xz 需要外部 xz，缺失时会直接失败（本地亦如此），
+            # 因此默认跳过远端资产；需要时用 include_remote_assets 覆盖。
+            skip_by_default: "1"
+            skip_when_included: "0"
+          - runner: macos-14
+            label: macOS arm64
+            target_os: mac
+            arch: arm64
+            skip_by_default: "0"
+            skip_when_included: "0"
+          # Intel macOS 需换 macos-13（arm64 runner 交叉产出 x64 的 dmg 依赖 prebuild 齐全，
+          # 未在本仓库验证）：
+          # - runner: macos-13
+          #   label: macOS x64
+          #   target_os: mac
+          #   arch: x64
+          #   skip_by_default: "0"
+          #   skip_when_included: "0"
+          - runner: ubuntu-22.04
+            label: Linux x64
+            target_os: linux
+            arch: x64
+            skip_by_default: "0"
+            skip_when_included: "0"
+
+    env:
+      # 与 mise.toml 的 env 段一致：Electron runtime 走镜像源，避免直连 GitHub 拉 140MB+。
+      ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+      HUSKY: "0"
+      ZCODE_ENV: production
+      # "1" 表示跳过；"0" 表示构建。表达式两侧都是非空字符串，避免 GH 的空串为假值陷阱。
+      ZCODE_SKIP_REMOTE_ASSETS: ${{ inputs.include_remote_assets && matrix.skip_when_included || matrix.skip_by_default }}
+      ZCODE_LARK_CLI_VERSION: ${{ inputs.lark_cli_version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          # 与 mise.toml / package.json 的 packageManager 保持一致。
+          version: 10.33.2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # 与 mise.toml 的 node 版本保持一致；npm 缓存交给 pnpm store。
+          node-version: 24.14.0
+          cache: pnpm
+
+      - name: Cache Electron and electron-builder binaries
+        uses: actions/cache@v4
+        with:
+          # 这两份缓存是构建时间的大头（Electron runtime + NSIS/winCodeSign/appimage 工具）。
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~/AppData/Local/electron
+            ~/AppData/Local/electron-builder
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            electron-${{ runner.os }}-
+
+      - name: Install Linux packaging tools
+        if: runner.os == 'Linux'
+        # electron-builder 的 rpm / pacman 目标需要 rpm 与 bsdtar（libarchive-tools），
+        # deb 需要 fakeroot；缺任何一个都会让整个 linux job 失败。
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends rpm fakeroot libarchive-tools
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build installer
+        run: pnpm bundle:desktop -- --os ${{ matrix.target_os }} --arch ${{ matrix.arch }}
+
+      - name: Collect release info
+        # 跨平台逻辑放在脚本里（Windows/macOS/Linux 三种 runner 都跑同一份代码），
+        # 本地可用真实 dist 目录验证；详见 scripts/ci/desktop-release-info.mjs。
+        run: node scripts/ci/desktop-release-info.mjs collect --dist-dir packages/desktop/dist --os ${{ matrix.target_os }} --arch ${{ matrix.arch }} --out build-info-${{ matrix.target_os }}-${{ matrix.arch }}.json
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: zcode-${{ matrix.target_os }}-${{ matrix.arch }}
+          # 只挑主产物与 blockmap；win-unpacked 等中间目录体积巨大且无需分发。
+          path: |
+            packages/desktop/dist/*.exe
+            packages/desktop/dist/*.dmg
+            packages/desktop/dist/*.zip
+            packages/desktop/dist/*.AppImage
+            packages/desktop/dist/*.deb
+            packages/desktop/dist/*.rpm
+            packages/desktop/dist/*.pkg.tar.zst
+            packages/desktop/dist/*.blockmap
+            build-info-${{ matrix.target_os }}-${{ matrix.arch }}.json
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    name: Publish release
+    needs: build
+    # tag 推送，或手动指定 release_tag 时才发布；否则只留 workflow artifacts。
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+
+      - name: Download installers
+        uses: actions/download-artifact@v4
+        with:
+          # 合并到一个目录，render 一次读取全部平台的 build-info。
+          merge-multiple: true
+          path: release-assets
+
+      - name: Render release notes
+        run: |
+          node scripts/ci/desktop-release-info.mjs render \
+            --info-dir release-assets \
+            --out release-notes.md
+          cat release-notes.md
+
+      - name: Publish to GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.release_tag || github.ref_name }}"
+          version=$(node -p "require('./package.json').version")
+
+          # 安装包与 blockmap 一起上传，供 electron-updater 做增量更新。
+          mapfile -t files < <(find release-assets -maxdepth 1 -type f \
+            ! -name '*.json' ! -name 'release-notes.md' | sort)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::没有可发布的产物"
+            exit 1
+          fi
+          printf '  %s\n' "${files[@]}"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "${files[@]}" --clobber
+            gh release edit "$tag" --notes-file release-notes.md
+          elif git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            # tag 已存在：直接为它建 Release，不传 --target（那会尝试重新创建 tag）。
+            gh release create "$tag" "${files[@]}" \
+              --title "ZCode $version" \
+              --notes-file release-notes.md
+          else
+            gh release create "$tag" "${files[@]}" \
+              --title "ZCode $version" \
+              --notes-file release-notes.md \
+              --target "$GITHUB_SHA"
+          fi
