@@ -112,6 +112,18 @@ const officialPluginPackages = [
     runtimeBuildScript: "scripts/build.mjs",
     stagedPath: "packages/node-repl-host",
   },
+
+  {
+    // 飞书 CLI：纯内容型官方插件（只有 skills/cli 与 skills/setup，无 MCP、无运行时），
+    // stage 后由首启 seed 落到本地缓存即可用，不依赖运行时从市场下载。
+    // 该目录没有 workspace package.json（避免成为 pnpm 包而要求同步 lockfile），
+    // 因此 requiresRuntime 为 false；packageName 仅用于日志可读性。
+    packageName: "@zcode/lark-cli-plugin",
+    relativePath: "apps/zcode-cli/packages/lark-cli-plugin",
+    requiresRuntime: false,
+    requiredSeedPaths: ["skills/cli/SKILL.md", "skills/setup/SKILL.md"],
+    stagedPath: "packages/lark-cli-plugin",
+  },
 ];
 // 随 CLI 内置的技能包（不是插件）：bootstrap 的 resolveBundledSkillRoots 沿官方插件同款候选目录
 // 在 zcode.cjs 旁找 packages/bundled-skills 并原地读取。漏 stage 它，桌面包的 /workflow 会展开成

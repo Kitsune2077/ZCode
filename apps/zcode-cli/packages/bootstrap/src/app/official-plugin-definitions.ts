@@ -203,6 +203,37 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
     version: "0.1.1",
   },
   {
+    // 纯内容型插件（只有 skills/cli 与 skills/setup，无 MCP、无系统依赖），因此默认启用：
+    // 用户开箱即可让 agent 按飞书 CLI 工作流操作文档/表格/多维表格/日历/消息。
+    //
+    // 内容随包 vendor 到 apps/zcode-cli/packages/lark-cli-plugin（来源为官方 artifact，
+    // 与 marketplace 清单声明的 sha256 一致），首启 seed 直接可用，不依赖运行时从市场下载。
+    // 该目录不放置 package.json：避免它成为 pnpm workspace 包而要求同步 lockfile。
+    // 清单里 CLI 本体由 skills/setup 引导用户经 npm 安装，插件自身不携带二进制。
+    // 其余 listing 字段照抄官方 marketplace 条目（displayName/description/icon），
+    // 不自行发明图标与分类，避免内置条目与线上条目分叉。
+    defaultEnabled: true,
+    listing: {
+      author: ZAI_AUTHOR,
+      category: "productivity",
+      displayName: "Lark CLI",
+      displayName_i18n: { "zh-CN": "飞书 CLI" },
+      description_i18n: {
+        "zh-CN": "Lark CLI 工作流：覆盖文档、表格、多维表格、日历、消息等 SaaS 资源，并引导应用配置与 OAuth 登录。",
+      },
+      icon: `${OFFICIAL_PLUGIN_ASSETS_BASE_URL}/lark-cli/icon.png`,
+    },
+    name: "lark-cli",
+    requiredSeedPaths: ["skills/cli/SKILL.md", "skills/setup/SKILL.md"],
+    rootCandidates: [
+      "packages/lark-cli-plugin",
+      "../lark-cli-plugin",
+      "../../lark-cli-plugin",
+      "../../../lark-cli-plugin",
+    ],
+    version: "0.1.2",
+  },
+  {
     listing: {
       author: ZAI_AUTHOR,
       category: "developer-tools",
