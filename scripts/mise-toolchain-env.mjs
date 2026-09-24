@@ -10,17 +10,36 @@ import { delimiter, dirname } from "node:path";
  */
 export function withPinnedNodePath(env, nodeExecutablePath) {
   const nodeDirectory = dirname(nodeExecutablePath);
-  // Windows 的 Node 环境对象通常使用 `Path`，只读取大写 `PATH` 会把 pnpm.cmd
-  // 所在目录从子进程环境中丢掉，导致 dev:desktop 的内部 pnpm 调用失败。
-  const pathKey = typeof env.PATH === "string" ? "PATH" : "Path";
-  const existingPath = typeof env[pathKey] === "string" ? env[pathKey] : "";
+  // Windows 环境块的键名大小写不固定：真实 PATH 可能以 `path` / `Path` / `PATH`
+  // 任何形态出现（部分终端、CI runner、pnpm 生命周期会改写大小写）。
+  //
+  // bug 原因：这里曾经只认 `PATH` / `Path` 两种字面量（普通对象的键访问是大小写
+  // 敏感的）。真实键是小写 `path` 时 `existingPath` 被读成空字符串，返回对象里
+  // 同时留下原始 `path`（完整值）和新写入的 `Path`（只剩 node 目录）。Windows
+  // 对大小写不同的同名环境键不做合并，子进程取到的是后写入的那条——整条 PATH
+  // 被截断成 node 目录，pnpm / cmd.exe 相继报“不是内部或外部命令”
+  // （dev:desktop 在 Windows 的实际故障链）。
+  //
+  // 修复：按大小写不敏感找出**全部**同名键，取第一个非空字符串作为真实 PATH，
+  // 把这些键全部删掉后写回唯一的规范键（win32 用 `Path`，其它平台用 `PATH`），
+  // 再在前面垫上启动器的 Node 目录。任何形态都只产生一个 PATH 条目。
+  const pathKeys = Object.keys(env).filter((key) => key.toLowerCase() === "path");
+  const canonicalKey = process.platform === "win32" ? "Path" : "PATH";
+  const existingPath =
+    pathKeys
+      .map((key) => env[key])
+      .find((value) => typeof value === "string" && value.length > 0) ?? "";
+  const strippedEnv = { ...env };
+  for (const key of pathKeys) {
+    delete strippedEnv[key];
+  }
   const pathEntries = existingPath
     .split(delimiter)
     .filter(Boolean)
     .filter((entry) => entry !== nodeDirectory);
 
   return {
-    ...env,
-    [pathKey]: [nodeDirectory, ...pathEntries].join(delimiter),
+    ...strippedEnv,
+    [canonicalKey]: [nodeDirectory, ...pathEntries].join(delimiter),
   };
 }

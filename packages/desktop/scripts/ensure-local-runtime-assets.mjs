@@ -14,7 +14,9 @@ import { getTargetPlatform } from "./target-platform.mjs";
 const desktopRoot = resolve(import.meta.dirname, "..");
 const target = getTargetPlatform();
 const bundledToolsRoot = join(desktopRoot, "bundled-tools", target.key);
-const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+// 统一传字面量 "pnpm"：runCommand 会优先用 npm_execpath 复用当前 pnpm 入口，
+// 绕开 Windows 子进程 cmd 对 pnpm.cmd/pnpm.exe 的 PATH 字面量解析（详见 spawn-command.mjs）。
+const pnpmCommand = "pnpm";
 const nativeSearchReleasePlan = resolveNativeSearchReleasePlan({
   platform: target.os,
   arch: target.arch,
