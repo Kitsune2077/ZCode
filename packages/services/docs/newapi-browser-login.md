@@ -57,6 +57,23 @@ Electron 的 `session.cookies.get({ url })` **同时按路径匹配**。NewAPI �
 | 凭据持久化（refresh cookie、access token、连接指针） | `ICredentialService`，key 前缀沿用 `newapi:`                            |
 | 登录表单与流程编排                                   | `packages/ui/src/login/LoginNewApiForm.tsx`                             |
 
+## 连接与重连语义：一次只保留一个 NewAPI 连接
+
+NewAPI 连接按「账号接入」理解：应用同时只保留一个由本流程创建的 Provider。
+
+- `newapi:last_provider` 记录**上一次成功登录**落下的 Provider id，**跨「断开连接」保留**；
+  `newapi:active_provider` 是活动连接指针，断开时删除（断开后左下角、用量页与「使用 NewAPI」
+  入口回到未连接状态）。登录时的替换目标取「活动指针 ?? last 指针」。
+- 「断开连接」只清凭据（access token / refresh cookie / base URL / 活动指针），**不删除 Provider**：
+  Provider 配置仍由用户拥有，已导入的模型在重新登录前继续可用。
+- 登录成功时**先删后建**：删除替换目标指向的 Provider，以及与本次 endpoint 完全相同的个人
+  Provider，再创建新 Provider。因此**换域名**（同一台 NewAPI 迁到新域名，endpoint 变了）或
+  **换账号**重登都只是替换，不会堆出 `NewAPI 2` / `NewAPI 3`；基础 id 被删除后重新空闲，
+  新 Provider 重新拿到 `new-provider` 与名字 `NewAPI`。
+- 替换目标已被用户手工删除时跳过并只创建（幂等）；Host 未提供删除能力时退回只创建。
+- 代价与边界：若确实要同时保留两台 NewAPI，请用「自定义 Provider」手工配置——
+  本流程不并行保留两条 NewAPI 连接。
+
 ## 接口
 
 ```ts
@@ -124,6 +141,9 @@ services 用 cookie 调 POST /api/user/auth/refresh → access token
 - E：cookie 拿到但刷新被拒（如 IP/UA 不匹配）→ 明确提示"会话校验未通过，请用同一网络环境重新登录"。
 - F：已有连接的 refresh cookie 过期 → 自动刷新一次；仍失败则标记连接失效并提示重新登录，不影响其它 Provider。
 - G：老版本 NewAPI（无 `new_api_refresh`）→ 登录窗口仍可用（手动粘贴 access token 路径不变）。
+- H：已连接账号 A（手动令牌）→ 「断开连接」→ 用 OAuth 登录账号 B 且**域名已变化** →
+  账号 A 的 Provider 被替换，模型列表只剩账号 B 的模型，Provider 名回到 `NewAPI`（不再出现 `NewAPI 2`）；
+  断开期间账号 A 的模型仍可用。
 
 ## 未决/后续
 

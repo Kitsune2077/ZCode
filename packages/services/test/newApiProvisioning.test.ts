@@ -376,3 +376,35 @@ test("a host without delete capability keeps the create-only behaviour", async (
 
   assert.deepEqual(calls, ["create"]);
 });
+
+test("a recorded provider is replaced even after the NewAPI host moved to a new domain", async () => {
+  const { fetch } = createFetchMock({});
+  const calls: string[] = [];
+
+  const result = await provisionNewApiProvider(
+    {
+      createPersonalProvider: async () => {
+        calls.push("create");
+        return { providerId: "new-provider" };
+      },
+      deletePersonalProvider: async (providerId) => {
+        calls.push(`delete:${providerId}`);
+      },
+      // 回归点：同一台 NewAPI 换域名后 endpoint 变了，只比 endpoint 会漏掉这个旧 Provider，
+      // 它的模型列表（属于上一个账号）会继续留在模型列表里，新连接被挤成 NewAPI 2。
+      listPersonalProviders: async () => [
+        { baseUrl: "https://old-host.example.com/v1", providerId: "new-provider" },
+      ],
+    },
+    { fetch },
+    {
+      accessToken: "access-token",
+      apiFormat: "openai-chat-completions",
+      baseUrl: "https://new-host.example.com",
+      replaceProviderId: "new-provider",
+    },
+  );
+
+  assert.deepEqual(calls, ["delete:new-provider", "create"]);
+  assert.equal(result.providerId, "new-provider");
+});

@@ -31,6 +31,11 @@ export interface ProvisionNewApiProviderInput {
    * 上一次 NewAPI 登录落下的 Provider id。存在且仍然有效时先删除再创建，
    * 避免每次重新登录都堆出 NewAPI2 / NewAPI3。
    *
+   * 该 id 由凭据侧的替换指针给出，**跨「断开连接」保留**，所以换域名（同一台 NewAPI
+   * 迁到新域名）或换账号重登也会替换，而不是留下上一个账号的模型列表。
+   * 替换判断以这个 id 为准，不能只依赖 endpoint：同一台 NewAPI 换域名后 endpoint 就不同了，
+   * 只比 endpoint 会漏掉该删的旧 Provider。endpoint 规则仅作兜底（见下方实现）。
+   *
    * 先删后建可以复用同一个 providerId：基础 id（`new-provider`）被删除后重新空闲，
    * 下一次创建会再次拿到它，因此用户已保存的模型选择不会因为 id 变化而失效。
    */
@@ -281,9 +286,9 @@ export async function provisionNewApiProvider(
  * 删除该 NewAPI 服务上遗留的 Provider。
  *
  * 命中两类目标：
- *   1. 凭据里记录的上一次 Provider id；
- *   2. endpoint 与本服务相同的个人 Provider —— 历史版本每次登录都新建，
- *      只按记录 id 删除会留下 `NewAPI` / `NewAPI2`，下一次又变成 `NewAPI3`。
+ *   1. 凭据里记录的上一次 Provider id（**主路径**，跨「断开连接」保留，与域名无关）；
+ *   2. endpoint 与本服务相同的个人 Provider（兜底：凭据被清掉而 Provider 配置仍在时，
+ *      历史版本每次登录都新建，只按记录 id 删除会留下 `NewAPI` / `NewAPI2`）。
  *
  * 按 endpoint 精确匹配（只归一化尾部斜杠），因此另一台自建 NewAPI 不受影响。
  * 凭据指针只由本流程写入，用户手工删除后自动跳过；Host 未提供删除能力时退回只创建。

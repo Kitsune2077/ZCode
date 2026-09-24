@@ -25,7 +25,7 @@ import { usePlatform } from "@/hooks/usePlatform.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import {
-  loadNewApiConnection,
+  loadNewApiReplaceProviderId,
   saveNewApiConnection,
   saveNewApiRefreshCookie,
 } from "@/lib/newApiConnection.js";
@@ -76,14 +76,15 @@ export function LoginNewApiForm({ onCancel, onSaved }: LoginNewApiFormProps) {
     refreshCookie?: string;
   }) => {
     // 重新登录时替换上一次落下的 NewAPI Provider，而不是再建一个：
-    // 否则每次连接都会堆出 NewAPI2 / NewAPI3。凭据里的 providerId 只由本流程写入，
-    // 用户手工删掉后服务端会跳过删除，直接新建。
-    const previousConnection = await loadNewApiConnection(credentialService);
+    // 否则每次连接都会堆出 NewAPI2 / NewAPI3，旧账号的模型也会继续留在模型列表里。
+    // 这里取的是跨「断开连接」保留的替换目标（活动指针 ?? last_provider），
+    // 因此断开后换域名、换账号重登同样会替换。替换目标已被用户手工删除时下游只创建。
+    const replaceProviderId = await loadNewApiReplaceProviderId(credentialService);
     const created = await providerSettingsService.provisionNewApiProvider({
       accessToken: input.accessToken,
       apiFormat,
       baseUrl: input.baseUrl,
-      ...(previousConnection ? { replaceProviderId: previousConnection.providerId } : {}),
+      ...(replaceProviderId ? { replaceProviderId } : {}),
     });
     // 先落凭据再标记登录成功：登录计数自增会触发左下角/用量页重新读取 NewAPI 连接，
     // 顺序反了会读到旧凭据（首次登录时为空）。
