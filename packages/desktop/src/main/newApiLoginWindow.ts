@@ -16,6 +16,7 @@ import { BrowserWindow, session } from "electron";
 import {
   NEW_API_REFRESH_COOKIE_NAME,
   resolveNewApiLoginUrl,
+  resolveNewApiSessionCookieLookupUrl,
   type NewApiBrowserLoginRequest,
   type NewApiBrowserLoginResult,
 } from "@zcode/shared";
@@ -91,13 +92,34 @@ export async function openNewApiLoginWindow(
 
   options.logger.info("[newapi-login] window opened", { origin: target.origin });
 
+  // 必须用带路径的 URL 查询：NewAPI 把会话 cookie 的 Path 限制在 /api/user/auth，
+  // 用根 URL 查会一直拿不到（第一次真机验证即如此失败）。
+  const cookieLookupUrl = resolveNewApiSessionCookieLookupUrl(target.origin);
+
   const readCookie = async (): Promise<string | undefined> => {
     const cookies = await loginSession.cookies.get({
       name: NEW_API_REFRESH_COOKIE_NAME,
-      url: target.origin,
+      url: cookieLookupUrl,
     });
     const value = cookies.at(-1)?.value?.trim();
     return value ? value : undefined;
+  };
+
+  /**
+   * 记录该分区下 cookie 的**名字**（绝不记录值——它就是凭据）。
+   *
+   * 加这个是因为第一次真机验证时窗口停在"登录成功"但没拿到 cookie，而日志只有一句
+   * `finished without a session cookie`，无法区分「名字不对」与「压根没写进来」。
+   * 有名字列表就能一次定位。
+   */
+  const describeCookieNames = async (): Promise<string> => {
+    try {
+      const cookies = await loginSession.cookies.get({ url: cookieLookupUrl });
+      const names = cookies.map((cookie) => cookie.name).sort();
+      return names.length > 0 ? names.join(", ") : "(none)";
+    } catch (error) {
+      return `(read failed: ${error instanceof Error ? error.message : String(error)})`;
+    }
   };
 
   let closed = false;
@@ -105,6 +127,12 @@ export async function openNewApiLoginWindow(
     closed = true;
   };
   loginWindow.on("closed", onClosed);
+
+  // 登录跳转可能先到 /login、/oauth/... 再到控制台；记录最终落点便于判断流程走到哪一步。
+  let lastUrl = target.loginUrl;
+  loginWindow.webContents.on("did-navigate", (_event, url) => {
+    lastUrl = url;
+  });
 
   let pollTimer: NodeJS.Timeout | undefined;
   let timeoutTimer: NodeJS.Timeout | undefined;
@@ -123,7 +151,19 @@ export async function openNewApiLoginWindow(
       timeoutTimer = setTimeout(() => finish({ status: "timeout" }), timeoutMs);
       pollTimer = setInterval(() => {
         if (closed) {
-          finish({ status: "cancelled" });
+          // 用户主动关窗：先做最后一次读取再定论。用户很可能是在"登录成功"之后顺手关掉的，
+          // 此时 cookie 已经写入，直接判 cancelled 会把一次成功的登录丢掉
+          // （第一次真机验证正是这样失败的）。
+          void readCookie().then(
+            (value) => {
+              if (value) {
+                finish({ status: "completed", cookieValue: value, origin: target.origin });
+                return;
+              }
+              finish({ status: "cancelled" });
+            },
+            () => finish({ status: "cancelled" }),
+          );
           return;
         }
         void readCookie().then(
@@ -146,10 +186,17 @@ export async function openNewApiLoginWindow(
     const result = await resultPromise;
 
     if (result.status === "completed") {
-      options.logger.info("[newapi-login] session cookie captured", { origin: target.origin });
+      options.logger.info("[newapi-login] session cookie captured", {
+        cookieName: NEW_API_REFRESH_COOKIE_NAME,
+        origin: target.origin,
+      });
     } else {
       options.logger.info("[newapi-login] finished without a session cookie", {
+        // 名字列表用来区分「cookie 名不对」与「压根没写进来」；值绝不落日志。
+        cookieNames: await describeCookieNames(),
+        lastUrl,
         status: result.status,
+        watchedCookie: NEW_API_REFRESH_COOKIE_NAME,
       });
     }
     return result;

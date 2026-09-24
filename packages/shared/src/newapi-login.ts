@@ -17,6 +17,25 @@
  */
 export const NEW_API_REFRESH_COOKIE_NAME = "new_api_refresh";
 
+/**
+ * 会话 cookie 的 Path。
+ *
+ * NewAPI 把它限制在 `/api/user/auth`（见 service/auth_session.go 的 WriteRefreshCookie），
+ * 不是 `/`。Electron 的 `session.cookies.get({ url })` 会同时按路径匹配，用根 URL 查询**永远拿不到**
+ * 这个 cookie——第一次真机验证就卡在这里：登录成功、窗口停留、却一直读不到。
+ */
+export const NEW_API_REFRESH_COOKIE_PATH = "/api/user/auth";
+
+/**
+ * 读取用户会话 cookie 时应当使用的查询 URL。
+ *
+ * 用带路径的 URL 而不是根 URL：带路径的查询既能命中 `Path=/api/user/auth` 的 cookie，
+ * 也能命中 `Path=/` 的同名 cookie，因此 NewAPI 将来把 Path 改回根路径时无需再改这里。
+ */
+export function resolveNewApiSessionCookieLookupUrl(origin: string): string {
+  return `${origin.replace(/\/+$/u, "")}${NEW_API_REFRESH_COOKIE_PATH}`;
+}
+
 export interface NewApiBrowserLoginRequest {
   /** NewAPI 根地址（用户填写，可能带 `/v1` 或尾部斜杠）。 */
   readonly baseUrl: string;

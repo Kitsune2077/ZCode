@@ -20,7 +20,18 @@ NewAPI 支持 OAuth 登录（例如用 TinyAuth 作为 OIDC 提供方）。但�
 | `middleware.UserAuth()` / `TryUserAuth()` **同时接受** `Authorization: Bearer <PAT>` 与 dashboard 会话 | `middleware/auth.go`                          |
 | 会话凭据是 cookie `new_api_refresh`（另有可被脚本读取的 `new_api_has_session`）                        | `service/auth_session.go`                     |
 | `POST /api/user/auth/refresh` 用该 cookie 兑换令牌，返回 JSON 并**轮换** cookie                        | `controller/auth_session.go`                  |
+| 会话 cookie 的 **Path 是 `/api/user/auth`**，不是 `/`                                                  | `service/auth_session.go: WriteRefreshCookie` |
 | 线上实测：伪造 cookie 请求该端点返回 `{"code":"AUTH_UNAUTHORIZED"}` / 401（端点存在）                  | 对自建实例探测                                |
+
+### 踩过的坑：按根 URL 查不到这个 cookie
+
+Electron 的 `session.cookies.get({ url })` **同时按路径匹配**。NewAPI 的会话 cookie 被限制在
+`Path=/api/user/auth`，用根 URL（`https://<host>`）查询会永远返回空——症状是"登录成功、窗口停留、
+却一直读不到 cookie"，第一次真机验证就是这样失败的。
+
+查询必须用 `${origin}/api/user/auth`。这个 URL 既能命中受限 Path 的 cookie，也能命中 `Path=/` 的
+同名 cookie，所以 NewAPI 将来把 Path 改回根路径时无需再改代码。
+见 `resolveNewApiSessionCookieLookupUrl()`（`@zcode/shared`）。
 
 因为 dashboard 接口同时接受会话与 PAT，现有的 NewAPI 适配链路
 （`/api/user/self`、`/api/token/`、对话模型过滤导入、左下角身份、用量页）**可以整体复用**，
