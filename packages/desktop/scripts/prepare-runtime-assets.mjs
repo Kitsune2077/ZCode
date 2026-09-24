@@ -26,9 +26,12 @@ const shouldPrepareMacosWindowBounds = target.os === "darwin";
 // 本机桌面包内置 agent 的 JS bundle（prepare:agent-bundle），运行时由 app 的 Electron Node runtime 执行。
 // 远端跨平台原生二进制仍由上面的 prepare:remote-assets 提供。
 // native-search 归档随仓库分发，准备步骤只做本地解包校验，不需要任何下载源配置。
+// prepare:lark-cli 是唯一需要联网的本机步骤（上游以 GitHub Release 分发，构建期按官方
+// checksums.txt 校验）；离线构建可用 ZCODE_SKIP_LARK_CLI=1 跳过，代价是包内不带飞书 CLI。
 const localRuntimeScripts = [
   "prepare:agent-bundle",
   ...(nativeSearchReleasePlan.enabled ? ["prepare:native-search"] : []),
+  ...(process.env.ZCODE_SKIP_LARK_CLI === "1" ? [] : ["prepare:lark-cli"]),
   ...(shouldPrepareWindowsBrowserImportHelper ? ["prepare:browser-import-helper"] : []),
   ...(shouldPrepareMacosWindowBounds ? ["prepare:macos-window-bounds"] : []),
 ];

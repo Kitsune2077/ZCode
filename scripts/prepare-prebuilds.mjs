@@ -6,7 +6,6 @@ import {
   chmodSync,
   copyFileSync,
   cpSync,
-  createWriteStream,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -20,10 +19,9 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import process from "node:process";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
+import { downloadWithRetry } from "./download-file.mjs";
 import { resolveRemoteNativeSearchPrebuiltPlan } from "./remote-native-search-tools-config.mjs";
 import { prepareNativeSearchTools } from "./prepare-native-search-tools.mjs";
 import { stageNodeNotices, stageThirdPartyNotices } from "./third-party-notices.mjs";
@@ -170,38 +168,6 @@ function readZCodeAgentRuntimeVersion() {
     throw new Error("Unable to parse ZCode Agent runtime version");
   }
   return match[1];
-}
-
-async function download(url, destinationPath) {
-  const response = await fetch(url, { redirect: "follow" });
-  if (!response.ok) {
-    throw new Error(`Download failed: HTTP ${response.status} (${url})`);
-  }
-  if (!response.body) {
-    throw new Error(`Download failed: empty response body (${url})`);
-  }
-
-  // 原实现使用 response.pipe(file) + finish 监听，网络中断时可能既不 resolve 也不 reject，
-  // 最终触发 Node 24 的 unsettled top-level await。改为 pipeline，确保异常路径可观测且可失败退出。
-  await pipeline(
-    Readable.fromWeb(response.body),
-    createWriteStream(destinationPath, { flags: "w" }),
-  );
-}
-
-async function downloadWithRetry(url, destinationPath, maxAttempts = 3) {
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    try {
-      await download(url, destinationPath);
-      return;
-    } catch (error) {
-      if (attempt >= maxAttempts) {
-        throw error;
-      }
-      console.warn(`  [warn] download attempt ${attempt}/${maxAttempts} failed: ${url}`);
-      console.warn(`  [warn] retry reason: ${String(error)}`);
-    }
-  }
 }
 
 async function extractArchiveMember(url, destinationDir, archiveMember) {

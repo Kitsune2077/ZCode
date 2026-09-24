@@ -644,6 +644,20 @@ export default {
       to: `tools/${toolId}`,
       filter: ["**/*"],
     })),
+    ...(existsSync(resolve(desktopPackageRoot, `bundled-tools/${targetPlatform.key}/lark-cli`))
+      ? [
+          {
+            // 飞书 CLI 的原生二进制随包内置，用户无需预装 Node.js/npm。
+            // 运行时 runtimeToolResolver 会把该目录追加进 Agent 的 PATH，
+            // 插件 skills/setup 的 `command -v lark-cli` 因此命中内置副本并跳过 npm 安装。
+            // 用了存在性判断：离线构建（ZCODE_SKIP_LARK_CLI=1）时缺这一份资产，
+            // 此时宁可包内不带，也不要让 electron-builder 因缺文件直接失败。
+            from: `bundled-tools/${targetPlatform.key}/lark-cli`,
+            to: "tools/lark-cli",
+            filter: ["**/*"],
+          },
+        ]
+      : []),
   ],
   // postinstall 会先优先复用 node-pty 自带的 Windows 预编译产物，其他平台再按需 electron-rebuild。
   // 打包阶段统一复用安装时准备好的原生文件，避免 electron-builder 再触发一轮不受控的本地编译。
