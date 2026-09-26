@@ -87,7 +87,7 @@ import type {
   SessionStoreDebugCounts,
   SqliteSessionStoreOptions,
 } from "./options.js";
-import { ensureParentDir, getDefaultSessionDbPath } from "./paths.js";
+import { ensureParentDir, getDefaultSessionDbPath, resolveSessionDbBaseDir } from "./paths.js";
 import { maybeThrowStorageFsFault } from "../fs-fault-injection.js";
 import * as debugRepository from "./repositories/debug.js";
 import { createDwfJournalStore } from "./repositories/dwf-journal.js";
@@ -1019,4 +1019,4 @@ export function openStartupSqliteSessionStore(
   return new SqliteSessionStore(options);
 }
 
-export { getDefaultSessionDbPath };
+export { getDefaultSessionDbPath, resolveSessionDbBaseDir };

@@ -1,5 +1,6 @@
-import { isAbsolute, resolve } from "node:path";
-import { SqliteSessionStore } from "@zcode/adapters/storage";
+import { homedir } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
+import { resolveSessionDbBaseDir, SqliteSessionStore } from "@zcode/adapters/storage";
 import { resolvePath, type ConfigResult } from "@zcode/adapters/config";
 import {
   SESSION_ENTRY_MODEL_SELECTION,
@@ -101,8 +102,19 @@ export async function openStartupSessionStore(
   return store;
 }
 
+/** 会话库的文档化默认值（contracts DefaultConfig 同字面量），用于识别“用户未显式改路径”。 */
+const DEFAULT_SESSION_DB_CONFIG_VALUE = "~/.zcode/cli/db/db.sqlite";
+
 export function getSessionDbPath(configResult: ConfigResult, workingDirectory?: string): string {
   const configured = configResult.config.storage.sessionDbPath;
+  // 配置仍是默认字面量且宿主下发了 ZCODE_DATA_BASE_DIR（桌面便携态）时，
+  // usage 库随数据根走，避免便携迁移丢用量历史；用户显式配置的其它路径不受影响。
+  if (configured === DEFAULT_SESSION_DB_CONFIG_VALUE) {
+    const baseDir = resolveSessionDbBaseDir();
+    if (baseDir !== homedir()) {
+      return join(baseDir, ".zcode", "cli", "db", "db.sqlite");
+    }
+  }
   // 存储 Worker 不能 chdir；显式传入业务实际 cwd，保持相对路径与普通 Agent 一致。
   if (workingDirectory && !isAbsolute(configured) && !configured.startsWith("~/"))
     return resolve(workingDirectory, configured);

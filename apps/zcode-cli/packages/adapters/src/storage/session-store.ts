@@ -2,6 +2,7 @@ export {
   createSqliteSessionStore,
   getDefaultSessionDbPath,
   openStartupSqliteSessionStore,
+  resolveSessionDbBaseDir,
   SqliteSessionStore,
 } from "./session-store/sqlite-session-store.js";
 export { createDwfJournalStore } from "./session-store/repositories/dwf-journal.js";
