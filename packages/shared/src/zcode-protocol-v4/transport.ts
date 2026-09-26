@@ -365,6 +365,7 @@ export const V4_METHODS = {
   // 故收敛为 v4 query 而非 host 直连；旧词 usage/stats、session/usage 就此消费清零。
   usageStats: "v4/usage/stats",
   conversationUsage: "v4/conversation/usage",
+  conversationUsageDetail: "v4/conversation/usageDetail",
   // 附件事务：禁止 full-data RPC。每个 chunk 的 decoded bytes <=512KiB，
   // renderer->host Channel 与 host->CLI NDJSON 都必须逐 request 证明 <=1MiB。
   attachmentBegin: "v4/attachment/begin",
@@ -803,6 +804,75 @@ export const v4ConversationUsageResultSchema = z
   })
   .strict();
 export type V4ConversationUsageResult = z.infer<typeof v4ConversationUsageResultSchema>;
+
+// 会话用量明细：最近请求（生成速率/TTFT）+ 最近轮次（turn_usage 已聚合模型与工具）
+// + 工具分布。同属只读 query，事实源仍是 CLI session 库；速率由消费端用
+// outputTokens ÷ generationMs 派生，协议只传原始量，避免两处口径。
+export const v4ConversationUsageDetailParamsSchema = z
+  .object({
+    sessionId: z.string().min(1),
+  })
+  .strict();
+export type V4ConversationUsageDetailParams = z.infer<
+  typeof v4ConversationUsageDetailParamsSchema
+>;
+export const v4ConversationUsageDetailResultSchema = z
+  .object({
+    sessionId: z.string().min(1),
+    latestRequest: z
+      .object({
+        requestId: z.string().min(1),
+        modelId: z.string(),
+        status: z.string(),
+        outputTokens: z.number().int().nonnegative(),
+        generationMs: z.number().int().nonnegative().nullable(),
+        durationMs: z.number().int().nonnegative().nullable(),
+        timeToFirstTokenMs: z.number().int().nonnegative().nullable(),
+      })
+      .strict()
+      .nullable(),
+    latestTurn: z
+      .object({
+        turnId: z.string().min(1),
+        status: z.string(),
+        startedAt: z.number().int().nonnegative(),
+        durationMs: z.number().int().nonnegative().nullable(),
+        timeToFirstTokenMs: z.number().int().nonnegative().nullable(),
+        modelRequestCount: z.number().int().nonnegative(),
+        toolCallCount: z.number().int().nonnegative(),
+        toolErrorCount: z.number().int().nonnegative(),
+        inputTokens: z.number().int().nonnegative(),
+        outputTokens: z.number().int().nonnegative(),
+        reasoningTokens: z.number().int().nonnegative(),
+        cacheCreationTokens: z.number().int().nonnegative(),
+        cacheReadTokens: z.number().int().nonnegative(),
+        totalTokens: z.number().int().nonnegative(),
+      })
+      .strict()
+      .nullable(),
+    toolSummary: z
+      .object({
+        toolCallCount: z.number().int().nonnegative(),
+        toolErrorCount: z.number().int().nonnegative(),
+        items: z
+          .array(
+            z
+              .object({
+                toolName: z.string(),
+                callCount: z.number().int().nonnegative(),
+                errorCount: z.number().int().nonnegative(),
+                avgDurationMs: z.number().nonnegative().nullable(),
+              })
+              .strict(),
+          )
+          .max(20),
+      })
+      .strict(),
+  })
+  .strict();
+export type V4ConversationUsageDetailResult = z.infer<
+  typeof v4ConversationUsageDetailResultSchema
+>;
 
 // ── 附件上行事务 ──
 // UI 高层仍用 put(input)->ref；这份 full-data schema 只描述 renderer 内部调用，绝不作为

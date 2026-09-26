@@ -3424,8 +3424,15 @@ const zhCN: Record<string, string> = {
   "settings.usage.range.today": "今日",
   "composer.usage.session": "会话",
   "composer.usage.today": "今日",
+  "composer.usage.turn": "本轮",
+  "composer.usage.tools": "工具",
   "composer.usage.sessionTooltip": "当前会话累计 {total} tokens（{requests} 次模型请求）",
   "composer.usage.todayTooltip": "今日全部会话累计 {total} tokens（本地时区）",
+  "composer.usage.speedTooltip":
+    "最近完成请求的生成速率：{model}，输出 {output} tokens，生成耗时 {duration}",
+  "composer.usage.turnTooltip":
+    "本轮用量：输入 {input}、输出 {output}、缓存读 {cacheRead}、缓存写 {cacheWrite}、思考 {reasoning}；{requests} 次模型请求，耗时 {duration}，首 token {ttft}",
+  "composer.usage.toolsTooltip": "本会话工具调用 {calls} 次，错误 {errors} 次；分布：{breakdown}",
   "settings.usage.appUsageRangeTitle": "时间范围",
   "settings.usage.codingPlanRange.today": "当日",
   "settings.usage.codingPlanRange.7d": "近 7 日",

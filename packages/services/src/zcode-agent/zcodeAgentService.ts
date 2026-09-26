@@ -271,6 +271,7 @@ import {
   v4ConversationResyncResultSchema,
   v4ConversationSubscribeResultSchema,
   v4ConversationUsageResultSchema,
+  v4ConversationUsageDetailResultSchema,
   v4SessionsIndexSubscribeResultSchema,
   v4UsageStatsResultSchema,
   v4WorkspaceConfigSubscribeResultSchema,
@@ -3670,6 +3671,16 @@ export function createZCodeAgentService(
         V4_METHODS.conversationUsage,
         { sessionId: params.sessionId },
         v4ConversationUsageResultSchema,
+      );
+    },
+
+    async getTaskTokenUsageDetail(params: ZCodeAgentTaskTokenUsageParams) {
+      const client = await getReadOnlyClient(params);
+      // 明细同为只读 query；最近请求/轮次/工具分布一次性取回，避免状态栏多次往返。
+      return client.request(
+        V4_METHODS.conversationUsageDetail,
+        { sessionId: params.sessionId },
+        v4ConversationUsageDetailResultSchema,
       );
     },
 

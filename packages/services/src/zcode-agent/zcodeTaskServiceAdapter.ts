@@ -2841,6 +2841,16 @@ export function createZCodeTaskServiceAdapter(
       });
     },
 
+    async getTaskTokenUsageDetail(params) {
+      // composer 用量状态栏的明细（最近请求速率 / 最近轮次 / 工具分布）：
+      // 与累计值同一事实源与同一只读 query 通道。
+      return options.zcodeAgentService.getTaskTokenUsageDetail({
+        workspacePath: params.workspacePath,
+        workspaceIdentity: params.workspaceIdentity,
+        sessionId: params.taskId,
+      });
+    },
+
     async getTaskSessionFilePath(params) {
       return {
         path: `${params.workspacePath}/${params.taskId}.zcode-session`,

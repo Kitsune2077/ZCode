@@ -3,6 +3,7 @@ import type { BackgroundBashOutputResult, SessionDebugSnapshot } from "@zcode/sh
 import type { Event, IDisposable } from "@zcode/rpc";
 import { ServiceChannels } from "@zcode/shared";
 import type { AppUsageRange, AppUsageSnapshot, ZCodeTaskTokenUsageResult } from "@zcode/shared";
+import type { V4ConversationUsageDetailResult } from "@zcode/shared/zcode-protocol-v4";
 import type { ZCodeAutomation, ZCodeAutomationRun } from "@zcode/shared";
 import type {
   ZCodeStorageStartupState,
@@ -591,6 +592,9 @@ export interface IZCodeAgentService {
   ): Promise<ZCodeSessionSubagentsResult>;
   getAppUsageStats(params: ZCodeAgentAppUsageParams): Promise<AppUsageSnapshot>;
   getTaskTokenUsage(params: ZCodeAgentTaskTokenUsageParams): Promise<ZCodeTaskTokenUsageResult>;
+  getTaskTokenUsageDetail(
+    params: ZCodeAgentTaskTokenUsageParams,
+  ): Promise<V4ConversationUsageDetailResult>;
   readSession(params: ZCodeAgentReadSessionParams): Promise<ZCodeSessionStateSnapshot>;
   readSessionMessages(
     params: ZCodeAgentReadSessionMessagesParams,

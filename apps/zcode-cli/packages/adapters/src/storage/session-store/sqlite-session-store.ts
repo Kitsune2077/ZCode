@@ -48,6 +48,7 @@ import type {
   SessionStorePort,
   SharedContextImportCommitBundle,
   SharedContextImportTransition,
+  TaskUsageDetailQueryResult,
   TaskUsageQueryInput,
   TaskUsageQueryResult,
   TodoItem,
@@ -857,6 +858,10 @@ export class SqliteSessionStore
 
   async queryTaskUsage(input: TaskUsageQueryInput): Promise<TaskUsageQueryResult> {
     return usageRepository.queryTaskUsage(this.db, input);
+  }
+
+  async queryTaskUsageDetail(input: TaskUsageQueryInput): Promise<TaskUsageDetailQueryResult> {
+    return usageRepository.queryTaskUsageDetail(this.db, input);
   }
 
   async recordInputHistory(input: {

@@ -2,6 +2,7 @@
 import type { Event } from "@zcode/rpc";
 import { ServiceChannels } from "@zcode/shared";
 import type { CommandPayloadMap } from "@zcode/shared/zcode-protocol-v4";
+import type { V4ConversationUsageDetailResult } from "@zcode/shared/zcode-protocol-v4";
 import { createServiceDescriptor } from "#src/descriptors.js";
 import type {
   ZCodeImportSessionsResult,
@@ -609,6 +610,13 @@ export interface IZCodeTaskService {
     workspacePath: string;
     workspaceIdentity?: string;
   }): Promise<ZCodeTaskTokenUsageResult>;
+
+  /** 会话用量明细：最近请求（生成速率/TTFT）、最近轮次、工具分布。 */
+  getTaskTokenUsageDetail(params: {
+    taskId: string;
+    workspacePath: string;
+    workspaceIdentity?: string;
+  }): Promise<V4ConversationUsageDetailResult>;
 
   /** 获取 task 持久化快照文件路径（统一为 {taskId}.json，软删除例外为 .deleted.json） */
   getTaskSessionFilePath(params: {

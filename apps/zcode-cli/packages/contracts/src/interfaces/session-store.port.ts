@@ -1067,6 +1067,54 @@ export interface TaskUsageQueryResult {
   inputBaselineBySource: Record<string, number>;
 }
 
+/** 最近一次模型请求（生成速率 = outputTokens / generationMs，由消费端派生）。 */
+export interface TaskUsageLatestRequest {
+  requestId: string;
+  modelId: string;
+  status: string;
+  outputTokens: number;
+  /** first_token_at → completed_at；任一缺失时为 null（无法计算速率）。 */
+  generationMs: number | null;
+  durationMs: number | null;
+  timeToFirstTokenMs: number | null;
+}
+
+/** 当前（最近）轮次：turn_usage 已聚合模型与工具维度，直接取存储值。 */
+export interface TaskUsageLatestTurn {
+  turnId: string;
+  status: string;
+  startedAt: number;
+  durationMs: number | null;
+  timeToFirstTokenMs: number | null;
+  modelRequestCount: number;
+  toolCallCount: number;
+  toolErrorCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  totalTokens: number;
+}
+
+export interface TaskUsageToolItem {
+  toolName: string;
+  callCount: number;
+  errorCount: number;
+  avgDurationMs: number | null;
+}
+
+export interface TaskUsageDetailQueryResult {
+  sessionID: SessionId;
+  latestRequest: TaskUsageLatestRequest | null;
+  latestTurn: TaskUsageLatestTurn | null;
+  toolSummary: {
+    toolCallCount: number;
+    toolErrorCount: number;
+    items: TaskUsageToolItem[];
+  };
+}
+
 export interface UsageStorePort {
   recordModelUsage(input: ModelUsageRecord): Promise<void>;
   upsertTurnUsage(input: TurnUsageRecord): Promise<void>;
@@ -1074,6 +1122,7 @@ export interface UsageStorePort {
   pruneUsage(input?: { beforeTime?: number }): Promise<void>;
   queryAppUsage(input: AppUsageQueryInput): Promise<AppUsageQueryResult>;
   queryTaskUsage(input: TaskUsageQueryInput): Promise<TaskUsageQueryResult>;
+  queryTaskUsageDetail(input: TaskUsageQueryInput): Promise<TaskUsageDetailQueryResult>;
 }
 
 export interface LocalSettingStorePort {

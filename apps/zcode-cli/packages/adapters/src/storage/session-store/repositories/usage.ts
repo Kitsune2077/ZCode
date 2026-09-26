@@ -6,6 +6,7 @@ import type {
   AppUsageQueryInput,
   AppUsageQueryResult,
   AppUsageToolRow,
+  TaskUsageDetailQueryResult,
   TaskUsageQueryInput,
   TaskUsageQueryResult,
   ModelUsageRecord,
@@ -671,6 +672,177 @@ export async function queryTaskUsage(
     modelErrorCount,
     inputBaselineBySource,
   };
+}
+
+/**
+ * 会话用量明细（composer 状态栏/后续 MCP 查询共用）：
+ * - latestRequest：最近一次模型请求，供生成速率（output ÷ generationMs）与 TTFT 展示；
+ * - latestTurn：turn_usage 里最近一轮，该表已聚合模型与工具维度，直接取存储值；
+ * - toolSummary：tool_usage 按工具名的会话级分布与错误数。
+ *
+ * 与 queryTaskUsage 的“跨轮次增量基线”不同，这里只做窗口/排名读取，不改写账本口径。
+ */
+export async function queryTaskUsageDetail(
+  db: DatabaseSync,
+  input: TaskUsageQueryInput,
+): Promise<TaskUsageDetailQueryResult> {
+  const latestRequestRow = db
+    .prepare(
+      `select
+         id as requestId,
+         model_id as modelId,
+         status,
+         output_tokens as outputTokens,
+         first_token_at as firstTokenAt,
+         completed_at as completedAt,
+         duration_ms as durationMs,
+         time_to_first_token_ms as timeToFirstTokenMs
+       from model_usage
+       where session_id = ?
+       order by started_at desc, id desc
+       limit 1`,
+    )
+    .get(input.sessionID) as
+    | {
+        requestId: string;
+        modelId: string;
+        status: string;
+        outputTokens: number;
+        firstTokenAt: number | null;
+        completedAt: number | null;
+        durationMs: number | null;
+        timeToFirstTokenMs: number | null;
+      }
+    | undefined;
+
+  const latestRequest = latestRequestRow
+    ? {
+        requestId: latestRequestRow.requestId,
+        modelId: latestRequestRow.modelId,
+        status: latestRequestRow.status,
+        outputTokens: integer(latestRequestRow.outputTokens),
+        // 生成速率的分母：首 token 到完成。任一缺失即无法计算，返回 null 而不是编造 0。
+        generationMs:
+          latestRequestRow.firstTokenAt !== null && latestRequestRow.completedAt !== null
+            ? Math.max(0, latestRequestRow.completedAt - latestRequestRow.firstTokenAt)
+            : null,
+        durationMs: nullableInteger(latestRequestRow.durationMs),
+        timeToFirstTokenMs: nullableInteger(latestRequestRow.timeToFirstTokenMs),
+      }
+    : null;
+
+  const latestTurnRow = db
+    .prepare(
+      `select
+         turn_id as turnId,
+         status,
+         started_at as startedAt,
+         duration_ms as durationMs,
+         time_to_first_token_ms as timeToFirstTokenMs,
+         model_request_count as modelRequestCount,
+         tool_call_count as toolCallCount,
+         tool_error_count as toolErrorCount,
+         input_tokens as inputTokens,
+         output_tokens as outputTokens,
+         reasoning_tokens as reasoningTokens,
+         cache_creation_input_tokens as cacheCreationTokens,
+         cache_read_input_tokens as cacheReadTokens,
+         computed_total_tokens as totalTokens
+       from turn_usage
+       where session_id = ?
+       order by started_at desc
+       limit 1`,
+    )
+    .get(input.sessionID) as
+    | {
+        turnId: string;
+        status: string;
+        startedAt: number;
+        durationMs: number | null;
+        timeToFirstTokenMs: number | null;
+        modelRequestCount: number;
+        toolCallCount: number;
+        toolErrorCount: number;
+        inputTokens: number;
+        outputTokens: number;
+        reasoningTokens: number;
+        cacheCreationTokens: number;
+        cacheReadTokens: number;
+        totalTokens: number;
+      }
+    | undefined;
+
+  const latestTurn = latestTurnRow
+    ? {
+        turnId: latestTurnRow.turnId,
+        status: latestTurnRow.status,
+        startedAt: integer(latestTurnRow.startedAt),
+        durationMs: nullableInteger(latestTurnRow.durationMs),
+        timeToFirstTokenMs: nullableInteger(latestTurnRow.timeToFirstTokenMs),
+        modelRequestCount: integer(latestTurnRow.modelRequestCount),
+        toolCallCount: integer(latestTurnRow.toolCallCount),
+        toolErrorCount: integer(latestTurnRow.toolErrorCount),
+        inputTokens: integer(latestTurnRow.inputTokens),
+        outputTokens: integer(latestTurnRow.outputTokens),
+        reasoningTokens: integer(latestTurnRow.reasoningTokens),
+        cacheCreationTokens: integer(latestTurnRow.cacheCreationTokens),
+        cacheReadTokens: integer(latestTurnRow.cacheReadTokens),
+        totalTokens: integer(latestTurnRow.totalTokens),
+      }
+    : null;
+
+  const toolTotalsRow = db
+    .prepare(
+      `select
+         count(*) as toolCallCount,
+         coalesce(sum(case when status = 'error' then 1 else 0 end), 0) as toolErrorCount
+       from tool_usage
+       where session_id = ?`,
+    )
+    .get(input.sessionID) as { toolCallCount: number; toolErrorCount: number };
+
+  const toolRows = db
+    .prepare(
+      `select
+         tool_name as toolName,
+         count(*) as callCount,
+         coalesce(sum(case when status = 'error' then 1 else 0 end), 0) as errorCount,
+         avg(duration_ms) as avgDurationMs
+       from tool_usage
+       where session_id = ?
+       group by tool_name
+       order by callCount desc
+       limit 20`,
+    )
+    .all(input.sessionID) as unknown as Array<{
+    toolName: string;
+    callCount: number;
+    errorCount: number;
+    avgDurationMs: number | null;
+  }>;
+
+  return {
+    sessionID: input.sessionID,
+    latestRequest,
+    latestTurn,
+    toolSummary: {
+      toolCallCount: integer(toolTotalsRow?.toolCallCount),
+      toolErrorCount: integer(toolTotalsRow?.toolErrorCount),
+      items: toolRows.map((row) => ({
+        toolName: row.toolName,
+        callCount: integer(row.callCount),
+        errorCount: integer(row.errorCount),
+        avgDurationMs: nullableInteger(row.avgDurationMs),
+      })),
+    },
+  };
+}
+
+function nullableInteger(value: number | null | undefined): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+  return Math.max(0, Math.trunc(value));
 }
 
 function inputSideTokensFromNormalizedUsage(

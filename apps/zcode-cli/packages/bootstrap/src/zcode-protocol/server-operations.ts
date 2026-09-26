@@ -1835,6 +1835,38 @@ export async function getUsageStats(context: ZCodeProtocolAgentServerContext, ra
   return buildAppUsageSnapshot(result, buildOptions);
 }
 
+/**
+ * 会话用量明细（composer 状态栏 / 后续 MCP 查询）：
+ * 最近请求（生成速率与 TTFT）、最近轮次（turn_usage 聚合）、工具分布。
+ * 与 getTaskTokenUsage 同属只读聚合，事实源一致；无 usage store 时返回空明细而非抛错。
+ */
+export async function getTaskUsageDetail(
+  context: ZCodeProtocolAgentServerContext,
+  rawParams: unknown,
+) {
+  const params = parseParams(zcodeTaskTokenUsageParamsSchema, rawParams ?? {});
+  const emptyResult = {
+    sessionId: params.sessionId,
+    latestRequest: null,
+    latestTurn: null,
+    toolSummary: { toolCallCount: 0, toolErrorCount: 0, items: [] },
+  };
+  const usageStore = context.deps.sessionStore as Partial<UsageStorePort> | undefined;
+  if (!usageStore?.queryTaskUsageDetail) {
+    return emptyResult;
+  }
+
+  const detail = await usageStore.queryTaskUsageDetail({
+    sessionID: params.sessionId as SessionId,
+  });
+  return {
+    sessionId: detail.sessionID,
+    latestRequest: detail.latestRequest,
+    latestTurn: detail.latestTurn,
+    toolSummary: detail.toolSummary,
+  };
+}
+
 export async function readSession(context: ZCodeProtocolAgentServerContext, rawParams: unknown) {
   const params = parseParams(zcodeSessionReadParamsSchema, rawParams);
   const record = requireSession(context, params.sessionId, {
