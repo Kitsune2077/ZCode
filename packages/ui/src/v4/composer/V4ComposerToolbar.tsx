@@ -51,6 +51,7 @@ import {
 import { ThoughtLevelCycleControl } from "@/chat-input-toolbar/ThoughtLevelCycleControl.js";
 import { getNextThoughtLevelValue } from "@/chat-input-toolbar/thoughtLevelOptions.js";
 import type { V4ComposerConfigPicker } from "@/v4/composer/configPickerState.js";
+import { V4ComposerUsageStats } from "@/v4/composer/V4ComposerUsageStats.js";
 import { useToolbarShortcutBindings } from "@/v4/composer/toolbarShortcuts.js";
 import {
   resolveModelSelectTriggerDisplay,
@@ -369,6 +370,7 @@ function V4ComposerModelControlsImpl({
   modelSelectionState = MODEL_SELECTION_LOADING_STATE,
   modelSelectionReload,
   provider,
+  sessionId,
   isMobileViewport = false,
   draftMode = false,
   draftConfig,
@@ -1019,6 +1021,12 @@ function V4ComposerModelControlsImpl({
         locale={locale}
         onSendCompressionCommand={onSendCompressionCommand}
         compressionDisabled={disabled || recoveryPending}
+      />
+      {/* 用量状态栏（会话/今日累计）：数据走既有 RPC，上下文占比由上方 ChatContextUsage 负责。 */}
+      <V4ComposerUsageStats
+        workspacePath={workspacePath}
+        workspaceIdentity={workspaceIdentity}
+        sessionId={sessionId}
       />
       {modelSelectionState.status === "error" && modelSelectionReload ? (
         <Button

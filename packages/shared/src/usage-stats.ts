@@ -159,7 +159,9 @@ export interface UsageStatsSnapshot {
 }
 
 // ── App Usage（agent 数据库真实统计）────────────────────────────────
-export const APP_USAGE_RANGES = ["all", "7d", "30d"] as const;
+// "today"：设备本地时区自然日（协议入参 timeZone 对齐本地午夜），供 composer 用量
+// 状态栏与设置页「今日」范围共用同一事实源。
+export const APP_USAGE_RANGES = ["all", "7d", "30d", "today"] as const;
 export type AppUsageRange = (typeof APP_USAGE_RANGES)[number];
 
 export const appUsageFavoriteModelSchema = z.object({

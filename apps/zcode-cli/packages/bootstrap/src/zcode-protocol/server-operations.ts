@@ -1764,6 +1764,17 @@ export async function listSessionSubagents(
 }
 
 const APP_USAGE_RANGE_DAYS: Record<string, number> = { "7d": 7, "30d": 30 };
+const DAY_MS = 86_400_000;
+
+/**
+ * "today" 的窗口起点：timeZone 本地时区当日午夜对应的 UTC 毫秒。
+ * dayIndex 语义与 usage-stats-builder 的 heatmap 一致（(ts + tzOffsetMs) / DAY 取整），
+ * 因此本地午夜 = dayIndex*DAY - tzOffsetMs。
+ */
+function resolveTodaySinceMs(until: number, tzOffsetMs: number): number {
+  const dayIndex = Math.floor((until + tzOffsetMs) / DAY_MS);
+  return dayIndex * DAY_MS - tzOffsetMs;
+}
 
 export async function getUsageStats(context: ZCodeProtocolAgentServerContext, rawParams: unknown) {
   const params = parseParams(zcodeUsageStatsParamsSchema, rawParams ?? {});
@@ -1771,7 +1782,12 @@ export async function getUsageStats(context: ZCodeProtocolAgentServerContext, ra
   const until = Date.now();
   const tzOffsetMs = resolveTzOffsetMs(timeZone, until);
   const rangeDays = APP_USAGE_RANGE_DAYS[params.range] ?? 30;
-  const since = params.range === "all" ? 0 : until - rangeDays * 86_400_000;
+  const since =
+    params.range === "all"
+      ? 0
+      : params.range === "today"
+        ? resolveTodaySinceMs(until, tzOffsetMs)
+        : until - rangeDays * DAY_MS;
   const buildOptions = {
     range: params.range,
     timeZone,

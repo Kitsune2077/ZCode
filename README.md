@@ -42,6 +42,7 @@ ZCode 是 AI 编程工作台，提供桌面应用、浏览器界面和终端 Age
 
 ### 修复与工具链
 
+- **Composer 用量状态栏**：对话输入工具条常驻「会话 / 今日」token 累计（今日按本地时区自然日，App 用量新增「今日」时间范围），数据复用 agent SQLite 聚合并经协议读取，规则见 [packages/ui/docs/usage-status-bar.md](packages/ui/docs/usage-status-bar.md)；便携版下 usage 数据库随程序目录迁移。
 - Windows 开发链路修复：`pnpm dev:desktop` 对 PATH 环境变量键大小写与 pnpm 安装形态健壮，各类终端均可启动。
 - Windows 上 tsup `--onSuccess` 与 zcode-agent tsx 入口的兼容修复。
 

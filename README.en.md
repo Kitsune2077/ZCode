@@ -40,6 +40,7 @@ This repository is forked from the official ZCode at the v3.14.3 baseline. On to
 
 ### Fixes and tooling
 
+- **Composer usage status bar**: the chat input toolbar keeps persistent session / today token totals (today = the local-time-zone calendar day; App usage gains a "Today" range), reading the agent SQLite aggregates over the protocol. See [packages/ui/docs/usage-status-bar.md](packages/ui/docs/usage-status-bar.md). The portable build now also keeps the usage database beside the app.
 - Windows dev-chain fixes: `pnpm dev:desktop` is robust against PATH env-key casing and pnpm install layouts across terminals.
 - Windows compatibility fixes for the tsup `--onSuccess` hook and the zcode-agent tsx entrypoint.
 
