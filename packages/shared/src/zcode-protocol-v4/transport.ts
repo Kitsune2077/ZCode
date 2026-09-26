@@ -868,6 +868,27 @@ export const v4ConversationUsageDetailResultSchema = z
           .max(20),
       })
       .strict(),
+    // 子代理（子会话）消耗：与主会话合计分开统计，UI 侧不得与会话合计相加。
+    subagents: z
+      .object({
+        totalTokens: z.number().int().nonnegative(),
+        requestCount: z.number().int().nonnegative(),
+        toolCallCount: z.number().int().nonnegative(),
+        sessionCount: z.number().int().nonnegative(),
+        items: z
+          .array(
+            z
+              .object({
+                childSessionId: z.string().min(1),
+                totalTokens: z.number().int().nonnegative(),
+                requestCount: z.number().int().nonnegative(),
+                toolCallCount: z.number().int().nonnegative(),
+              })
+              .strict(),
+          )
+          .max(20),
+      })
+      .strict(),
   })
   .strict();
 export type V4ConversationUsageDetailResult = z.infer<

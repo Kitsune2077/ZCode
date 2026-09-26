@@ -821,6 +821,49 @@ export async function queryTaskUsageDetail(
     avgDurationMs: number | null;
   }>;
 
+  // 子代理用量：session.parent_id 关联子会话，再按子会话聚合模型与工具。
+  // 两次查询分别取 token 与工具调用，避免一个 join 产生笛卡尔积把计数放大。
+  const subagentTokenRows = db
+    .prepare(
+      `select
+         s.id as childSessionId,
+         coalesce(sum(coalesce(m.provider_total_tokens, m.computed_total_tokens)), 0) as totalTokens,
+         count(m.id) as requestCount
+       from session s
+       left join model_usage m on m.session_id = s.id
+       where s.parent_id = ?
+       group by s.id
+       order by totalTokens desc
+       limit 20`,
+    )
+    .all(input.sessionID) as unknown as Array<{
+    childSessionId: string;
+    totalTokens: number;
+    requestCount: number;
+  }>;
+
+  const subagentToolRows = db
+    .prepare(
+      `select
+         s.id as childSessionId,
+         count(t.id) as toolCallCount
+       from session s
+       left join tool_usage t on t.session_id = s.id
+       where s.parent_id = ?
+       group by s.id`,
+    )
+    .all(input.sessionID) as unknown as Array<{ childSessionId: string; toolCallCount: number }>;
+
+  const toolCallsByChild = new Map(
+    subagentToolRows.map((row) => [row.childSessionId, integer(row.toolCallCount)]),
+  );
+  const subagentItems = subagentTokenRows.map((row) => ({
+    childSessionId: row.childSessionId,
+    totalTokens: integer(row.totalTokens),
+    requestCount: integer(row.requestCount),
+    toolCallCount: toolCallsByChild.get(row.childSessionId) ?? 0,
+  }));
+
   return {
     sessionID: input.sessionID,
     latestRequest,
@@ -834,6 +877,13 @@ export async function queryTaskUsageDetail(
         errorCount: integer(row.errorCount),
         avgDurationMs: nullableInteger(row.avgDurationMs),
       })),
+    },
+    subagents: {
+      totalTokens: subagentItems.reduce((sum, item) => sum + item.totalTokens, 0),
+      requestCount: subagentItems.reduce((sum, item) => sum + item.requestCount, 0),
+      toolCallCount: subagentItems.reduce((sum, item) => sum + item.toolCallCount, 0),
+      sessionCount: subagentItems.length,
+      items: subagentItems,
     },
   };
 }

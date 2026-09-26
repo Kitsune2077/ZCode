@@ -48,6 +48,18 @@ export interface UsageStatusBarToolUsage {
   }[];
 }
 
+export interface UsageStatusBarSubagents {
+  readonly totalTokens: number;
+  readonly requestCount: number;
+  readonly toolCallCount: number;
+  readonly sessionCount: number;
+  readonly items: readonly {
+    readonly childSessionId: string;
+    readonly totalTokens: number;
+    readonly requestCount: number;
+  }[];
+}
+
 export interface UsageStatusBarModel {
   /** 会话累计；null = 无会话（草稿态）或尚未取到。 */
   readonly session: UsageStatusBarSessionUsage | null;
@@ -59,6 +71,8 @@ export interface UsageStatusBarModel {
   readonly generation: UsageStatusBarGeneration | null;
   /** 会话级工具调用分布。 */
   readonly tools: UsageStatusBarToolUsage | null;
+  /** 子代理消耗；与会话合计分开统计，UI 不得相加。 */
+  readonly subagents: UsageStatusBarSubagents | null;
 }
 
 export function buildUsageStatusBarModel(input: {
@@ -78,6 +92,27 @@ export function buildUsageStatusBarModel(input: {
     turn: deriveTurn(input.detail ?? null),
     generation: deriveGeneration(input.detail ?? null),
     tools: deriveTools(input.detail ?? null),
+    subagents: deriveSubagents(input.detail ?? null),
+  };
+}
+
+function deriveSubagents(
+  detail: V4ConversationUsageDetailResult | null,
+): UsageStatusBarSubagents | null {
+  const subagents = detail?.subagents;
+  if (!subagents || subagents.sessionCount <= 0) {
+    return null;
+  }
+  return {
+    totalTokens: subagents.totalTokens,
+    requestCount: subagents.requestCount,
+    toolCallCount: subagents.toolCallCount,
+    sessionCount: subagents.sessionCount,
+    items: subagents.items.map((item) => ({
+      childSessionId: item.childSessionId,
+      totalTokens: item.totalTokens,
+      requestCount: item.requestCount,
+    })),
   };
 }
 
@@ -152,7 +187,8 @@ export function hasUsageStatusBarContent(model: UsageStatusBarModel): boolean {
     model.todayTotalTokens !== null ||
     model.turn !== null ||
     model.generation !== null ||
-    model.tools !== null
+    model.tools !== null ||
+    model.subagents !== null
   );
 }
 

@@ -32,12 +32,16 @@ function detail(overrides: {
   latestRequest?: V4ConversationUsageDetailResult["latestRequest"];
   latestTurn?: V4ConversationUsageDetailResult["latestTurn"];
   toolSummary?: V4ConversationUsageDetailResult["toolSummary"];
+  subagents?: V4ConversationUsageDetailResult["subagents"];
 }): V4ConversationUsageDetailResult {
   return {
     sessionId: "sess-1",
     latestRequest: overrides.latestRequest ?? null,
     latestTurn: overrides.latestTurn ?? null,
     toolSummary: overrides.toolSummary ?? { toolCallCount: 0, toolErrorCount: 0, items: [] },
+    subagents:
+      overrides.subagents ??
+      ({ totalTokens: 0, requestCount: 0, toolCallCount: 0, sessionCount: 0, items: [] } as const),
   };
 }
 
@@ -48,7 +52,42 @@ test("draft mode keeps only the today metric", () => {
   assert.equal(model.turn, null);
   assert.equal(model.generation, null);
   assert.equal(model.tools, null);
+  assert.equal(model.subagents, null);
   assert.equal(hasUsageStatusBarContent(model), true);
+});
+
+test("subagents stay separate from the session total", () => {
+  const model = buildUsageStatusBarModel({
+    taskUsage: taskUsage({ totalTokens: 5_000, modelRequestCount: 3 }),
+    todayTotalTokens: null,
+    detail: detail({
+      subagents: {
+        totalTokens: 42_000,
+        requestCount: 12,
+        toolCallCount: 7,
+        sessionCount: 2,
+        items: [
+          { childSessionId: "child-aaaaaaaa", totalTokens: 30_000, requestCount: 8, toolCallCount: 5 },
+          { childSessionId: "child-bbbbbbbb", totalTokens: 12_000, requestCount: 4, toolCallCount: 2 },
+        ],
+      },
+    }),
+  });
+  assert.equal(model.session?.totalTokens, 5_000);
+  assert.equal(model.subagents?.totalTokens, 42_000);
+  assert.equal(model.subagents?.sessionCount, 2);
+  assert.equal(model.subagents?.items[0]?.childSessionId, "child-aaaaaaaa");
+  // 会话合计不被子代理污染（两者口径独立）。
+  assert.notEqual(model.session?.totalTokens, 42_000);
+});
+
+test("zero subagent sessions hide the item", () => {
+  const model = buildUsageStatusBarModel({
+    taskUsage: taskUsage({ totalTokens: 1 }),
+    todayTotalTokens: null,
+    detail: detail({}),
+  });
+  assert.equal(model.subagents, null);
 });
 
 test("zero totals are hidden instead of rendering 0", () => {

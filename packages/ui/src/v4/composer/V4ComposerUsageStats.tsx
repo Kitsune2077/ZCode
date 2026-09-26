@@ -53,6 +53,7 @@ export function V4ComposerUsageStats({
     turn: null,
     generation: null,
     tools: null,
+    subagents: null,
   });
   const requestSeqRef = useRef(0);
 
@@ -183,6 +184,23 @@ export function V4ComposerUsageStats({
     );
   }, [intl, locale, model.tools]);
 
+  const subagentsTooltip = useMemo(() => {
+    if (!model.subagents) return null;
+    const breakdown = model.subagents.items
+      .slice(0, 6)
+      .map((item) => `${item.childSessionId.slice(0, 8)} ×${item.totalTokens}`)
+      .join(", ");
+    return intl.formatMessage(
+      { id: "composer.usage.subagentsTooltip" },
+      {
+        total: formatFullTokenCount(locale, model.subagents.totalTokens),
+        sessions: formatFullTokenCount(locale, model.subagents.sessionCount),
+        requests: formatFullTokenCount(locale, model.subagents.requestCount),
+        breakdown: breakdown.length > 0 ? breakdown : "--",
+      },
+    );
+  }, [intl, locale, model.subagents]);
+
   const speedTier = model.generation
     ? resolveGenerationSpeedTier(model.generation.tokensPerSecond)
     : null;
@@ -231,6 +249,13 @@ export function V4ComposerUsageStats({
           {model.tools.toolErrorCount > 0 ? (
             <span className="text-destructive"> !{model.tools.toolErrorCount}</span>
           ) : null}
+        </span>
+      ) : null}
+      {model.subagents ? (
+        <span title={subagentsTooltip ?? undefined}>
+          {intl.formatMessage({ id: "composer.usage.subagents" })}
+          &nbsp;{formatCompactTokenCount(locale, model.subagents.totalTokens)}
+          <span className="text-foreground-subtlest"> ×{model.subagents.sessionCount}</span>
         </span>
       ) : null}
     </div>

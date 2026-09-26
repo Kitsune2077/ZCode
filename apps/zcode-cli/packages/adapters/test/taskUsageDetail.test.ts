@@ -10,6 +10,10 @@ import { queryTaskUsageDetail } from "../src/storage/session-store/repositories/
 function createDb(): DatabaseSync {
   const db = new DatabaseSync(":memory:");
   db.exec(`
+    create table session (
+      id text primary key,
+      parent_id text
+    );
     create table model_usage (
       id text primary key,
       session_id text not null,
@@ -143,6 +147,60 @@ test("queryTaskUsageDetail reports empty detail for a session without usage rows
     assert.equal(result.latestRequest, null);
     assert.equal(result.latestTurn, null);
     assert.deepEqual(result.toolSummary, { toolCallCount: 0, toolErrorCount: 0, items: [] });
+    assert.deepEqual(result.subagents, {
+      totalTokens: 0,
+      requestCount: 0,
+      toolCallCount: 0,
+      sessionCount: 0,
+      items: [],
+    });
+  } finally {
+    db.close();
+  }
+});
+
+test("subagent usage aggregates per child session without inflating tool counts", async () => {
+  const db = createDb();
+  try {
+    db.prepare("insert into session (id, parent_id) values ('sess-1', null)").run();
+    db.prepare("insert into session (id, parent_id) values ('child-a', 'sess-1')").run();
+    db.prepare("insert into session (id, parent_id) values ('child-b', 'sess-1')").run();
+    // 另一个主会话的子代理不得混入。
+    db.prepare("insert into session (id, parent_id) values ('child-other', 'sess-2')").run();
+
+    const insertModel = (id: string, sessionId: string, total: number) =>
+      db
+        .prepare(
+          `insert into model_usage (id, session_id, model_id, status, started_at,
+             first_token_at, completed_at, output_tokens, input_tokens, computed_total_tokens)
+           values (?, ?, 'glm-5.3', 'completed', 1, 2, 3, 10, 20, ?)`,
+        )
+        .run(id, sessionId, total);
+    insertModel("m1", "child-a", 30_000);
+    insertModel("m2", "child-a", 10_000);
+    insertModel("m3", "child-b", 5_000);
+    insertModel("m4", "child-other", 99_999);
+
+    const insertTool = (id: string, sessionId: string) =>
+      db
+        .prepare(
+          `insert into tool_usage (id, session_id, tool_call_id, tool_name, status, started_at)
+           values (?, ?, ?, 'read', 'completed', 1)`,
+        )
+        .run(id, sessionId, id);
+    insertTool("t1", "child-a");
+    insertTool("t2", "child-a");
+    insertTool("t3", "child-b");
+
+    const result = await queryTaskUsageDetail(db, { sessionID: "sess-1" });
+    assert.equal(result.subagents.sessionCount, 2);
+    assert.equal(result.subagents.totalTokens, 45_000);
+    assert.equal(result.subagents.requestCount, 3);
+    // 工具计数来自独立查询：child-a 2 次不应被模型行数（2）放大成乘积。
+    assert.equal(result.subagents.toolCallCount, 3);
+    assert.equal(result.subagents.items[0]?.childSessionId, "child-a");
+    assert.equal(result.subagents.items[0]?.totalTokens, 40_000);
+    assert.equal(result.subagents.items[0]?.toolCallCount, 2);
   } finally {
     db.close();
   }

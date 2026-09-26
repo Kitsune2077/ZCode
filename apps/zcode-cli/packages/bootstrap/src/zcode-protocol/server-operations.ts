@@ -1850,6 +1850,7 @@ export async function getTaskUsageDetail(
     latestRequest: null,
     latestTurn: null,
     toolSummary: { toolCallCount: 0, toolErrorCount: 0, items: [] },
+    subagents: { totalTokens: 0, requestCount: 0, toolCallCount: 0, sessionCount: 0, items: [] },
   };
   const usageStore = context.deps.sessionStore as Partial<UsageStorePort> | undefined;
   if (!usageStore?.queryTaskUsageDetail) {
@@ -1864,6 +1865,7 @@ export async function getTaskUsageDetail(
     latestRequest: detail.latestRequest,
     latestTurn: detail.latestTurn,
     toolSummary: detail.toolSummary,
+    subagents: detail.subagents,
   };
 }
 

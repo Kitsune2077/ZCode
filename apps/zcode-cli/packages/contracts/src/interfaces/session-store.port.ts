@@ -1104,6 +1104,22 @@ export interface TaskUsageToolItem {
   avgDurationMs: number | null;
 }
 
+/** 单个子代理（子会话）的用量；子会话经 session.parent_id 关联主会话。 */
+export interface TaskUsageSubagentItem {
+  childSessionId: string;
+  totalTokens: number;
+  requestCount: number;
+  toolCallCount: number;
+}
+
+export interface TaskUsageSubagentSummary {
+  totalTokens: number;
+  requestCount: number;
+  toolCallCount: number;
+  sessionCount: number;
+  items: TaskUsageSubagentItem[];
+}
+
 export interface TaskUsageDetailQueryResult {
   sessionID: SessionId;
   latestRequest: TaskUsageLatestRequest | null;
@@ -1113,6 +1129,8 @@ export interface TaskUsageDetailQueryResult {
     toolErrorCount: number;
     items: TaskUsageToolItem[];
   };
+  /** 子代理消耗；无子会话时 sessionCount=0。与主会话合计分开统计，不重复计数。 */
+  subagents: TaskUsageSubagentSummary;
 }
 
 export interface UsageStorePort {
