@@ -706,7 +706,9 @@ export default {
   },
   win: {
     // nsis：常规安装包；zip：便携包，内容与 win-unpacked 一致，解压后直接双击 ZCode.exe 即可运行
-    // （用户不需要管理员权限，也不写注册表；应用数据仍落在用户目录的 .zcode 下）。
+    // （用户不需要管理员权限，也不写注册表）。便携形态下应用数据默认落在 exe 同目录的 .zcode 下
+    // （判定与优先级见 src/main/desktopPortableHome.ts 与 docs/portable-data-dir.md）；
+    // NSIS 安装版带卸载器，仍使用用户主目录，行为不变。
     target: ["nsis", "zip"],
     artifactName: buildDesktopArtifactName("win"),
   },

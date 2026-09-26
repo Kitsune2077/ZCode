@@ -162,6 +162,7 @@ import {
   runtimeUserDataPath,
   shouldUseElectronDefaultUserDataPath,
 } from "./desktopRuntimeEnv.js";
+import { resolveSettingsHomeAnchor } from "./desktopPortableHome.js";
 import {
   disposeHostProcess,
   disposeHostProcessAndWait,
@@ -530,7 +531,9 @@ async function runBrowserCommandOnView(params: {
 let currentDesktopZoomLevel = 0;
 let currentDesktopWindowSize: DesktopWindowSize | undefined;
 const preloadPath = join(import.meta.dirname, "../preload/index.cjs");
-const settingsFile = join(homedir(), ".zcode", "v2", "setting.json");
+// 便携版下该文件位于 exe 目录的 .zcode/v2（启动早期 bootstrap 已设置 ZCODE_DESKTOP_HOME_DIR）；
+// 安装版与开发态仍是用户主目录，行为不变。
+const settingsFile = join(resolveSettingsHomeAnchor(process.env, homedir()), ".zcode", "v2", "setting.json");
 let activeAppShutdownPolicy = resolveAppShutdownPolicy("normal", process.platform);
 let activeAppShutdownKind: AppShutdownKind | null = null;
 const WINDOWS_AGENT_FORCE_KILL_TIMEOUT_MS = 2_000;

@@ -1,13 +1,16 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { resolveSettingsHomeAnchor } from "./desktopPortableHome.js";
 
 interface ChromiumHardwareAccelerationApp {
   disableHardwareAcceleration(): void;
 }
 
-function resolveChromiumHardwareAccelerationSettingsFile(homePath: string = homedir()): string {
-  return join(homePath, ".zcode", "v2", "setting.json");
+function resolveChromiumHardwareAccelerationSettingsFile(): string {
+  // 便携版启动早期已把 ZCODE_DESKTOP_HOME_DIR 指到 exe 目录（见 desktopDataBaseDirBootstrap）；
+  // 该 bootstrap 的求值顺序在其后，因此这里能读到便携锚点，安装版则仍是用户主目录。
+  return join(resolveSettingsHomeAnchor(process.env, homedir()), ".zcode", "v2", "setting.json");
 }
 
 function extractBootstrapChromiumHardwareAccelerationEnabled(rawValue: unknown): boolean {
