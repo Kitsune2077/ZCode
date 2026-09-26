@@ -19,6 +19,33 @@ ZCode 是 AI 编程工作台，提供桌面应用、浏览器界面和终端 Age
 
 - 2026-9-23：更新至 ZCode v3.14.3 版本。
 
+## 相对官方仓库的修改说明
+
+本仓库 Fork 自官方 ZCode，版本基线为 v3.14.3，在其之上叠加了以下改动（其余内容随官方同步）。
+
+### NewAPI 对接
+
+- **Provider 自动配置**：在登录页粘贴 NewAPI 访问令牌，ZCode 自动换取 / 创建 `sk-` API Key、拉取模型列表并落成个人 Provider，设计见 [packages/services/docs/newapi-provider-provisioning.md](packages/services/docs/newapi-provider-provisioning.md)。
+- **浏览器登录（会话接管）**：在应用内弹窗完成 NewAPI 登录（支持部署开启的任意登录方式），读取会话 cookie 换取访问令牌，无需手动复制密钥，设计见 [packages/services/docs/newapi-browser-login.md](packages/services/docs/newapi-browser-login.md)。
+- **账号与用量**：左下角显示 NewAPI 账号身份；设置 → 用量信息新增 NewAPI 标签页，见 [packages/services/docs/newapi-account-usage.md](packages/services/docs/newapi-account-usage.md)。
+- **连接语义**：一次只保留一条 NewAPI 连接；重新登录、换域名或换账号时自动替换旧 Provider，不产生 `NewAPI 2` / `NewAPI 3` 堆积。
+- **登录表单自适应**：有浏览器登录能力的平台（桌面端）以账号登录为主路径，手动访问令牌折叠为「高级」选项；Web 等无该能力的平台以手动令牌为主路径。
+- **非智谱用户界面**：自建 NewAPI / 自定义 Provider 用户不再被弹回登录页，隐藏不适用的 Coding Plan 升级入口。
+
+### 桌面版与分发
+
+- **Windows 便携包数据随程序走**：打包产出的免安装便携 ZIP 运行时，应用数据默认保存在程序同级的 `.zcode` 目录，拷贝整个目录即可迁移配置；NSIS 安装版行为不变，仍使用用户主目录。规则见 [packages/desktop/docs/portable-data-dir.md](packages/desktop/docs/portable-data-dir.md)。
+- **自动更新开关**：支持显式关闭自动更新，且关闭后不再受线上强制升级 gate 拦截，适合自建与私有构建场景。
+- **Lark CLI 插件默认随包**：捆绑对应平台二进制，用户无需额外安装 Node.js。
+- **GitHub Actions 构建发布**：桌面安装包通过 CI 多平台矩阵构建并发布到 Releases，见 [packages/desktop/docs/ci-desktop-installers.md](packages/desktop/docs/ci-desktop-installers.md)。
+- **Web 端 Docker 镜像**：单容器同时托管 Web 前端与 Agent 后端，见 [docker/web/README.md](docker/web/README.md)。
+
+### 修复与工具链
+
+- Windows 开发链路修复：`pnpm dev:desktop` 对 PATH 环境变量键大小写与 pnpm 安装形态健壮，各类终端均可启动。
+- Windows 上 tsup `--onSuccess` 与 zcode-agent tsx 入口的兼容修复。
+
+
 ## 初始化
 
 准备 Git、Node.js **24.14.0** 和 pnpm **10.33.2**，版本以 [mise.toml](mise.toml) 为准。以下开发和打包命令均在仓库根目录执行。
@@ -164,7 +191,7 @@ pnpm bundle:desktop -- --help
 
 默认目标为 macOS arm64，默认输出目录为 `packages/desktop/dist/`。`--os` 支持 `mac`、`win`、`linux`，`--arch` 支持 `x64`、`arm64`；实际打包与签名需要目标平台对应的工具和配置。
 
-Windows 目标同时产出 NSIS 安装包（`.exe`）与便携 ZIP：解压到任意目录后直接双击 `ZCode.exe` 即可运行，无需安装、不写注册表（应用数据仍保存在用户目录的 `.zcode` 下）。
+Windows 目标同时产出 NSIS 安装包（`.exe`）与便携 ZIP：解压到任意目录后直接双击 `ZCode.exe` 即可运行，无需安装、不写注册表。便携形态下应用数据默认保存在程序同级的 `.zcode` 目录（拷贝整个目录即可迁移配置）；NSIS 安装版仍使用用户主目录的 `.zcode`。
 
 桌面安装包也可以交给 GitHub Actions 构建并发布到 Releases（多平台矩阵、缓存加速、产物附带 sha256 与来源说明），见 [packages/desktop/docs/ci-desktop-installers.md](packages/desktop/docs/ci-desktop-installers.md)。
 

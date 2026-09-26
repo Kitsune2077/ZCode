@@ -17,6 +17,33 @@ ZCode is an AI coding workspace with desktop, browser, and terminal interfaces. 
 
 - 2026-9-23: Updated to ZCode v3.14.3.
 
+## Changes from the upstream repository
+
+This repository is forked from the official ZCode at the v3.14.3 baseline. On top of it, the following changes are layered (everything else tracks upstream).
+
+### NewAPI integration
+
+- **Automatic provider provisioning**: paste a NewAPI access token on the login screen and ZCode fetches or creates the `sk-` API key, imports the model list, and lands a personal provider. See [packages/services/docs/newapi-provider-provisioning.md](packages/services/docs/newapi-provider-provisioning.md).
+- **Browser sign-in (session takeover)**: sign in to NewAPI inside an in-app popup (any login method the deployment offers), and ZCode exchanges the session cookie for an access token - no manual key copying. See [packages/services/docs/newapi-browser-login.md](packages/services/docs/newapi-browser-login.md).
+- **Account and usage**: the sidebar footer shows the NewAPI account identity; Settings → Usage gains a NewAPI tab. See [packages/services/docs/newapi-account-usage.md](packages/services/docs/newapi-account-usage.md).
+- **Connection semantics**: at most one NewAPI connection is kept; re-login, domain changes, or account switches replace the previous provider instead of piling up `NewAPI 2` / `NewAPI 3`.
+- **Adaptive login form**: platforms with browser sign-in (desktop) make account login the primary path and fold the manual access token into an advanced section; platforms without it (Web) use the manual token as the primary path.
+- **Non-Zhipu UI fixes**: self-hosted NewAPI / custom-provider users are no longer bounced back to the login screen, and inapplicable Coding Plan upgrade entries are hidden.
+
+### Desktop and distribution
+
+- **Portable data dir next to the app**: the Windows portable ZIP keeps application data in a `.zcode` directory beside the executable by default - copy the whole folder to migrate. The NSIS installer keeps using the user home. See [packages/desktop/docs/portable-data-dir.md](packages/desktop/docs/portable-data-dir.md).
+- **Auto-update switches**: the auto updater can be disabled explicitly, and doing so also skips the online forced-upgrade gate - suitable for self-hosted and private builds.
+- **Lark CLI plugin bundled by default**: ships platform binaries so users need no extra Node.js install.
+- **GitHub Actions builds**: desktop installers are built on a CI matrix and published to Releases. See [packages/desktop/docs/ci-desktop-installers.md](packages/desktop/docs/ci-desktop-installers.md).
+- **Web Docker image**: a single container hosts the Web frontend and the agent backend. See [docker/web/README.md](docker/web/README.md).
+
+### Fixes and tooling
+
+- Windows dev-chain fixes: `pnpm dev:desktop` is robust against PATH env-key casing and pnpm install layouts across terminals.
+- Windows compatibility fixes for the tsup `--onSuccess` hook and the zcode-agent tsx entrypoint.
+
+
 ## Setup
 
 Install Git, Node.js **24.14.0**, and pnpm **10.33.2**. [mise.toml](mise.toml) is the source of truth for tool versions. Run all development and packaging commands below from the repository root.
