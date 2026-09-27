@@ -857,6 +857,7 @@ const zhCN: Record<string, string> = {
   "logout.confirm.ok": "断开连接并重启",
   "logout.confirm.cancel": "取消",
   "sidebar.profile.notLoggedIn": "连接使用",
+  "sidebar.profile.newApiConnected": "NewAPI",
   "app.selectFile": "选择文件以开始",
   "app.workspace": "工作区",
   "browser.title": "浏览器",

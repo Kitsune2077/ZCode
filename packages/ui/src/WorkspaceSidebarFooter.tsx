@@ -155,6 +155,15 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
       ? newApiAccount.state.info.displayName?.trim() || newApiAccount.state.info.username
       : null;
   const newApiConnection = user ? null : newApiAccount.connection;
+  // 连接存在但账号名未知（读取中 / 令牌过期续期失败）时，此前回落「连接使用」，
+  // 而菜单仍按连接态给「断开连接」——同一处 UI 自相矛盾。这里改为中性的
+  // 「NewAPI」标识：既不假装已退出，也不伪造账号名。
+  const newApiIdentityName = !user
+    ? newApiAccountName ??
+      (newApiConnection
+        ? intl.formatMessage({ id: "sidebar.profile.newApiConnected" })
+        : null)
+    : null;
   const refreshNewApiConnection = newApiAccount.refreshConnection;
   const disconnectNewApi = useCallback(async () => {
     if (!newApiConnection) return;
@@ -167,11 +176,11 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
       refreshNewApiConnection();
     }
   }, [credentialService, newApiConnection, refreshNewApiConnection]);
-  const profileBadge = getSidebarProfileBadge(user, intl.formatMessage, newApiAccountName);
-  const avatarFallbackText = getAvatarFallbackText(user, newApiAccountName);
+  const profileBadge = getSidebarProfileBadge(user, intl.formatMessage, newApiIdentityName);
+  const avatarFallbackText = getAvatarFallbackText(user, newApiIdentityName);
   const avatarKey =
-    user?.avatarUrl ?? user?.id ?? (newApiAccountName ? `newapi:${newApiAccountName}` : "guest");
-  const showAuthRestoreLoading = !user && !newApiAccountName && isRestoringOAuthSession;
+    user?.avatarUrl ?? user?.id ?? (newApiIdentityName ? `newapi:${newApiIdentityName}` : "guest");
+  const showAuthRestoreLoading = !user && !newApiIdentityName && isRestoringOAuthSession;
   const usageSummaryState = useWorkspaceSidebarFooterUsageSummaryState({
     enabled: true,
     workspaceIdentity,

@@ -939,6 +939,7 @@ const enUS: Record<string, string> = {
   "logout.confirm.ok": "Disconnect and restart",
   "logout.confirm.cancel": "Cancel",
   "sidebar.profile.notLoggedIn": "Connect",
+  "sidebar.profile.newApiConnected": "NewAPI",
   "app.selectFile": "Select a file to get started",
   "app.workspace": "Workspace",
   "browser.title": "Browser",

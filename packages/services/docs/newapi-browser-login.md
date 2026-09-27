@@ -162,7 +162,11 @@ services 用 cookie 调 POST /api/user/auth/refresh → access token
 - C：用户在窗口内点取消/直接关窗 → 返回 `cancelled`，不写入任何凭据。
 - D：超时（默认 5 分钟）→ 返回 `timeout`，窗口关闭，凭据不变。
 - E：cookie 拿到但刷新被拒（如 IP/UA 不匹配）→ 明确提示"会话校验未通过，请用同一网络环境重新登录"。
-- F：已有连接的 refresh cookie 过期 → 自动刷新一次；仍失败则标记连接失效并提示重新登录，不影响其它 Provider。
+- F：访问令牌过期 → 账号读取路径自动续期一次：用保存的 refresh cookie 兑换新令牌，
+  连同服务端轮换后的 cookie 一起回写凭据，再以新令牌重读；cookie 也失效时按读取失败
+  呈现错误并提示重新登录，不影响其它 Provider。已实现
+  （`packages/ui/src/lib/newApiAccountRefresh.ts`，编排入口 `useNewApiAccount`；
+  令牌失效期间左下角显示中性「NewAPI」标识，不再与菜单的「断开连接」自相矛盾）。
 - G：老版本 NewAPI（无 `new_api_refresh`）→ 登录窗口等待超时或读不到 cookie；
   用户展开「高级」手动粘贴 access token 仍可连接（该路径不变，只是默认折叠）。
 - G2：Web（无 `openNewApiLoginWindow` 能力）→ 表单不渲染浏览器登录入口，

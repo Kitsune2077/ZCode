@@ -6,7 +6,14 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import type { NewApiAccountInfo } from "@zcode/services";
-import { loadNewApiConnection, type NewApiConnection } from "@/lib/newApiConnection.js";
+import {
+  loadNewApiConnection,
+  loadNewApiRefreshCookie,
+  saveNewApiConnection,
+  saveNewApiRefreshCookie,
+  type NewApiConnection,
+} from "@/lib/newApiConnection.js";
+import { fetchNewApiAccountWithAutoRefresh } from "@/lib/newApiAccountRefresh.js";
 import { useServices } from "./useServices.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
 
@@ -72,7 +79,7 @@ export interface NewApiAccountResult {
 
 export function useNewApiAccount(options: { enabled?: boolean } = {}): NewApiAccountResult {
   const enabled = options.enabled !== false;
-  const { providerSettingsService } = useServices();
+  const { credentialService, providerSettingsService } = useServices();
   const {
     connection,
     loading: connectionLoading,
@@ -92,27 +99,58 @@ export function useNewApiAccount(options: { enabled?: boolean } = {}): NewApiAcc
     }
     let cancelled = false;
     setState({ status: "loading" });
-    void providerSettingsService
-      .getNewApiAccountInfo({
-        accessToken: connection.accessToken,
-        baseUrl: connection.baseUrl,
-      })
-      .then(
-        (info) => {
-          if (!cancelled) setState({ status: "ready", info });
-        },
-        (error: unknown) => {
-          if (cancelled) return;
-          setState({
-            message: error instanceof Error ? error.message : String(error),
-            status: "error",
-          });
-        },
-      );
+    void fetchNewApiAccountWithAutoRefresh({
+      initialAccessToken: connection.accessToken,
+      fetchAccount: (accessToken) =>
+        providerSettingsService.getNewApiAccountInfo({
+          accessToken,
+          baseUrl: connection.baseUrl,
+        }),
+      loadRefreshCookie: () => loadNewApiRefreshCookie(credentialService, connection.providerId),
+      exchangeSession: (refreshCookie) =>
+        providerSettingsService.exchangeNewApiSession({
+          baseUrl: connection.baseUrl,
+          refreshCookie,
+        }),
+      persistRefreshedCredentials: async ({ accessToken, refreshCookie }) => {
+        // 与登录落库同一路径写指针 + 令牌；cookie 走专门的键（服务端已轮换，旧值失效）。
+        await saveNewApiConnection(credentialService, {
+          providerId: connection.providerId,
+          baseUrl: connection.baseUrl,
+          accessToken,
+        });
+        await saveNewApiRefreshCookie(credentialService, {
+          providerId: connection.providerId,
+          refreshCookie,
+        });
+      },
+    }).then(
+      (info) => {
+        if (cancelled) return;
+        setState({ status: "ready", info });
+        // 连接对象里还持有旧令牌；重读指针让菜单/其它消费者拿到续期后的凭据。
+        refreshConnection();
+      },
+      (error: unknown) => {
+        if (cancelled) return;
+        setState({
+          message: error instanceof Error ? error.message : String(error),
+          status: "error",
+        });
+      },
+    );
     return () => {
       cancelled = true;
     };
-  }, [connection, connectionLoading, enabled, providerSettingsService, revision]);
+  }, [
+    connection,
+    connectionLoading,
+    credentialService,
+    enabled,
+    providerSettingsService,
+    refreshConnection,
+    revision,
+  ]);
 
   return { connection, refresh, refreshConnection, state };
 }
