@@ -3635,21 +3635,8 @@ const enUS: Record<string, string> = {
   "settings.usage.range.7d": "Last 7 days",
   "settings.usage.range.30d": "Last 30 days",
   "settings.usage.range.today": "Today",
-  "composer.usage.session": "Session",
-  "composer.usage.today": "Today",
-  "composer.usage.turn": "Turn",
-  "composer.usage.tools": "Tools",
-  "composer.usage.subagents": "Subagents",
-  "composer.usage.sessionTooltip": "{total} tokens in this session ({requests} model requests)",
-  "composer.usage.todayTooltip": "{total} tokens across today's sessions (local time zone)",
   "composer.usage.speedTooltip":
     "Generation speed of the latest completed request: {model}, {output} output tokens over {duration}",
-  "composer.usage.turnTooltip":
-    "Current turn: input {input}, output {output}, cache read {cacheRead}, cache write {cacheWrite}, reasoning {reasoning}; {requests} model requests, {duration} total, {ttft} to first token",
-  "composer.usage.toolsTooltip":
-    "{calls} tool calls in this session, {errors} errors; breakdown: {breakdown}",
-  "composer.usage.subagentsTooltip":
-    "{total} subagent tokens in this session ({sessions} subagents, {requests} model requests, counted separately from the session total); detail: {breakdown}",
   "settings.usage.appUsageRangeTitle": "Time range",
   "settings.usage.codingPlanRange.today": "Today",
   "settings.usage.codingPlanRange.7d": "7 days",

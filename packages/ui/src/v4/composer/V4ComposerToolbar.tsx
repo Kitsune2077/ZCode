@@ -1022,7 +1022,7 @@ function V4ComposerModelControlsImpl({
         onSendCompressionCommand={onSendCompressionCommand}
         compressionDisabled={disabled || recoveryPending}
       />
-      {/* 用量状态栏（会话/今日累计）：数据走既有 RPC，上下文占比由上方 ChatContextUsage 负责。 */}
+      {/* 生成速率指标：用量累计由左侧用量圆环与设置→用量页承担，这里只补“模型此刻多快”。 */}
       <V4ComposerUsageStats
         workspacePath={workspacePath}
         workspaceIdentity={workspaceIdentity}
