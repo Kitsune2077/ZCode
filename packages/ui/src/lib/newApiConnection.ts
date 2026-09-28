@@ -120,6 +120,35 @@ export async function loadNewApiRefreshCookie(
 }
 
 /**
+ * 收敛连接快照的对象引用：字段完全相同时返回 `previous`，否则返回 `next`。
+ *
+ * bug 背景：`loadNewApiConnection` 每次读凭据都会新建对象，而 `useNewApiAccount` 的账号读取
+ * effect 以 `connection` 对象为依赖。令牌续期成功后 hook 会调 `refreshConnection()` 重读凭据，
+ * 于是「新对象 → effect 重跑 → 再读账号 → 再 refreshConnection」形成闭环：左下角在真实用户名
+ * 与中性「NewAPI」之间持续闪烁，用量页一直读到失败。该闭环与网络形态（IPv4 / 域名 / 内网）无关。
+ *
+ * 依据：`connection` 是凭据的只读投影，消费者只关心字段值，不关心内存地址；只有字段真正变化
+ * （续期换到新令牌、换域名、重新登录、断开）时才需要新对象触发下游重新读取。字段未变时返回同一
+ * 引用，React 会走同值 bailout，effect 不再重跑。断开（`next === null`）必须生效，不能沿用旧值。
+ */
+export function resolveStableNewApiConnection(
+  previous: NewApiConnection | null,
+  next: NewApiConnection | null,
+): NewApiConnection | null {
+  if (previous === null || next === null) {
+    return next;
+  }
+  if (
+    previous.providerId === next.providerId &&
+    previous.baseUrl === next.baseUrl &&
+    previous.accessToken === next.accessToken
+  ) {
+    return previous;
+  }
+  return next;
+}
+
+/**
  * 断开 NewAPI 登录：删除访问令牌、会话 cookie、API 根地址与连接指针。
  *
  * 只清凭据，不删除 Provider —— 与 ZCode 账号退出登录一致：Provider 配置仍由用户拥有，

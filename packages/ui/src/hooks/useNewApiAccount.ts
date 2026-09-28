@@ -9,6 +9,7 @@ import type { NewApiAccountInfo } from "@zcode/services";
 import {
   loadNewApiConnection,
   loadNewApiRefreshCookie,
+  resolveStableNewApiConnection,
   saveNewApiConnection,
   saveNewApiRefreshCookie,
   type NewApiConnection,
@@ -30,6 +31,10 @@ export interface NewApiConnectionResult extends NewApiConnectionState {
 /**
  * 读取当前 NewAPI 连接。只有凭据读写，不发网络请求。
  * 依赖 apiKeyLoginSuccessSeq：NewAPI 登录成功会自增该计数，避免登录后仍读到旧凭据。
+ *
+ * 引用稳定性：写入 state 前必须经 `resolveStableNewApiConnection` 收敛。否则每次重读凭据都会产生
+ * 新对象，让 `useNewApiAccount` 以 `connection` 为依赖的账号读取 effect 反复重跑——令牌续期后的
+ * `refreshConnection()` 会与它形成闭环，表现为左下角用户名与「NewAPI」来回闪烁、用量页读取失败。
  */
 export function useNewApiConnection(): NewApiConnectionResult {
   const { credentialService } = useServices();
@@ -45,7 +50,8 @@ export function useNewApiConnection(): NewApiConnectionResult {
     void loadNewApiConnection(credentialService).then(
       (loaded) => {
         if (cancelled) return;
-        setConnection(loaded);
+        // 用函数式更新读取"本次落地时"的当前值再收敛：重读失败/并发完成时不会用旧快照覆盖新凭据。
+        setConnection((previous) => resolveStableNewApiConnection(previous, loaded));
         setLoading(false);
       },
       () => {

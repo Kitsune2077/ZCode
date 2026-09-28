@@ -53,12 +53,43 @@ NewAPI 的任何账号信息。本功能补齐这两处展示。
 - 网络调用唯一出口仍是 Host 的 `hostApiNetworkTransport.fetch`，经
   `IProviderSettingsService.getNewApiAccountInfo` 暴露。
 - 左下角与用量页各自持有自己的拉取状态，不引入第二份被接受的队列或缓存。
+- **已解析连接快照**由 `useNewApiConnection` 独占：`null | { providerId, baseUrl, accessToken }`。
+  它是"当前生效凭据"的唯一内存副本，其它消费者（footer / 用量页 / 菜单）只读不写。
+
+## 连接快照的引用稳定性（必须保持）
+
+`useNewApiAccount` 的账号读取 effect 以 `connection` 对象作为依赖。而
+`loadNewApiConnection` 每次读凭据都会**新建对象**，即使三个字段完全没变：
+
+```
+loadNewApiConnection() -> 新对象 -> setConnection(新对象)
+        -> useNewApiAccount 的 effect 依赖变化, 重新读取账号
+        -> 读取成功后再 refreshConnection()（令牌续期后重读凭据）
+        -> loadNewApiConnection() 又是新对象 -> 循环
+```
+
+症状：左下角在真实 NewAPI 用户名与中性「NewAPI」（loading 占位）之间持续闪烁，
+用量页 NewAPI 标签在「加载中」与读取失败之间来回切换，并伴随对 NewAPI 的持续请求。
+与本机网络形态（IPv4 / 域名 / 内网）无关，任何成功读取账号的连接都会触发。
+
+规则：`useNewApiConnection` 写入 state 前必须用 `resolveStableNewApiConnection` 收敛引用——
+三个字段都未变时返回**上一次的同一对象引用**，让 React 走同值 bailout，effect 不再重跑。
+凭据真正变化（续期换到新令牌、换域名、重新登录、断开）时必须给出新对象，否则消费者读不到新值。
+
+对应的时序（单次登录后稳态应为 1 次账号读取）：
+
+```
+markApiKeyLoginSuccess -> connection effect 读凭据 -> connection(第 1 个对象)
+   -> 账号读取 -> ready -> refreshConnection() -> 读凭据(字段未变)
+   -> resolveStableNewApiConnection 返回第 1 个对象 -> 同值 bailout -> 不再读取 ✔
+```
 
 ## 不变量
 
 - 已登录 ZCode 账号时，左下角不因 NewAPI 连接改变显示。
 - 读取失败（令牌过期 / 网络不可达）只降级展示，不写入半成品状态、不清除凭据。
 - 未连接 NewAPI 的用户看不到 NewAPI 标签页，也不产生任何请求。
+- 凭据字段未变化时，重复读取连接**不得**改变 `connection` 的对象引用，也不得触发账号重读。
 
 ## 验收场景
 
@@ -67,3 +98,8 @@ NewAPI 的任何账号信息。本功能补齐这两处展示。
 - C：打开 设置→用量 的 NewAPI 标签 → 展示账号名(ID)/角色/余额/已用余额/请求次数 + 近 7 天趋势。
 - D：`/api/data/self` 404 → 仍展示账号与总额度，趋势为空。
 - E：访问令牌失效 → 展示可读错误与重试入口，凭据保留。
+- F：连接成功后（IPv4 / 内网 / 域名地址均适用）→ 左下角稳定显示 NewAPI 用户名，
+  用量页 NewAPI 标签稳定展示账号与额度，**不出现用户名与「NewAPI」交替闪烁**，
+  且凭据未变化时不产生重复的账号读取请求。
+- G：令牌续期换到新令牌 → `connection` 取到新对象，用量页与头像菜单读到新凭据；
+  断开连接 → `connection` 变回 `null`，左下角回到「未登录」。
