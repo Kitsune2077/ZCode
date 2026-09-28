@@ -35,6 +35,8 @@ export interface NewApiConnectionResult extends NewApiConnectionState {
  * 引用稳定性：写入 state 前必须经 `resolveStableNewApiConnection` 收敛。否则每次重读凭据都会产生
  * 新对象，让 `useNewApiAccount` 以 `connection` 为依赖的账号读取 effect 反复重跑——令牌续期后的
  * `refreshConnection()` 会与它形成闭环，表现为左下角用户名与「NewAPI」来回闪烁、用量页读取失败。
+ * 注意这只是收敛的必要条件之一；loading 标志翻转与无条件重读的另一条反馈边见
+ * `useNewApiAccount` 内注释与 docs/newapi-account-usage.md。
  */
 export function useNewApiConnection(): NewApiConnectionResult {
   const { credentialService } = useServices();
@@ -86,17 +88,19 @@ export interface NewApiAccountResult {
 export function useNewApiAccount(options: { enabled?: boolean } = {}): NewApiAccountResult {
   const enabled = options.enabled !== false;
   const { credentialService, providerSettingsService } = useServices();
-  const {
-    connection,
-    loading: connectionLoading,
-    refresh: refreshConnection,
-  } = useNewApiConnection();
+  const { connection, refresh: refreshConnection } = useNewApiConnection();
   const [state, setState] = useState<NewApiAccountState>({ status: "idle" });
   const [revision, setRevision] = useState(0);
   const refresh = useCallback(() => setRevision((current) => current + 1), []);
 
   useEffect(() => {
-    if (!enabled || connectionLoading) {
+    // 守卫不看 connectionLoading：loading 翻转不是凭据变化。它曾是本 effect 的依赖之一，
+    // 每次 refreshConnection() 重读连接都会让 loading 走一轮 false→true→false，把一次
+    // 成功的读取重新拉起，与「成功后无条件 refreshConnection」叠加成无限重跑闭环：
+    // 左下角在真实用户名与「NewAPI」之间闪烁、每轮向 NewAPI 发 3 个请求，直到某次
+    // 读取失败停在 error 态（用户名固定为「NewAPI」、用量页报读取失败）。
+    // 「连接尚未加载完」由 `connection === null` 覆盖，无需第二个早退条件。
+    if (!enabled) {
       return;
     }
     if (!connection) {
@@ -131,11 +135,14 @@ export function useNewApiAccount(options: { enabled?: boolean } = {}): NewApiAcc
         });
       },
     }).then(
-      (info) => {
+      (result) => {
         if (cancelled) return;
-        setState({ status: "ready", info });
-        // 连接对象里还持有旧令牌；重读指针让菜单/其它消费者拿到续期后的凭据。
-        refreshConnection();
+        setState({ status: "ready", info: result.info });
+        // 只有续期确实发生（新令牌已落库、连接快照仍持旧令牌）才重读指针；
+        // 凭据未变的成功读取是终态，重读只会白费 IO 并重新触发本 effect。
+        if (result.credentialsRenewed) {
+          refreshConnection();
+        }
       },
       (error: unknown) => {
         if (cancelled) return;
@@ -150,7 +157,6 @@ export function useNewApiAccount(options: { enabled?: boolean } = {}): NewApiAcc
     };
   }, [
     connection,
-    connectionLoading,
     credentialService,
     enabled,
     providerSettingsService,

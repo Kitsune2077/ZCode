@@ -9,13 +9,17 @@ import type { NewApiAccountInfo } from "@zcode/services";
  * 用量页 NewAPI 标签同步失败。该状态与安装版/便携版无关，任何版本令牌过期都会触发。
  *
  * 策略（对应 newapi-browser-login.md 验收场景 F）：
- * 1. 用当前令牌读取账号；成功即返回。
+ * 1. 用当前令牌读取账号；成功即返回（`credentialsRenewed: false`）。
  * 2. 失败时读 refresh cookie；没有 cookie 直接抛原始错误。
  * 3. 用 cookie 兑换新令牌；服务端会**轮换** cookie，必须连同新令牌一起回写凭据。
  * 4. 用新令牌重读一次；仍失败则抛出重读的错误（此时续期本身已成功，不应再吞掉）。
  *
  * 兑换失败（cookie 也过期）抛出原始读取错误，让 UI 呈现"请重新登录"而不是
  * 把"续期失败"误报成"网络故障"。全程只尝试一次续期，避免循环。
+ *
+ * 返回 `credentialsRenewed` 的原因：调用方（`useNewApiAccount`）曾**无条件**在读取成功后
+ * 重读连接快照，与 loading 标志翻转叠加成无限重跑闭环（左下角用户名闪烁）。是否重读
+ * 必须以"续期确实发生并已落库"为准，这一事实只有本编排器知道，因此作为返回契约交出。
  */
 export interface NewApiAccountAutoRefreshInput {
   readonly initialAccessToken: string;
@@ -32,11 +36,21 @@ export interface NewApiAccountAutoRefreshInput {
   }) => Promise<void>;
 }
 
+export interface NewApiAccountAutoRefreshResult {
+  readonly info: NewApiAccountInfo;
+  /**
+   * 本次读取是否发生了令牌续期并已回写凭据。`true` 时内存里的连接快照仍持有旧令牌，
+   * 调用方需要重读一次连接；`false` 时凭据未变，重读只会白费 IO 并可能重新触发读取。
+   */
+  readonly credentialsRenewed: boolean;
+}
+
 export async function fetchNewApiAccountWithAutoRefresh(
   input: NewApiAccountAutoRefreshInput,
-): Promise<NewApiAccountInfo> {
+): Promise<NewApiAccountAutoRefreshResult> {
   try {
-    return await input.fetchAccount(input.initialAccessToken);
+    const info = await input.fetchAccount(input.initialAccessToken);
+    return { info, credentialsRenewed: false };
   } catch (originalError) {
     const refreshCookie = await input.loadRefreshCookie();
     if (!refreshCookie) {
@@ -59,6 +73,7 @@ export async function fetchNewApiAccountWithAutoRefresh(
 
     // 续期已成功并落库；重读失败就抛重读的错误，不再回退到原始错误，
     // 否则会把"新令牌仍被拒"（服务端账号状态异常）误报成"旧令牌过期"。
-    return input.fetchAccount(exchanged.accessToken);
+    const info = await input.fetchAccount(exchanged.accessToken);
+    return { info, credentialsRenewed: true };
   }
 }

@@ -56,32 +56,46 @@ NewAPI 的任何账号信息。本功能补齐这两处展示。
 - **已解析连接快照**由 `useNewApiConnection` 独占：`null | { providerId, baseUrl, accessToken }`。
   它是"当前生效凭据"的唯一内存副本，其它消费者（footer / 用量页 / 菜单）只读不写。
 
-## 连接快照的引用稳定性（必须保持）
+## 连接快照的引用稳定性与读取收敛（必须保持）
 
-`useNewApiAccount` 的账号读取 effect 以 `connection` 对象作为依赖。而
-`loadNewApiConnection` 每次读凭据都会**新建对象**，即使三个字段完全没变：
+`useNewApiAccount` 的账号读取 effect 以 `connection` 对象作为依赖。历史上这里有**两条**
+会让 effect 无限重跑的反馈边，必须同时切断：
 
-```
-loadNewApiConnection() -> 新对象 -> setConnection(新对象)
-        -> useNewApiAccount 的 effect 依赖变化, 重新读取账号
-        -> 读取成功后再 refreshConnection()（令牌续期后重读凭据）
-        -> loadNewApiConnection() 又是新对象 -> 循环
-```
+**反馈边 1：对象引用不稳定。** `loadNewApiConnection` 每次读凭据都会**新建对象**，
+即使三个字段完全没变。规则：`useNewApiConnection` 写入 state 前必须用
+`resolveStableNewApiConnection` 收敛引用——三个字段都未变时返回**上一次的同一对象引用**，
+让 React 走同值 bailout。凭据真正变化（续期换到新令牌、换域名、重新登录、断开）时
+必须给出新对象，否则消费者读不到新值。
 
-症状：左下角在真实 NewAPI 用户名与中性「NewAPI」（loading 占位）之间持续闪烁，
-用量页 NewAPI 标签在「加载中」与读取失败之间来回切换，并伴随对 NewAPI 的持续请求。
-与本机网络形态（IPv4 / 域名 / 内网）无关，任何成功读取账号的连接都会触发。
+**反馈边 2：读取成功后无条件重读连接 + `connectionLoading` 作为 effect 依赖。**
+即使引用已收敛，`refreshConnection()` 仍会重跑 connection effect 并翻转
+`connectionLoading`（true → 加载中，false → 加载完成）。账号读取 effect 一旦把
+`connectionLoading` 列为依赖，每次「false → true → false」翻转都会把一次成功的读取
+重新拉起：读取成功 → `refreshConnection()` → loading 翻转 → effect 重跑 →
+`setState(loading)`（左下角闪回中性「NewAPI」）→ 读取又成功 → 再 `refreshConnection()` ……
+每轮向 NewAPI 发出 3 个请求，直到某次读取失败落入 error 态才停在
+「NewAPI」+ 用量页读取失败——这正是「用户名在真实用户名与 NewAPI 之间来回切换、
+最后固定为 NewAPI」的完整机制。loading 翻转不是凭据变化，规则：
 
-规则：`useNewApiConnection` 写入 state 前必须用 `resolveStableNewApiConnection` 收敛引用——
-三个字段都未变时返回**上一次的同一对象引用**，让 React 走同值 bailout，effect 不再重跑。
-凭据真正变化（续期换到新令牌、换域名、重新登录、断开）时必须给出新对象，否则消费者读不到新值。
+- 账号读取 effect **不得**把 `connectionLoading` 列为依赖；`connection` 为 `null`
+  本身就覆盖了「连接尚未加载完」的早退分支。
+- 读取成功后**只在确实发生了令牌续期**（`fetchNewApiAccountWithAutoRefresh` 返回
+  `credentialsRenewed: true`，即新令牌已落库、内存快照还持有旧令牌）时才 `refreshConnection()`；
+  凭据未变的成功读取是终态，不产生任何重读。
 
-对应的时序（单次登录后稳态应为 1 次账号读取）：
+对应的时序（单次登录后稳态为 1 次账号读取，0 次额外连接重读）：
 
 ```
 markApiKeyLoginSuccess -> connection effect 读凭据 -> connection(第 1 个对象)
-   -> 账号读取 -> ready -> refreshConnection() -> 读凭据(字段未变)
-   -> resolveStableNewApiConnection 返回第 1 个对象 -> 同值 bailout -> 不再读取 ✔
+   -> 账号读取 -> ready(credentialsRenewed=false) -> 无重读 ✔
+```
+
+令牌过期续期后的收敛时序（恰好 1 次重读、共 3 次账号请求）：
+
+```
+账号读取(stale token) 失败 -> cookie 兑换新令牌并落库 -> 重读成功(credentialsRenewed=true)
+   -> refreshConnection() -> connection(第 2 个对象, 新令牌)
+   -> 账号读取(新令牌) -> ready(credentialsRenewed=false) -> 无重读 ✔
 ```
 
 ## 不变量
@@ -90,6 +104,9 @@ markApiKeyLoginSuccess -> connection effect 读凭据 -> connection(第 1 个对
 - 读取失败（令牌过期 / 网络不可达）只降级展示，不写入半成品状态、不清除凭据。
 - 未连接 NewAPI 的用户看不到 NewAPI 标签页，也不产生任何请求。
 - 凭据字段未变化时，重复读取连接**不得**改变 `connection` 的对象引用，也不得触发账号重读。
+- 账号读取 effect 不得以 `connectionLoading`（或任何「加载中」标志）作为依赖；
+  唯一合法的读取触发是 `connection` 身份变化、手动重试或登录成功事件。
+- 凭据未变化时的一次成功读取是终态：不得触发连接重读，也不得再次进入 loading。
 
 ## 验收场景
 
@@ -100,6 +117,9 @@ markApiKeyLoginSuccess -> connection effect 读凭据 -> connection(第 1 个对
 - E：访问令牌失效 → 展示可读错误与重试入口，凭据保留。
 - F：连接成功后（IPv4 / 内网 / 域名地址均适用）→ 左下角稳定显示 NewAPI 用户名，
   用量页 NewAPI 标签稳定展示账号与额度，**不出现用户名与「NewAPI」交替闪烁**，
-  且凭据未变化时不产生重复的账号读取请求。
+  且凭据未变化时不产生重复的账号读取请求（hook 级回归测试锁定：读取一直成功时
+  `fetchAccount` 恰好调用 1 次）。
 - G：令牌续期换到新令牌 → `connection` 取到新对象，用量页与头像菜单读到新凭据；
   断开连接 → `connection` 变回 `null`，左下角回到「未登录」。
+- H：令牌过期触发自动续期 → 续期成功后恰好重读一次连接、账号请求序列收敛为
+  `stale 失败 → fresh 重试成功 → fresh 稳态成功`，随后不再有任何请求。

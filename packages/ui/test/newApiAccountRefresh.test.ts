@@ -55,8 +55,10 @@ function harness(overrides: {
 
 test("valid token reads directly without touching the refresh cookie", async () => {
   const h = harness({});
-  const info = await h.run();
-  assert.equal(info.username, "tester");
+  const result = await h.run();
+  assert.equal(result.info.username, "tester");
+  // 凭据未变：调用方不得据此重读连接，否则会把一次成功的读取重新拉起。
+  assert.equal(result.credentialsRenewed, false);
   assert.deepEqual(h.calls.fetchTokens, ["stale-token"]);
   assert.equal(h.calls.exchangedCookies.length, 0);
   assert.equal(h.calls.persisted.length, 0);
@@ -73,8 +75,10 @@ test("expired token refreshes once, persists rotated credentials, then retries w
     },
     refreshCookie: "cookie-v1",
   });
-  const info = await h.run();
-  assert.equal(info.username, "refreshed-user");
+  const result = await h.run();
+  assert.equal(result.info.username, "refreshed-user");
+  // 续期确实发生并已落库：调用方需要重读一次连接，让内存快照换上新令牌。
+  assert.equal(result.credentialsRenewed, true);
   assert.deepEqual(h.calls.fetchTokens, ["stale-token", "fresh-token"]);
   assert.deepEqual(h.calls.exchangedCookies, ["cookie-v1"]);
   // 服务端轮换后的 cookie 必须连同新令牌一起落库；旧 cookie 已失效。
