@@ -4,7 +4,7 @@
  * 连接（API 根 + 访问令牌）来自凭据服务；账号信息是派生只读投影，不写入任何 store。
  * 网络调用统一经 IProviderSettingsService.getNewApiAccountInfo 由 Host 发出。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { NewApiAccountInfo } from "@zcode/services";
 import {
   loadNewApiConnection,
@@ -14,6 +14,12 @@ import {
   saveNewApiRefreshCookie,
   type NewApiConnection,
 } from "@/lib/newApiConnection.js";
+import {
+  readKnownNewApiAccount,
+  readKnownNewApiConnection,
+  rememberKnownNewApiAccount,
+  rememberKnownNewApiConnection,
+} from "@/lib/newApiKnownState.js";
 import { fetchNewApiAccountWithAutoRefresh } from "@/lib/newApiAccountRefresh.js";
 import { useServices } from "./useServices.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
@@ -41,8 +47,13 @@ export interface NewApiConnectionResult extends NewApiConnectionState {
 export function useNewApiConnection(): NewApiConnectionResult {
   const { credentialService } = useServices();
   const apiKeyLoginSuccessSeq = useZCodeStore((state) => state.apiKeyLoginSuccessSeq);
-  const [connection, setConnection] = useState<NewApiConnection | null>(null);
-  const [loading, setLoading] = useState(true);
+  // 初始 state 取展示种子（SWR）：footer 被主界面与设置页分别挂载，新实例从 null
+  // 起步会在打开设置页时闪回「连接使用」。种子由唯二写路径（save/clear）维护，
+  // 这里只读；种子引用与 resolveStable 收敛后的引用一致，账号种子才能按引用比对。
+  const [connection, setConnection] = useState<NewApiConnection | null>(() =>
+    readKnownNewApiConnection(),
+  );
+  const [loading, setLoading] = useState(() => readKnownNewApiConnection() === null);
   const [revision, setRevision] = useState(0);
   const refresh = useCallback(() => setRevision((current) => current + 1), []);
 
@@ -53,7 +64,11 @@ export function useNewApiConnection(): NewApiConnectionResult {
       (loaded) => {
         if (cancelled) return;
         // 用函数式更新读取"本次落地时"的当前值再收敛：重读失败/并发完成时不会用旧快照覆盖新凭据。
-        setConnection((previous) => resolveStableNewApiConnection(previous, loaded));
+        setConnection((previous) => {
+          const next = resolveStableNewApiConnection(previous, loaded);
+          rememberKnownNewApiConnection(next);
+          return next;
+        });
         setLoading(false);
       },
       () => {
@@ -89,7 +104,22 @@ export function useNewApiAccount(options: { enabled?: boolean } = {}): NewApiAcc
   const enabled = options.enabled !== false;
   const { credentialService, providerSettingsService } = useServices();
   const { connection, refresh: refreshConnection } = useNewApiConnection();
-  const [state, setState] = useState<NewApiAccountState>({ status: "idle" });
+  // 初始 state 取账号种子（SWR）：设置页二次挂载 footer 时首帧即显示上次读取的
+  // 用户名，而不是 idle→loading→ready 的三级过渡。种子按连接三字段精确匹配，
+  // 续期换 token 后自动失配，宁可回落中性「NewAPI」也不显示可能过期的账号名。
+  const [state, setState] = useState<NewApiAccountState>(() => {
+    const seededConnection = readKnownNewApiConnection();
+    if (!seededConnection) {
+      return { status: "idle" };
+    }
+    const seededInfo = readKnownNewApiAccount(seededConnection);
+    return seededInfo ? { status: "ready", info: seededInfo } : { status: "idle" };
+  });
+  // 记录「上次 ready 时对应的连接引用」：同一连接的重复挂载/刷新不先闪 loading，
+  // 保持旧数据直到新数据到达（引用相等由 resolveStableNewApiConnection 保证）。
+  const lastReadyConnectionRef = useRef<NewApiConnection | null>(
+    state.status === "ready" ? readKnownNewApiConnection() : null,
+  );
   const [revision, setRevision] = useState(0);
   const refresh = useCallback(() => setRevision((current) => current + 1), []);
 
@@ -108,7 +138,11 @@ export function useNewApiAccount(options: { enabled?: boolean } = {}): NewApiAcc
       return;
     }
     let cancelled = false;
-    setState({ status: "loading" });
+    setState((previous) =>
+      previous.status === "ready" && lastReadyConnectionRef.current === connection
+        ? previous
+        : { status: "loading" },
+    );
     void fetchNewApiAccountWithAutoRefresh({
       initialAccessToken: connection.accessToken,
       fetchAccount: (accessToken) =>
@@ -137,6 +171,8 @@ export function useNewApiAccount(options: { enabled?: boolean } = {}): NewApiAcc
     }).then(
       (result) => {
         if (cancelled) return;
+        lastReadyConnectionRef.current = connection;
+        rememberKnownNewApiAccount(connection, result.info);
         setState({ status: "ready", info: result.info });
         // 只有续期确实发生（新令牌已落库、连接快照仍持旧令牌）才重读指针；
         // 凭据未变的成功读取是终态，重读只会白费 IO 并重新触发本 effect。

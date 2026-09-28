@@ -98,6 +98,25 @@ markApiKeyLoginSuccess -> connection effect 读凭据 -> connection(第 1 个对
    -> 账号读取(新令牌) -> ready(credentialsRenewed=false) -> 无重读 ✔
 ```
 
+## 跨实例展示种子（SWR）
+
+footer 被主界面与设置页**分别挂载**（设置页复用同一组件），每个实例的
+`useNewApiConnection` / `useNewApiAccount` 状态各自独立。新实例从 `null` / `idle` 起步，
+打开设置→使用统计时左下角会先闪回「连接使用」再恢复用户名。规则：
+
+- `lib/newApiKnownState.ts` 持有模块级「最近已知」连接快照与账号读取结果，
+  **仅作新实例挂载时的初始渲染种子**（stale-while-revalidate），不是事实源；
+  事实仍是凭据服务（连接）与服务端（账号信息）。
+- 种子的写点与凭据同源：`saveNewApiConnection` / `clearNewApiConnection`（唯二写路径）
+  同步更新；账号读取成功时写入「该连接下的账号信息」。断开清空两者；
+  续期换 token 后旧账号种子按三字段精确匹配自动失配作废——宁可回落中性
+  「NewAPI」也不显示可能过期的账号名。
+- `useNewApiConnection` 初始 state 取种子；`useNewApiAccount` 初始 ready 取种子账号，
+  且上一次 ready 时的连接与当前连接引用相同的话，挂载触发的刷新**不先闪 loading**：
+  保持旧数据直到新数据到达（引用相等由 `resolveStableNewApiConnection` 保证）。
+- 种子只存在于 renderer 内存，不持久化、不跨进程；renderer 重启后自然为空，
+  不影响任何事实状态。
+
 ## 不变量
 
 - 已登录 ZCode 账号时，左下角不因 NewAPI 连接改变显示。
@@ -107,6 +126,7 @@ markApiKeyLoginSuccess -> connection effect 读凭据 -> connection(第 1 个对
 - 账号读取 effect 不得以 `connectionLoading`（或任何「加载中」标志）作为依赖；
   唯一合法的读取触发是 `connection` 身份变化、手动重试或登录成功事件。
 - 凭据未变化时的一次成功读取是终态：不得触发连接重读，也不得再次进入 loading。
+- 展示种子只影响新实例的首帧渲染；挂载后仍必须发起真实刷新，不得把种子当缓存长期使用。
 
 ## 验收场景
 
@@ -123,3 +143,6 @@ markApiKeyLoginSuccess -> connection effect 读凭据 -> connection(第 1 个对
   断开连接 → `connection` 变回 `null`，左下角回到「未登录」。
 - H：令牌过期触发自动续期 → 续期成功后恰好重读一次连接、账号请求序列收敛为
   `stale 失败 → fresh 重试成功 → fresh 稳态成功`，随后不再有任何请求。
+- R：主界面已显示 NewAPI 用户名 → 打开设置页（footer 第二次挂载）→ **首帧即显示
+  同一用户名**，不出现「连接使用」或中性「NewAPI」过渡；断开连接后新挂载的
+  footer 初始即未连接（种子已清空）。

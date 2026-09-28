@@ -1,4 +1,5 @@
 import type { ICredentialService } from "@zcode/services";
+import { rememberKnownNewApiConnection } from "./newApiKnownState.js";
 
 /**
  * NewAPI 连接的凭据投影。
@@ -61,6 +62,9 @@ export async function saveNewApiConnection(
   await store.save(NEW_API_LAST_PROVIDER_KEY, connection.providerId);
   await store.save(newApiBaseUrlCredentialKey(connection.providerId), connection.baseUrl);
   await store.save(newApiAccessTokenCredentialKey(connection.providerId), connection.accessToken);
+  // 凭据是事实源；这里同步更新展示种子（SWR），让后续挂载的 footer 实例
+  // 首帧就拿到最新连接，不再从 null 起步闪回「连接使用」。
+  rememberKnownNewApiConnection(connection);
 }
 
 /**
@@ -171,4 +175,7 @@ export async function clearNewApiConnection(
     await store.delete(newApiRefreshCookieCredentialKey(trimmedProviderId));
   }
   await store.delete(NEW_API_ACTIVE_PROVIDER_KEY);
+  // 断开必须同时清空展示种子：新挂载的 footer 初始即未连接，
+  // 否则会凭种子短暂显示已连接（与「删除失败不伪装成功」的语义冲突）。
+  rememberKnownNewApiConnection(null);
 }

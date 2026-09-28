@@ -203,9 +203,11 @@ const { useNewApiAccount } = await import("../src/hooks/useNewApiAccount.js");
 const { ServiceProvider } = await import("../src/hooks/useServices.js");
 const { StoreProvider } = await import("../src/store/StoreProvider.js");
 const {
+  clearNewApiConnection,
   saveNewApiConnection,
   saveNewApiRefreshCookie,
 } = await import("../src/lib/newApiConnection.js");
+const { resetNewApiKnownStateForTests } = await import("../src/lib/newApiKnownState.js");
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -289,10 +291,19 @@ function createWorld(options: WorldOptions = {}) {
 
 type AccountProbe = ReturnType<typeof mountAccountProbe>;
 
-function mountAccountProbe(world: ReturnType<typeof createWorld>) {
+function mountAccountProbe(
+  world: ReturnType<typeof createWorld>,
+  renderLog?: { hasConnection: boolean; status: string }[],
+) {
   let latest: ReturnType<typeof useNewApiAccount> | null = null;
   function Probe() {
     latest = useNewApiAccount();
+    if (renderLog) {
+      renderLog.push({
+        hasConnection: latest.connection !== null,
+        status: latest.state.status,
+      });
+    }
     return null;
   }
   const services = {
@@ -349,6 +360,7 @@ async function assertQuiet(probe: AccountProbe, world: ReturnType<typeof createW
 }
 
 test("stable credentials converge to exactly one account read (no flicker loop)", async () => {
+  resetNewApiKnownStateForTests();
   const world = createWorld();
   await seedConnection(world, "token-v1", "cookie-v1");
   const probe = mountAccountProbe(world);
@@ -365,6 +377,7 @@ test("stable credentials converge to exactly one account read (no flicker loop)"
 });
 
 test("token renewal re-reads the connection exactly once, then converges", async () => {
+  resetNewApiKnownStateForTests();
   const world = createWorld({ failTokens: new Set(["token-stale"]) });
   await seedConnection(world, "token-stale", "cookie-v1");
   const probe = mountAccountProbe(world);
@@ -381,5 +394,78 @@ test("token renewal re-reads the connection exactly once, then converges", async
     assert.equal(world.credentials.get("newapi:newapi-1:refresh_cookie"), "cookie-v2");
   } finally {
     probe.unmount();
+  }
+});
+
+test("a second footer instance mounts ready from the seed without flashing", async () => {
+  resetNewApiKnownStateForTests();
+  const world = createWorld();
+  await seedConnection(world, "token-v1", "cookie-v1");
+
+  // 第一个实例（主界面 footer）正常读取并落定种子。
+  const firstRenderLog: { hasConnection: boolean; status: string }[] = [];
+  const first = mountAccountProbe(world, firstRenderLog);
+  try {
+    await waitFor(() => first.latest?.state.status === "ready");
+    await assertQuiet(first, world);
+  } finally {
+    first.unmount();
+  }
+
+  // 第二个实例（设置页 footer 二次挂载）：首帧即显示连接与上次读取的账号，
+  // 不出现「连接使用」（无连接）或 loading/idle 过渡——这正是打开设置→使用统计
+  // 时左下角闪回「连接使用」的回归场景（spec 验收场景 R）。
+  const secondRenderLog: { hasConnection: boolean; status: string }[] = [];
+  const second = mountAccountProbe(world, secondRenderLog);
+  try {
+    // 种子让首帧即 ready，waitFor 会立即返回；真实刷新要等挂载 effect 执行后再断言。
+    await waitFor(() => second.latest?.state.status === "ready");
+    await waitFor(() => world.calls.accountTokens.length >= 2);
+    await sleep(300);
+    assert.equal(
+      world.calls.accountTokens.length,
+      2,
+      "挂载后必须恰好真实刷新一次（种子只是首帧渲染，不是缓存）",
+    );
+    assert.deepEqual(
+      secondRenderLog[0],
+      { hasConnection: true, status: "ready" },
+      "第二实例首帧必须直接从种子进入 ready",
+    );
+    assert.ok(
+      secondRenderLog.every(
+        (entry) => entry.hasConnection && (entry.status === "ready" || entry.status === "loading"),
+      ),
+      `不应出现无连接或 idle 帧: ${JSON.stringify(secondRenderLog)}`,
+    );
+    assert.equal(second.latest.state.info.username, "tester");
+  } finally {
+    second.unmount();
+  }
+});
+
+test("disconnect clears the seed so a fresh instance starts disconnected", async () => {
+  resetNewApiKnownStateForTests();
+  const world = createWorld();
+  await seedConnection(world, "token-v1", "cookie-v1");
+  const first = mountAccountProbe(world);
+  try {
+    await waitFor(() => first.latest?.state.status === "ready");
+  } finally {
+    first.unmount();
+  }
+
+  await clearNewApiConnection(world.credentialService, "newapi-1");
+  const secondRenderLog: { hasConnection: boolean; status: string }[] = [];
+  const second = mountAccountProbe(world, secondRenderLog);
+  try {
+    await waitFor(() => second.latest?.state.status === "idle");
+    assert.deepEqual(
+      secondRenderLog[0],
+      { hasConnection: false, status: "idle" },
+      "断开后新实例首帧必须即未连接（种子已清空）",
+    );
+  } finally {
+    second.unmount();
   }
 });
