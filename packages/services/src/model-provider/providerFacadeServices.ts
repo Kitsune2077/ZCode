@@ -1,6 +1,7 @@
 import type { Event } from "@zcode/rpc";
 import { ServiceChannels } from "@zcode/shared";
 import {
+  ModelConfig,
   type ModelConfigObject,
   type ModelId,
   type ModelSelection,
@@ -24,6 +25,11 @@ import {
   type ProvisionNewApiProviderInput,
   type ProvisionNewApiProviderResult,
 } from "./newApiProvisioning.js";
+import {
+  syncNewApiProviderModels,
+  type NewApiModelSyncInput,
+  type NewApiModelSyncResult,
+} from "./newApiModelSync.js";
 import {
   fetchNewApiAccountInfo,
   type NewApiAccountInfo,
@@ -89,6 +95,12 @@ export interface IProviderSettingsService {
   provisionNewApiProvider(
     input: ProvisionNewApiProviderInput,
   ): Promise<ProvisionNewApiProviderResult>;
+  /**
+   * 冷启动时把 NewAPI Provider 的模型成员同步到服务端现状（见
+   * docs/newapi-provider-provisioning.md「冷启动模型同步」）。无差异或 Provider
+   * 已被删除时零写入；服务端无对话模型时抛 `no-chat-models` 保护本地列表。
+   */
+  syncNewApiModels(input: NewApiModelSyncInput): Promise<NewApiModelSyncResult>;
   /** 读取 NewAPI 账号信息与近 7 天用量趋势，供左下角身份与用量页展示。 */
   getNewApiAccountInfo(input: NewApiAccountInfoInput): Promise<NewApiAccountInfo>;
   /**
@@ -268,6 +280,45 @@ export function createProviderSettingsService(
     getNewApiAccountInfo: async (input) => {
       await ensureReady();
       return fetchNewApiAccountInfo({ fetch: hostFetch ?? globalThis.fetch }, input);
+    },
+    syncNewApiModels: async (input) => {
+      await ensureReady();
+      return syncNewApiProviderModels(
+        {
+          // 数据源是 Provider 自身的 Personal 层（登录时落下的 baseUrl + sk- Key +
+          // 导入成员），不读凭据：同步不需要访问令牌，且连接凭据可能与 Provider
+          // 生命周期短暂不一致（断开不删 Provider）。
+          readPersonalProvider: (providerId) => {
+            const provider = facade
+              .getView()
+              .providers.find((item) => item.providerId === providerId);
+            const personal = provider?.personalConfig;
+            const baseUrl = personal?.api?.baseUrl?.trim();
+            const apiKey =
+              personal?.access?.type === "api-key"
+                ? (personal.access.apiKey ?? "").trim()
+                : "";
+            if (!baseUrl || !apiKey) {
+              return undefined;
+            }
+            return {
+              apiKey,
+              baseUrl,
+              personalModelIds: personal?.personalModelIds ?? [],
+            };
+          },
+          // 与登录创建同语义：无自定义配置、默认启用；addPersonalModel 内部会追加
+          // 成员并保持用户已保存的顺序。
+          addPersonalModel: async (providerId, modelId) => {
+            await facade.addPersonalModel(providerId, modelId, new ModelConfig());
+          },
+          deletePersonalModel: async (providerId, modelId) => {
+            await facade.deletePersonalModel(providerId, modelId);
+          },
+        },
+        { fetch: hostFetch ?? globalThis.fetch },
+        input,
+      );
     },
     exchangeNewApiSession: async (input) => {
       await ensureReady();

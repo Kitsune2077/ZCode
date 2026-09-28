@@ -60,6 +60,16 @@ provisionNewApiProvider(input: {
   /** 上一次 NewAPI 登录落下的 Provider id；存在且仍然有效时先删后建。 */
   replaceProviderId?: string;
 }): Promise<{ providerId: string; modelIds: string[]; baseUrl: string }>;
+
+/** 冷启动时把 NewAPI Provider 的模型成员同步到服务端现状；见「冷启动模型同步」。 */
+syncNewApiModels(input: {
+  providerId: string;
+}): Promise<{
+  changed: boolean;
+  addedModelIds: string[];
+  removedModelIds: string[];
+  modelIds: string[];
+}>;
 ```
 
 失败以 `NewApiProvisioningError`（带稳定 `code`）抛出，文案经 i18n 呈现。
@@ -98,11 +108,36 @@ const shouldOpenLoginEntry = familyDomainPending || (!user && !hasUsableProvider
 
 迁移已完成 + 有可用 Provider 的用户不再被拦；没有任何可用 Provider 时行为不变。
 
+## 冷启动模型同步
+
+NewAPI 侧上下线模型后，用户本地 Provider 的模型列表只在登录时刷新一次，之后永远停在
+登录当天的快照。本功能在**冷启动**时自动对齐：
+
+- 触发：renderer 进程启动（Root 挂载后至多执行一次，模块级标记防 StrictMode/HMR 双触发）。
+  最小化 / 托盘恢复不重挂 Root，天然不触发——即用户语义上的「完全退出后再打开」。
+- 前置：存在 NewAPI 连接（凭据指针 `newapi:active_provider`）。没有连接时零请求。
+- 数据源：与登录同源同鉴权——用 Provider 自身 `personalConfig` 里的 `api.baseUrl` 与
+  `access.apiKey`（`sk-` Key）请求 `/v1/models` + `/api/pricing`（best-effort），
+  走同一套对话模型过滤规则。**不使用**凭据里的访问令牌：同步不需要 token 管理权限。
+- 比对基准：`personalConfig.personalModelIds`（登录时导入的集合），不是 resolved 视图，
+  避免启用状态等展示层差异被误判为成员变化。
+- 变更应用：成员只能由领域操作更新（见上节），因此走 `deletePersonalModel`（先删，
+  保持剩余模型相对顺序）+ `addPersonalModel`（按服务端顺序追加，不重排用户已有顺序）。
+  不创建/删除 Provider，不改 `access`/`api` 配置，不触碰凭据。
+- 结果呈现：`changed: true` 时 UI 以 Toast 提示新增/移除数量；无变化完全静默。
+- 失败语义：网络失败、`no-chat-models`（服务端目录为空或全被过滤——视为异常信号而非
+  「模型全部下线」，**绝不用空列表清掉用户已有模型**）、Provider 已被用户删除，一律
+  warn 日志 + 静默，不弹 Toast、不写任何配置。
+
+状态所有权：模型成员的唯一所有者仍是 `ProviderConfigService`，同步是它的幂等客户端；
+触发时机归 renderer Root（一次性副作用），Toast 归 UI 层。
+
 ## 不变量
 
 - 不持久化访问令牌；仅持久化换取的 `sk-` Key。
 - 未命中 NewAPI 时不影响既有 OAuth / Coding Plan 流程。
 - 同一账号反复登录始终只保留一个 NewAPI Provider。
+- 冷启动同步不改变 Provider 身份与连接凭据；无差异时零写入。
 
 ## 验收场景
 
@@ -116,3 +151,11 @@ const shouldOpenLoginEntry = familyDomainPending || (!user && !hasUsableProvider
 - H：第二次登录（`replaceProviderId` 命中现存 Provider）→ 先删除再创建，`providerId` 不变。
 - I：`replaceProviderId` 指向已不存在的 Provider → 跳过删除，只创建。
 - J：非智谱家族用户（迁移完成、`providerFamilyDomain` 为空）且有可用 Provider → 启动不再被弹回连接账号页。
+- K：冷启动时服务端目录新增 2 个、移除 1 个对话模型 → 成员按领域操作更新，
+  Toast 提示「新增 2 / 移除 1」。
+- L：冷启动时服务端目录与本地一致 → 零写入、无 Toast。
+- M：Provider 已被用户手工删除（连接凭据仍在）→ no-op，无 Toast。
+- N：`/v1/models` 为空或全被过滤 → 抛 `no-chat-models`，本地模型不受影响，无 Toast。
+- O：无 NewAPI 连接的普通用户冷启动 → 零请求。
+- P：同一 renderer 双挂载（StrictMode / HMR）→ 只同步一次。
+- Q：从最小化 / 托盘恢复 → Root 未重挂，不触发同步。

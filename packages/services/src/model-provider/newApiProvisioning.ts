@@ -157,7 +157,8 @@ async function resolveNewApiKey(
   return key;
 }
 
-async function listModelIds(
+/** 用 `sk-` Key 读取 `/v1/models` 的模型 id（去重、保序）；登录与冷启动同步共用。 */
+export async function listModelIds(
   network: NewApiHttpNetwork,
   apiRoot: string,
   apiKey: string,
@@ -187,7 +188,7 @@ interface RemotePricingEntry {
  * 该接口在多数部署上是公开的，读不到时返回空表：模型分类会退回按名字判定，
  * 不能因为一个可选元数据源不可用就让整个导入失败。
  */
-async function readModelEndpointTypes(
+export async function readModelEndpointTypes(
   network: NewApiHttpNetwork,
   apiRoot: string,
 ): Promise<Map<string, string[]>> {

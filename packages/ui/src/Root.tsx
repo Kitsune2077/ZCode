@@ -55,6 +55,7 @@ import { useDesktopNativeThemeSync } from "@/root/useDesktopNativeThemeSync.js";
 import { useRootPlatformEffects } from "@/root/useRootPlatformEffects.js";
 import { useRootWorkspaceActions } from "@/root/useRootWorkspaceActions.js";
 import { useBotBroadcastEffects } from "@/root/useBotBroadcastEffects.js";
+import { useNewApiModelSyncOnStartup } from "@/root/useNewApiModelSyncOnStartup.js";
 import { registerBaseWorkspaceServices } from "@/store/remoteWorkspaceSessionStore.js";
 import type { RootProps } from "@/root/types.js";
 import { DiffsWorkerPoolProvider } from "@/root/DiffsWorkerPoolProvider.js";
@@ -476,6 +477,8 @@ function RootInner({
   }, [services]);
 
   useBotBroadcastEffects(services, tabStoreApi);
+  // 冷启动同步 NewAPI 模型列表：模块级 once 标记，托盘/最小化恢复不会重挂 Root，天然不触发。
+  useNewApiModelSyncOnStartup(services);
 
   const handleOpenRemoteConnection = useCallback((preference?: RemoteConnectionOpenPreference) => {
     setRemoteConnectionOpenPreference(preference ?? null);
