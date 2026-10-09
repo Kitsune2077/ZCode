@@ -59,6 +59,9 @@ bootstrap 顺序依赖：`desktopEarlyDataBaseDirBootstrap` 必须先于
 
 ## 边界与后续
 
+- 更新链路：便携形态默认关闭自动更新检查与启动前强更 gate（规则、原因与验收场景见
+  `auto-update.md`），升级方式为整包替换新 zip；本文“便携目录不属于更新器管理范围”
+  的声明由此落实。
 - Electron/Chromium 的 userData（缓存、Local Storage）仍走 `appData`，不随便携迁移——
   缓存是机器本地的，迁移无意义；如需彻底免残留可另行讨论 `ZCODE_DESKTOP_USER_DATA_DIR`。
 - macOS / Linux 不适用（无"安装版 vs 便携版"二分；mac zip 与 dmg 内容一致）。

@@ -1395,6 +1395,14 @@ export function refreshAutoUpdaterReleaseChannel(
     return;
   }
 
+  if (autoUpdaterDisabledForProductFlavor) {
+    // 更新器以 enabled:false 初始化后（Preview 身份、显式开关、Windows 便携版），
+    // electron-updater 仍指向未配置的占位 feed；设置页切换 stable/preview 通道时
+    // 不能在这里补发一次真实检查，否则"禁用"会被这条旁路绕过。
+    logger.info(`[auto-update] skip ${reason}: updater disabled for this runtime`);
+    return;
+  }
+
   if (menuState.kind === "download-progress" || menuState.kind === "update-downloaded") {
     logger.info(`[auto-update] skip ${reason}: state=${menuState.kind} channel=${nextChannel}`);
     return;
@@ -1501,6 +1509,10 @@ export async function initAutoUpdater(options: InitAutoUpdaterOptions = {}): Pro
       clearInterval(autoUpdatePollTimer);
       autoUpdatePollTimer = null;
     }
+    // 禁用形态（Preview 身份、显式开关、Windows 便携版）下把菜单状态收敛为
+    // idle/enabled:false：Windows 自绘 Help 菜单的"检查更新"置灰，用户不再点出
+    // 一个必然失败的检查。Preview 入口本就按身份隐藏，此改动对它无可见影响。
+    setAutoUpdaterMenuState({ kind: "idle", enabled: false });
     logger.info("[auto-update] disabled for this desktop product flavor");
     return;
   }

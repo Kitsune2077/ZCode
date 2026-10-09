@@ -18,8 +18,8 @@ resolveRuntimeZCodeEndpointOrigin(process.env)
   由 `autoUpdater.ts` 的 `applyManifestUpdateProvider()` 通过 `setFeedURL` 装载。
 - 请求：`GET {endpointOrigin}/api/v1/releases/electron/manifest?platform=&channel=&device_mid=`
 - 通道：`channel=stable`；设置项 `receivePreviewUpdates === true` 时为 `preview`。
-- 启动条件（`index.ts:1945`）：`ZCODE_PRODUCT_FLAVOR === "production"`。
-  Preview / test 身份**从不**启动该链路。
+- 启动条件（`index.ts` 中 `initAutoUpdater` 调用处）：`ZCODE_PRODUCT_FLAVOR === "production"`
+  且未被运行时禁用（显式开关或 Windows 便携版，见下）。Preview / test 身份**从不**启动该链路。
 - `autoDownload = false`；win32 下 `autoInstallOnAppQuit = false`，下载与安装都需用户操作。
 
 ### 更新清单契约（自建渠道时需实现）
@@ -43,7 +43,9 @@ resolveRuntimeZCodeEndpointOrigin(process.env)
 - 请求：`GET {endpointOrigin}/api/v1/client/configs?app_version=&platform=`
 - 判定：`data.configs` 中的 `minimalVersion` 高于当前版本时弹窗并**阻止创建主窗口**，
   非自动升级路径处理完弹窗后 `app.quit()`。
-- 启动条件（`index.ts:2196`）：`ZCODE_PRODUCT_FLAVOR === "production"` 且 `app.isPackaged`。
+- 启动条件（`index.ts` 中 `maybeBlockStartupForForceUpdate` 调用处）：
+  `ZCODE_PRODUCT_FLAVOR === "production"` 且 `app.isPackaged`，且未被显式开关 /
+  Windows 便携版跳过。
 - 失败容忍：读取远端配置失败时只 `warn` 并跳过（fail-open），不拦启动。
 
 该 gate 是有意的安全边界：它拦的是"打包发布客户端跑在最低版本以下"。因此默认不因
@@ -65,12 +67,37 @@ ZCODE_DESKTOP_DISABLE_UPDATE=1
   不再检查 / 不再接受远端更新决策，请求不会发往别处，没有同样的改道风险。
 - 未设置时行为完全不变。
 
+## 便携版（Windows zip）默认禁用
+
+Windows 便携包（`win-unpacked` 内容的 zip，判定规则见 `docs/portable-data-dir.md`）
+**默认关闭上述两条链路**，与显式开关同一组判定点生效：
+
+- 判定唯一所有者是 `resolvePortableAppHomeDir()`（`desktopPortableHome.ts`）：
+  win32 + 打包态 + exe 同目录无 `Uninstall*.exe`。更新判定点只消费该结果；
+  即使便携目录不可写（数据目录已回退主目录），应用二进制仍是便携形态，禁用不变。
+- 原因：应用内更新在 Windows 上只会下载并运行 NSIS 安装器，会把便携用户带进
+  “装出一份安装版、数据目录分家”的流程；强更 gate 同样会把用户推向这条路径。
+  便携版的升级方式是整包替换新 zip。`docs/portable-data-dir.md` 中
+  “便携目录不属于更新器管理范围”的声明由本规则落实。
+- 除两条链路一起关之外，便携 / 开关禁用时还有三条边界：
+  1. 跳过 `hydratePendingPostUpdateReleaseNotes`，不恢复旧便携构建遗留的
+     “已下载待安装”状态，避免复活一个不可用的安装入口；
+  2. `refreshAutoUpdaterReleaseChannel` 在更新器禁用时直接跳过：设置页切换
+     stable / preview 通道不再向未配置的占位 feed 发检查请求（该闸同时覆盖
+     Preview 身份与显式开关，属既有缺口的收敛）；
+  3. 禁用初始化时把更新菜单状态置为 `idle / enabled:false`，Windows 自绘
+     Help 菜单的“检查更新”置灰；托盘菜单条目仍可见（模板只按产品身份裁剪），
+     点击后走 `checkForUpdateMenuClick` 的 fail-closed 分支回 `dev-skipped` toast。
+- 安装版（NSIS，带卸载器）与非 Windows 平台不受影响。
+
 ## 不变量
 
 - 两条链路各自只有一个启动判定点，不新增旁路。
 - 开关解析唯一所有者是 `isAutoUpdateDisabledByRuntimeSwitch()`，判定点只消费它，
   不各自读取 env / argv。
-- 关闭的是"本机的更新行为"，不改变端点解析结果，也不影响登录 / 计费 / 遥测。
+- 便携判定不引入第二条判据或新的旁路入口；所有更新入口（自绘菜单、托盘、
+  设置页通道切换）都收敛到上述既有判定点。
+- 关闭的是“本机的更新行为”，不改变端点解析结果，也不影响登录 / 计费 / 遥测。
 
 ## 验收场景
 
@@ -80,3 +107,8 @@ ZCODE_DESKTOP_DISABLE_UPDATE=1
   `[force-update] disabled by ...` 且不请求 `/api/v1/client/configs`。
 - C：`--zcode-desktop-disable-update=0` → 等同未设置，两条链路都恢复。
 - D：Preview / test 身份 → 两条链路本来就不启动，开关不改变任何行为。
+- E：生产身份 + Windows 便携包（exe 同目录无 `Uninstall*.exe`）→ 日志出现便携
+  禁用记录，无 `initializing / checking`，不请求 manifest；强更 gate 跳过且不请求
+  `/api/v1/client/configs`；Help 菜单“检查更新”置灰；设置页切换 stable / preview
+  通道不触发检查；托盘点击只弹“当前运行环境不检查更新”。
+- F：生产身份 + NSIS 安装版（带卸载器）→ 行为与 A 完全一致，便携判定不介入。

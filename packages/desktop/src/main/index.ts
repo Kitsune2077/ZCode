@@ -162,7 +162,7 @@ import {
   runtimeUserDataPath,
   shouldUseElectronDefaultUserDataPath,
 } from "./desktopRuntimeEnv.js";
-import { resolveSettingsHomeAnchor } from "./desktopPortableHome.js";
+import { resolvePortableAppHomeDir, resolveSettingsHomeAnchor } from "./desktopPortableHome.js";
 import {
   disposeHostProcess,
   disposeHostProcessAndWait,
@@ -2010,7 +2010,17 @@ app.whenReady().then(async () => {
     logger.warn("[desktop-network] Chromium network policy bootstrap failed:", error);
   }
 
-  await hydratePendingPostUpdateReleaseNotes(mainSettingService);
+  // Windows 便携版（zip 解包直跑）不走应用内更新：更新器在 Windows 上只会产出 NSIS
+  // 安装包，把便携用户带进"装出一份安装版、数据目录分家"的流程，强更 gate 同理；
+  // 便携版的升级方式是整包替换新 zip。判定唯一所有者是 resolvePortableAppHomeDir
+  // （规则见 docs/auto-update.md 与 docs/portable-data-dir.md），这里只消费结果：
+  // 便携目录不可写导致的数据目录回退不改变应用形态，禁用不受影响。
+  const isPortableWindowsRuntime = resolvePortableAppHomeDir() !== null;
+  if (!isPortableWindowsRuntime) {
+    // 便携版跳过：不恢复旧便携构建遗留的"已下载待安装"状态，避免复活一个
+    // 不可用的安装入口（更新器已禁用，restage 只会落到未配置的占位 feed）。
+    await hydratePendingPostUpdateReleaseNotes(mainSettingService);
+  }
   logWindowsBundledRuntimeIntegrityDiagnostic();
 
   // 启动自动更新检查（后台执行，不阻塞主界面）
@@ -2018,14 +2028,21 @@ app.whenReady().then(async () => {
   // 不向 Preview 渠道提供更新。
   // 此外允许显式关闭：自建/私有构建不希望被官方 feed 提示更新时，
   // 用 ZCODE_DESKTOP_DISABLE_UPDATE=1 或 --zcode-desktop-disable-update 关掉（打包态同样生效）。
+  // Windows 便携版默认同样禁用（见上方注释与 docs/auto-update.md）。
   const autoUpdateDisabledByRuntimeSwitch = isAutoUpdateDisabledByRuntimeSwitch();
   if (autoUpdateDisabledByRuntimeSwitch) {
     logger.info(
       "[auto-update] disabled by ZCODE_DESKTOP_DISABLE_UPDATE / --zcode-desktop-disable-update",
     );
   }
+  if (isPortableWindowsRuntime) {
+    logger.info("[auto-update] disabled for windows portable runtime");
+  }
   void initAutoUpdater({
-    enabled: ZCODE_PRODUCT_FLAVOR === "production" && !autoUpdateDisabledByRuntimeSwitch,
+    enabled:
+      ZCODE_PRODUCT_FLAVOR === "production" &&
+      !autoUpdateDisabledByRuntimeSwitch &&
+      !isPortableWindowsRuntime,
     onBeforeQuitAndInstall: async () => {
       notifyStabilityLifecycle("update_install");
       await prepareAppQuit("auto-update quitAndInstall", "update-install");
@@ -2269,11 +2286,13 @@ app.whenReady().then(async () => {
   // 显式开关（ZCODE_DESKTOP_DISABLE_UPDATE / --zcode-desktop-disable-update）同样跳过该 gate：
   // 自建/私有构建既不接官方更新，也不接受官方 minimalVersion 决定自己能不能启动，
   // 否则关掉自动更新后仍会被线上配置拦在启动前，开关形同虚设。
+  // Windows 便携版同理：强更只会把用户推向 NSIS 安装流程，与便携语义冲突（docs/auto-update.md）。
   const skipForceUpdateForLocalDevRuntime = !app.isPackaged;
   const forceUpdateGuardResult =
     ZCODE_PRODUCT_FLAVOR === "production" &&
     !skipForceUpdateForLocalDevRuntime &&
-    !autoUpdateDisabledByRuntimeSwitch
+    !autoUpdateDisabledByRuntimeSwitch &&
+    !isPortableWindowsRuntime
       ? await maybeBlockStartupForForceUpdate({
           locale: currentApplicationLocale,
           logger,
@@ -2287,6 +2306,8 @@ app.whenReady().then(async () => {
     logger.info("[force-update] Preview 跳过远端强制升级检查");
   } else if (skipForceUpdateForLocalDevRuntime) {
     logger.info("[force-update] 本地 dev 构建（未打包）跳过远端强制升级检查");
+  } else if (isPortableWindowsRuntime) {
+    logger.info("[force-update] Windows 便携版跳过远端强制升级检查");
   } else if (autoUpdateDisabledByRuntimeSwitch) {
     logger.info(
       "[force-update] disabled by ZCODE_DESKTOP_DISABLE_UPDATE / --zcode-desktop-disable-update",

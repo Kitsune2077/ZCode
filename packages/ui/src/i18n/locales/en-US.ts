@@ -1591,7 +1591,7 @@ const enUS: Record<string, string> = {
   "update.toast.downloading": "Downloading new version v{version}",
   "update.toast.alreadyDownloading": "Downloading new version ({progress}%)",
   "update.toast.ready": "v{version} downloaded, restart to install",
-  "update.toast.devSkipped": "Updates are disabled in dev builds",
+  "update.toast.devSkipped": "Updates are not checked in this environment",
   "update.toast.error": "Update check failed: {error}",
   "forceUpdate.title": "Update ZCode to continue",
   "forceUpdate.description":
