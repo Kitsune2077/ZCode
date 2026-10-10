@@ -2182,9 +2182,9 @@ const zhCN: Record<string, string> = {
   "sidebar.settings.theme.zai-dark": "深色主题",
   "sidebar.settings.theme.dark": "深色主题",
   "settings.migration.title": "迁移",
-  "settings.migration.sectionTitle": "Claude 历史迁移",
+  "settings.migration.sectionTitle": "外部 Agent 历史迁移",
   "settings.migration.sectionDescription":
-    "扫描本机 Claude Code 原生历史，可按 workspace 和时间范围筛选，再把选中的会话导入到对应的 ZCode 任务列表。",
+    "从本机的 Claude Code、OpenCode 与 DeepSeek Harness 原生历史中扫描并导入会话；导入后的会话会写入对应 workspace 的任务列表，并可继续对话。",
   "settings.migration.badge.localOnly": "本机 Claude 记录",
   "settings.migration.badge.manualOnly": "手动执行",
   "settings.migration.currentWorkspace": "当前工作区",

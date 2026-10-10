@@ -2321,9 +2321,9 @@ const enUS: Record<string, string> = {
   "sidebar.settings.theme.zai-dark": "Dark theme",
   "sidebar.settings.theme.dark": "Dark theme",
   "settings.migration.title": "Migration",
-  "settings.migration.sectionTitle": "Claude History Migration",
+  "settings.migration.sectionTitle": "External Agent History Migration",
   "settings.migration.sectionDescription":
-    "Scan native Claude Code history on this machine, optionally filter by workspace and activity window, then import the selected sessions into their matching ZCode task lists.",
+    "Scan and import sessions from native Claude Code, OpenCode, and DeepSeek Harness history on this machine. Imported sessions land in their matching workspace task lists and stay resumable.",
   "settings.migration.badge.localOnly": "Local Claude records",
   "settings.migration.badge.manualOnly": "Manual only",
   "settings.migration.currentWorkspace": "Current workspace",
