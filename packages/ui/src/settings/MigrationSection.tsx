@@ -27,7 +27,13 @@ import { MigrationCandidatesCard } from "@/settings/MigrationCandidatesCard.js";
 
 const RANGE_OPTIONS = ["7d", "30d", "90d", "all"] as const;
 const WORKSPACE_FILTER_OPTIONS = ["all", "current"] as const;
-const PROVIDER_OPTIONS: SessionMigrationProvider[] = ["claude", "openCode"];
+const PROVIDER_OPTIONS: SessionMigrationProvider[] = ["claude", "openCode", "deepseekHarness"];
+
+const SCAN_FAILED_DESCRIPTION_KEYS: Record<SessionMigrationProvider, string> = {
+  claude: "settings.migration.scanFailedDescription",
+  openCode: "settings.migration.scanFailedDescription.openCode",
+  deepseekHarness: "settings.migration.scanFailedDescription.deepseekHarness",
+};
 
 export function MigrationSection({
   workspacePath,
@@ -229,12 +235,7 @@ export function MigrationSection({
               </AlertTitle>
               <AlertDescription>
                 {intl.formatMessage(
-                  {
-                    id:
-                      provider === "openCode"
-                        ? "settings.migration.scanFailedDescription.openCode"
-                        : "settings.migration.scanFailedDescription",
-                  },
+                  { id: SCAN_FAILED_DESCRIPTION_KEYS[provider] },
                   { error: scanError },
                 )}
               </AlertDescription>

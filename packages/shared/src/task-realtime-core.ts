@@ -25,6 +25,7 @@ const zcodeTaskModeRealtimeValues = [
 const zcodeTaskMigrationSourceRealtimeValues = [
   "claudeCode",
   "openCode",
+  "deepseekHarness",
 ] as const satisfies readonly ZCodeTaskMigrationSource[];
 const zcodeTaskChangeSummaryRealtimeSchema = z
   .object({
