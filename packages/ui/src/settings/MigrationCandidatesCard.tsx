@@ -99,7 +99,9 @@ export function MigrationCandidatesCard({
 
   return (
     <Card className="border border-border bg-card py-0 shadow-none">
-      <CardHeader className="border-b border-border">
+      {/* Card 自身 py-0 收掉了默认纵向间距，而 CardHeader 只有 px-4（border-b 时才有 pb-4），
+          不补 py-4 头部文字会 0 顶距贴卡片上边缘、下方却留 16px，视觉上整体上移。 */}
+      <CardHeader className="border-b border-border py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-2">
