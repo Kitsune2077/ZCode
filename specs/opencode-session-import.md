@@ -75,7 +75,7 @@ sessions-index → tasks-index → workspace_task_list_changed → 侧边栏出�
   - `IZCodeTaskService` 新增 `scanImportableOpenCodeSessions` / `importOpenCodeSessions`（与 claude 版同参）。
   - 新增 `packages/services/src/session/opencode-native/`（types / repo / parser / service）。
 - `apps/zcode-cli`：`persistImportedSessionHistory` 的 createdAt/updatedAt 判定从 `source === "claudeCode"` 泛化为“消息型来源（非 sharedContext）”。
-- `packages/ui`：`useClaudeSessionMigration` 泛化 `provider` 参数（缺省 `claude`，向后兼容 Onboarding 用法）；`MigrationSection` 增加来源切换。
+- `packages/ui`：`useClaudeSessionMigration` 泛化 `provider` 参数（缺省 `claude`，向后兼容 Onboarding 用法）；`MigrationSection` 增加来源切换；同时把 `migration` 分区补进设置侧栏导航（`settingsPageConfig`，归"数据与统计"组）——该渲染分支此前从未挂到侧栏，入口只能靠 onboarding 向导触达。
 
 ## 6. 不变量
 
