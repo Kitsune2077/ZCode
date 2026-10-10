@@ -132,12 +132,32 @@ NewAPI 侧上下线模型后，用户本地 Provider 的模型列表只在登录
 状态所有权：模型成员的唯一所有者仍是 `ProviderConfigService`，同步是它的幂等客户端；
 触发时机归 renderer Root（一次性副作用），Toast 归 UI 层。
 
+## 访问令牌（PAT）兼容
+
+new-api v1.0.0-rc.41 起，「安全与访问」中的单一面板访问令牌改为**具名个人访问令牌**
+（PAT，`nap_` 前缀）：创建时明文只显示一次、必须勾选 `resource:action` 作用域、默认
+30 天过期（可选永不过期）；旧版令牌自服务端升级起 30 天后返回
+`ACCESS_TOKEN_LEGACY_RETIRED` 拒绝且不能再生。浏览器登录（会话令牌 + refresh cookie
+自动续期）不受该调整影响；受影响的是**手动访问令牌**登录路径：
+
+- **最小作用域集合**（ZCode 各链路所需，缺失即在对应环节被 403 拒绝）：
+  - 配置 Provider：`api_key:read`（列令牌）、`api_key:write`（创建）、`api_key:reveal`
+    （取完整 `sk-` Key）；
+  - 账号与用量展示：`profile:read`（`/api/user/self`）、`usage:read`（`/api/data/self`）。
+- **错误呈现**：HTTP 层必须把服务端非 2xx 响应体中的 `code`/`message` 保留进错误文本，
+  UI 层对稳定 code（`ACCESS_TOKEN_SCOPE_DENIED`、`ACCESS_TOKEN_ROUTE_UNDECLARED`、
+  `ACCESS_TOKEN_EXPIRED`、`ACCESS_TOKEN_LEGACY_RETIRED`）翻译为可操作的提示
+  （补勾作用域 / 重新生成令牌），未识别的照原文展示。
+- **过期语义**：PAT 无 refresh cookie，到期后无法自动续期——UI 的过期提示必须引导
+  用户去控制台重新生成并重新粘贴；永不过期令牌由用户在 NewAPI 侧自担风险选择。
+
 ## 不变量
 
 - 不持久化访问令牌；仅持久化换取的 `sk-` Key。
 - 未命中 NewAPI 时不影响既有 OAuth / Coding Plan 流程。
 - 同一账号反复登录始终只保留一个 NewAPI Provider。
 - 冷启动同步不改变 Provider 身份与连接凭据；无差异时零写入。
+- 服务端错误码必须原样穿透到 UI 可见的错误文本，不得在 HTTP 层丢弃。
 
 ## 验收场景
 
@@ -159,3 +179,7 @@ NewAPI 侧上下线模型后，用户本地 Provider 的模型列表只在登录
 - O：无 NewAPI 连接的普通用户冷启动 → 零请求。
 - P：同一 renderer 双挂载（StrictMode / HMR）→ 只同步一次。
 - Q：从最小化 / 托盘恢复 → Root 未重挂，不触发同步。
+- S：rc.41+ 部署上用缺作用域的 PAT 登录 → 错误提示包含服务端 code 并翻译为
+  「请补勾 api_key / profile / usage 作用域」的可操作文案。
+- T：rc.41+ 部署上用过期或已退休（legacy）PAT 登录 → 提示引导重新生成令牌，
+  不出现裸的「HTTP 401」。

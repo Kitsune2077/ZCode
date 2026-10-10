@@ -83,7 +83,29 @@ export function describeNetworkError(error: unknown): string {
 interface RemoteEnvelope<T> {
   success?: boolean;
   message?: string;
+  /** new-api v1.0.0-rc.41+ 的稳定错误码，如 ACCESS_TOKEN_SCOPE_DENIED / ACCESS_TOKEN_EXPIRED。 */
+  code?: string;
   data?: T;
+}
+
+/**
+ * 从非 2xx 响应体中提取服务端 code 与 message，拼进错误文本。
+ *
+ * bug 背景：HTTP 层此前只报 `failed with HTTP 403`，把响应体里的稳定错误码丢弃，
+ * PAT（具名访问令牌）的作用域不足 / 过期 / 旧版退休等问题对用户只剩一个裸状态码，
+ * UI 无法给出可操作的指引。信封解析失败（如网关 HTML 错误页）时维持原格式。
+ */
+function describeHttpFailure(
+  url: string,
+  status: number,
+  parsed: RemoteEnvelope<unknown> | undefined,
+): string {
+  const serverCode = parsed?.code?.trim();
+  const serverMessage = parsed?.message?.trim();
+  const detail =
+    [serverCode ? `(${serverCode})` : null, serverMessage || null].filter(Boolean).join(" ") ||
+    null;
+  return `NewAPI request ${url} failed with HTTP ${status}${detail ? ` ${detail}.` : "."}`;
 }
 
 export interface NewApiJsonRequestOptions {
@@ -138,19 +160,20 @@ export async function requestNewApiJson<T>(
   options.captureResponseHeaders?.(response.headers);
 
   const text = await response.text();
+  let parsed: RemoteEnvelope<T> | undefined;
+  try {
+    parsed = JSON.parse(text) as RemoteEnvelope<T>;
+  } catch {
+    // 非 JSON 响应体（如网关 HTML 错误页）：失败路径仍按状态码报错，成功路径在下方重抛。
+  }
   if (!response.ok) {
     throw new NewApiProvisioningError(
       options.code,
-      `NewAPI request ${options.url} failed with HTTP ${response.status}.`,
+      describeHttpFailure(options.url, response.status, parsed),
     );
   }
-  let parsed: RemoteEnvelope<T>;
-  try {
-    parsed = JSON.parse(text) as RemoteEnvelope<T>;
-  } catch (error) {
-    throw new NewApiProvisioningError(options.code, "NewAPI returned non-JSON response.", {
-      cause: error,
-    });
+  if (parsed === undefined) {
+    throw new NewApiProvisioningError(options.code, "NewAPI returned non-JSON response.");
   }
   if (parsed.success === false) {
     throw new NewApiProvisioningError(

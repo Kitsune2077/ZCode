@@ -36,6 +36,7 @@ import {
   saveNewApiConnection,
   saveNewApiRefreshCookie,
 } from "@/lib/newApiConnection.js";
+import { resolveNewApiTokenErrorFeedbackMessageId } from "@/lib/newApiTokenErrorFeedback.js";
 import { logger } from "@/logger.js";
 import { buildLoginApiKeyDefaultModelPreferenceFromSelection } from "@/login/LoginApiKeyForm.helpers.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
@@ -80,6 +81,7 @@ export function LoginNewApiForm({ onCancel, onSaved }: LoginNewApiFormProps) {
   const [apiFormat, setApiFormat] = useState<NewApiApiFormat>("openai-chat-completions");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const tokenErrorFeedbackMessageId = resolveNewApiTokenErrorFeedbackMessageId(error);
 
   /**
    * 两条路径共用的落库流程。
@@ -212,6 +214,11 @@ export function LoginNewApiForm({ onCancel, onSaved }: LoginNewApiFormProps) {
 
   const manualTokenSection = (
     <>
+      {/* rc.41+ 的具名访问令牌带作用域且默认 30 天过期：预先告诉用户要勾哪些 scope，
+          否则配置/用量展示会在中途被 403 拦下且难定位。 */}
+      <p className="text-ui-xs text-foreground-subtle">
+        {intl.formatMessage({ id: "login.newApi.accessTokenHint" })}
+      </p>
       <Input
         id="login-new-api-access-token"
         type="password"
@@ -369,7 +376,13 @@ export function LoginNewApiForm({ onCancel, onSaved }: LoginNewApiFormProps) {
       {error ? (
         <Alert variant="destructive" data-testid={TID_LOGIN_NEW_API_ERROR}>
           <TriangleAlertIcon className="size-4" />
-          <AlertDescription>{error}</AlertDescription>
+          {/* rc.41+ 的 PAT 稳定错误码翻译为可操作提示（补勾作用域/重新生成令牌）；
+              未识别的错误照原文展示，避免吞掉未知信息。 */}
+          <AlertDescription>
+            {tokenErrorFeedbackMessageId
+              ? intl.formatMessage({ id: tokenErrorFeedbackMessageId })
+              : error}
+          </AlertDescription>
         </Alert>
       ) : null}
 
