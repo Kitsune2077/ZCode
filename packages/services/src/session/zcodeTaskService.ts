@@ -556,6 +556,21 @@ export interface IZCodeTaskService {
     sessionIds: string[];
   }): Promise<ZCodeImportSessionsResult>;
 
+  /** 扫描可导入的 OpenCode 原生 session（~/.local/share/opencode/opencode.db，只读）；可选按 workspace 过滤。 */
+  scanImportableOpenCodeSessions(params: {
+    workspacePath?: string;
+    workspaceIdentity?: string;
+    modifiedSince?: number;
+    limit?: number;
+  }): Promise<ZCodeImportableSessionCandidate[]>;
+
+  /** 导入选中的 OpenCode 原生 session 为真实可续聊 ZCode session；不传 workspacePath 时按原始 workspace 导入。 */
+  importOpenCodeSessions(params: {
+    workspacePath?: string;
+    workspaceIdentity?: string;
+    sessionIds: string[];
+  }): Promise<ZCodeImportSessionsResult>;
+
   /** 切换 task 模式 */
   setMode(params: { taskId: string; mode: ZCodeTaskMode }): Promise<void>;
 

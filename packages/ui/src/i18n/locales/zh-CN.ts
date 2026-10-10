@@ -2199,7 +2199,10 @@ const zhCN: Record<string, string> = {
   "settings.migration.unsupported.desktopOnly": "迁移能力当前只支持桌面端。",
   "settings.migration.filtersTitle": "筛选条件",
   "settings.migration.filtersDescription":
-    "可按 workspace、最近活跃时间和返回数量筛选，然后手动触发一次候选会话扫描。",
+    "可按导入来源、workspace、最近活跃时间和返回数量筛选，然后手动触发一次候选会话扫描。",
+  "settings.migration.providerLabel": "导入来源",
+  "settings.migration.provider.claude": "Claude Code",
+  "settings.migration.provider.openCode": "OpenCode",
   "settings.migration.workspaceFilterLabel": "workspace 筛选",
   "settings.migration.workspaceFilter.all": "全部 workspace",
   "settings.migration.workspaceFilter.current": "仅当前 workspace",
@@ -2213,6 +2216,7 @@ const zhCN: Record<string, string> = {
   "settings.migration.scan": "扫描候选会话",
   "settings.migration.scanFailedTitle": "扫描失败",
   "settings.migration.scanFailedDescription": "读取 Claude 原生历史失败：{error}",
+  "settings.migration.scanFailedDescription.openCode": "读取 OpenCode 原生历史失败：{error}",
   "settings.migration.candidatesTitle": "候选会话",
   "settings.migration.candidatesDescription":
     "选择一个或多个会话后执行导入；每条记录会写入它自己的目标 workspace 任务列表。",

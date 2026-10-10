@@ -1,9 +1,7 @@
-import { mkdir, rename, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
 import type { ZCodeSessionFile, ZCodeTaskMeta } from "@zcode/shared";
-import { getLegacyTaskSessionSnapshotPath } from "#src/paths.js";
 import {
   parseLegacyTaskSessionFile,
+  writeImportedLegacyTaskSnapshot,
   type LegacyTaskSessionFile,
 } from "#src/session/legacyTaskSessionFile.js";
 import type { TaskIndexRepo } from "#src/session/taskIndexRepo.js";
@@ -27,19 +25,6 @@ export function buildSearchableTextFromMessages(messages: ZCodeSessionFile["mess
     total += next.length;
   }
   return parts.join("");
-}
-
-async function writeSessionFileAtomic(
-  filePath: string,
-  sessionFile: LegacyTaskSessionFile,
-): Promise<void> {
-  const tempPath = `${filePath}.${process.pid}.${Date.now().toString(36)}.${Math.random()
-    .toString(36)
-    .slice(2, 8)}.tmp`;
-  const serialized = JSON.stringify(sessionFile, null, 2);
-  await mkdir(dirname(filePath), { recursive: true });
-  await writeFile(tempPath, `${serialized}\n`, "utf-8");
-  await rename(tempPath, filePath);
 }
 
 export async function persistImportedClaudeTask(params: {
@@ -73,15 +58,8 @@ export async function persistImportedClaudeTask(params: {
 export async function writeImportedClaudeTaskSnapshot(params: {
   sessionFile: LegacyTaskSessionFile;
 }): Promise<void> {
-  const parsed = parseLegacyTaskSessionFile(params.sessionFile);
-  const filePath = getLegacyTaskSessionSnapshotPath(
-    parsed.meta.workspacePath,
-    parsed.meta.taskId,
-    parsed.meta.workspaceIdentity,
-  );
-
   // legacy ACP 下线后 importClaudeSessions 变成空桩，导入虽复制了 jsonl 却没有写
   // ~/.zcode/v2/sessions/{hash}/{taskId}.json。现在真实 ZCode session 承担续聊，legacy snapshot
   // 只保存过滤后的迁移备份，避免 Claude 来源运行态污染当前模型选择。
-  await writeSessionFileAtomic(filePath, parsed);
+  await writeImportedLegacyTaskSnapshot(params);
 }

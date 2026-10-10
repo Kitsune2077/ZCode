@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Loader2, RefreshCcw, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import {
@@ -18,12 +18,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select.js";
-import { useClaudeSessionMigration } from "@/hooks/useClaudeSessionMigration.js";
+import {
+  useClaudeSessionMigration,
+  type SessionMigrationProvider,
+} from "@/hooks/useClaudeSessionMigration.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { MigrationCandidatesCard } from "@/settings/MigrationCandidatesCard.js";
 
 const RANGE_OPTIONS = ["7d", "30d", "90d", "all"] as const;
 const WORKSPACE_FILTER_OPTIONS = ["all", "current"] as const;
+const PROVIDER_OPTIONS: SessionMigrationProvider[] = ["claude", "openCode"];
 
 export function MigrationSection({
   workspacePath,
@@ -35,6 +39,7 @@ export function MigrationSection({
   isDesktop?: boolean;
 }) {
   const { intl, locale } = useZCodeIntl();
+  const [provider, setProvider] = useState<SessionMigrationProvider>("claude");
   const {
     supportState,
     workspaceFilterMode,
@@ -62,6 +67,7 @@ export function MigrationSection({
     workspacePath,
     workspaceIdentity,
     isDesktop,
+    provider,
   });
 
   const dateTimeFormatter = useMemo(
@@ -118,7 +124,33 @@ export function MigrationSection({
             </Alert>
           ) : null}
 
-          <div className="grid gap-4 xl:grid-cols-3">
+          <div className="grid gap-4 xl:grid-cols-4">
+            <div className="space-y-2">
+              <div className="text-ui-base font-medium text-foreground">
+                {intl.formatMessage({ id: "settings.migration.providerLabel" })}
+              </div>
+              <Select
+                value={provider}
+                disabled={!supportState.supported || isScanning || isImporting}
+                onValueChange={(value) =>
+                  setProvider(PROVIDER_OPTIONS.includes(value as SessionMigrationProvider)
+                    ? (value as SessionMigrationProvider)
+                    : "claude")
+                }
+              >
+                <SelectTrigger size="lg" className="w-full justify-between">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROVIDER_OPTIONS.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {intl.formatMessage({ id: `settings.migration.provider.${option}` })}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="space-y-2">
               <div className="text-ui-base font-medium text-foreground">
                 {intl.formatMessage({ id: "settings.migration.workspaceFilterLabel" })}
@@ -197,7 +229,12 @@ export function MigrationSection({
               </AlertTitle>
               <AlertDescription>
                 {intl.formatMessage(
-                  { id: "settings.migration.scanFailedDescription" },
+                  {
+                    id:
+                      provider === "openCode"
+                        ? "settings.migration.scanFailedDescription.openCode"
+                        : "settings.migration.scanFailedDescription",
+                  },
                   { error: scanError },
                 )}
               </AlertDescription>
