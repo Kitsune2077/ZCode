@@ -169,10 +169,12 @@ test("plan priority: dataBaseDir configured inside the data anchor wins over the
 
 test("resolvePortableDataDir: only an existing directory under a portable home counts", () => {
   const exeDir = "E:\\ZCodePortable";
+  // 期望路径用 join 按宿主分隔符推导：假路径的拼接结果在 posix/Linux CI 上是 `/`。
+  const expectedDataDir = join(exeDir, "data");
   // 非便携（null home）→ 约定不可用。
   assert.equal(resolvePortableDataDir(null, () => true), null);
   // 目录存在 → 返回约定路径。
-  assert.equal(resolvePortableDataDir(exeDir, () => true), "E:\\ZCodePortable\\data");
+  assert.equal(resolvePortableDataDir(exeDir, () => true), expectedDataDir);
   // 不存在 / 同名文件（directoryExists 为 false）→ 维持便携默认。
   assert.equal(resolvePortableDataDir(exeDir, () => false), null);
 });
