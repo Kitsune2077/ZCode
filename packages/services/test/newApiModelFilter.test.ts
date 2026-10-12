@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+// 官方 v3.15.1 已把单测栈迁移到 vitest（root vitest 收集全部 *.test.ts），
+// node:test 风格文件因无 vitest 套件会整体报 No test suite found。
+import { test } from "vitest";
 import {
   filterNewApiChatModels,
   isNewApiNonChatModel,

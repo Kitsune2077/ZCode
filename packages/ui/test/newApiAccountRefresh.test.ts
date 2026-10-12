@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+// 官方 v3.15.1 已把单测迁移到 vitest：root vitest 会收集所有 *.test.ts，
+// node:test 风格的文件因为没有 vitest 套件而整体报 No test suite found。
+import { test } from "vitest";
 import type { NewApiAccountInfo } from "@zcode/services";
 import { fetchNewApiAccountWithAutoRefresh } from "../src/lib/newApiAccountRefresh.js";
 
@@ -57,7 +59,7 @@ test("valid token reads directly without touching the refresh cookie", async () 
   const h = harness({});
   const result = await h.run();
   assert.equal(result.info.username, "tester");
-  // 凭据未变：调用方不得据此重读连接，否则会把一次成功的读取重新拉起。
+  // 鍑嵁鏈彉锛氳皟鐢ㄦ柟涓嶅緱鎹閲嶈杩炴帴锛屽惁鍒欎細鎶婁竴娆℃垚鍔熺殑璇诲彇閲嶆柊鎷夎捣銆?
   assert.equal(result.credentialsRenewed, false);
   assert.deepEqual(h.calls.fetchTokens, ["stale-token"]);
   assert.equal(h.calls.exchangedCookies.length, 0);
@@ -77,11 +79,11 @@ test("expired token refreshes once, persists rotated credentials, then retries w
   });
   const result = await h.run();
   assert.equal(result.info.username, "refreshed-user");
-  // 续期确实发生并已落库：调用方需要重读一次连接，让内存快照换上新令牌。
+  // 缁湡纭疄鍙戠敓骞跺凡钀藉簱锛氳皟鐢ㄦ柟闇€瑕侀噸璇讳竴娆¤繛鎺ワ紝璁╁唴瀛樺揩鐓ф崲涓婃柊浠ょ墝銆?
   assert.equal(result.credentialsRenewed, true);
   assert.deepEqual(h.calls.fetchTokens, ["stale-token", "fresh-token"]);
   assert.deepEqual(h.calls.exchangedCookies, ["cookie-v1"]);
-  // 服务端轮换后的 cookie 必须连同新令牌一起落库；旧 cookie 已失效。
+  // 鏈嶅姟绔疆鎹㈠悗鐨?cookie 蹇呴』杩炲悓鏂颁护鐗屼竴璧疯惤搴擄紱鏃?cookie 宸插け鏁堛€?
   assert.deepEqual(h.calls.persisted, [{ accessToken: "fresh-token", refreshCookie: "rotated-cookie" }]);
 });
 
@@ -116,7 +118,7 @@ test("a failed retry after a successful refresh reports the retry error", async 
     },
     refreshCookie: "cookie-v1",
   });
-  // 续期成功但重读仍失败：此时凭据已更新，报重读错误才不误导（不是旧令牌过期）。
+  // 缁湡鎴愬姛浣嗛噸璇讳粛澶辫触锛氭鏃跺嚟鎹凡鏇存柊锛屾姤閲嶈閿欒鎵嶄笉璇锛堜笉鏄棫浠ょ墝杩囨湡锛夈€?
   await assert.rejects(h.run(), /500 server error/);
   assert.deepEqual(h.calls.persisted, [{ accessToken: "fresh-token", refreshCookie: "rotated-cookie" }]);
 });

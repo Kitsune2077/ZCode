@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+// 官方 v3.15.1 已把单测栈迁移到 vitest（root vitest 收集全部 *.test.ts），
+// node:test 风格文件因无 vitest 套件会整体报 No test suite found。
+import { test } from "vitest";
 import { shouldFallbackSettingsUsageTabToApp } from "../src/lib/settingsNavigation.js";
 
 // NewAPI 标签与 Coding Plan 共用 settings 的 usage 分区，但它没有“套餐存在性”这个前提。

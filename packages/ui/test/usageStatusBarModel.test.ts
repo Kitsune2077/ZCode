@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+// 官方 v3.15.1 已把单测迁移到 vitest：root vitest 会收集所有 *.test.ts，
+// node:test 风格的文件因为没有 vitest 套件而整体报 No test suite found。
+import { test } from "vitest";
 import type { V4ConversationUsageDetailResult } from "@zcode/shared/zcode-protocol-v4";
 import {
   buildUsageStatusBarModel,
@@ -32,7 +34,7 @@ test("generation speed derives from first-token to completion", () => {
       timeToFirstTokenMs: 1_200,
     }),
   });
-  // 1000 tokens / 10s = 100 tok/s（不是用整请求时长 15s 算出的 66.7）。
+  // 1000 tokens / 10s = 100 tok/s锛堜笉鏄敤鏁磋姹傛椂闀?15s 绠楀嚭鐨?66.7锛夈€?
   assert.equal(model.generation?.tokensPerSecond, 100);
   assert.equal(model.generation?.modelId, "glm-5.3");
   assert.equal(hasUsageStatusBarContent(model), true);

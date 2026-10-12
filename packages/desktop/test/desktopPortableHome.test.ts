@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+// 官方 v3.15.1 已把单测迁移到 vitest：root vitest 会收集所有 *.test.ts，
+// node:test 风格的文件因为没有 vitest 套件而整体报 No test suite found。
+import { test } from "vitest";
 import {
   ensurePortableHomeWritable,
   planEarlyDataBaseDir,
@@ -141,7 +143,7 @@ test("ensurePortableHomeWritable accepts a writable dir and rejects a blocked pa
   try {
     assert.equal(ensurePortableHomeWritable(root), true);
 
-    // 用一个普通文件充当父路径，mkdir 必然失败，模拟只读介质。
+    // 鐢ㄤ竴涓櫘閫氭枃浠跺厖褰撶埗璺緞锛宮kdir 蹇呯劧澶辫触锛屾ā鎷熷彧璇讳粙璐ㄣ€?
     const blocker = join(root, "blocker");
     writeFileSync(blocker, "not a dir");
     assert.equal(ensurePortableHomeWritable(blocker), false);

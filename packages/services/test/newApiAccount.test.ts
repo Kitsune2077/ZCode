@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+// 官方 v3.15.1 已把单测迁移到 vitest：root vitest 会收集所有 *.test.ts，
+// node:test 风格的文件因为没有 vitest 套件而整体报 No test suite found。
+import { test } from "vitest";
 import {
   aggregateNewApiDailyUsage,
   fetchNewApiAccountInfo,
@@ -95,7 +97,7 @@ test("fetchNewApiAccountInfo returns account, currency settings and daily trend"
       jsonResponse({
         success: true,
         data: {
-          custom_currency_symbol: "¥",
+          custom_currency_symbol: "楼",
           display_in_currency: true,
           quota_per_unit: 500_000,
           system_name: "Fixture Relay",
@@ -120,7 +122,7 @@ test("fetchNewApiAccountInfo returns account, currency settings and daily trend"
   assert.equal(info.usedQuota, 2_500_000);
   assert.equal(info.requestCount, 1234);
   assert.equal(info.quotaPerUnit, 500_000);
-  assert.equal(info.currencySymbol, "¥");
+  assert.equal(info.currencySymbol, "楼");
   assert.equal(info.displayInCurrency, true);
   assert.equal(info.systemName, "Fixture Relay");
   assert.deepEqual(info.daily, [{ count: 4, date: "2026-01-09", quota: 250, tokens: 20 }]);

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+// 官方 v3.15.1 已把单测迁移到 vitest：root vitest 会收集所有 *.test.ts，
+// node:test 风格的文件因为没有 vitest 套件而整体报 No test suite found。
+import { test } from "vitest";
 import { pickNewApiModelSyncToastMessageId } from "../src/lib/newApiModelSyncToast.js";
 
 test("no difference produces no toast message", () => {
