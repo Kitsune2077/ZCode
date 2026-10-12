@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -19,8 +20,12 @@ const tempHomes: string[] = [];
 
 function makeTempHome(): string {
   const home = mkdtempSync(join(tmpdir(), "zcode-skills-home-"));
+  // Windows 上 %TEMP% 的字面大小写（TEMP）与磁盘真实大小写（Temp）可能不一致；
+  // 服务侧返回的技能路径经 realpathSync.native 归一为真实大小写，这里对 home 做同样归一，
+  // 避免断言因大小写差异在 Windows 上误报（官方 CI 仅覆盖 Linux/macOS，未暴露此问题）。
+  const canonicalHome = realpathSync.native(home);
   tempHomes.push(home);
-  return home;
+  return canonicalHome;
 }
 
 async function createSkillsServiceInEnv(

@@ -146,6 +146,12 @@ vi.mock("@/v4/composer/toolbarShortcuts.js", () => ({
   useToolbarShortcutBindings: vi.fn(),
 }));
 
+// 本仓库定制：V4ComposerToolbar 里渲染了生成速率指标 V4ComposerUsageStats（本地新增），
+// 它依赖 ServiceProvider；本测试（来自官方 v3.15.1）不搭建 Provider 环境，这里 mock 为空渲染。
+vi.mock("@/v4/composer/V4ComposerUsageStats.js", () => ({
+  V4ComposerUsageStats: () => null,
+}));
+
 vi.mock("@/chat-input-toolbar/modelSelection.js", () => ({
   resolveModelSelectTriggerDisplay: (value: string) => ({ value }),
   shouldShowManageModelsAction: () => false,
