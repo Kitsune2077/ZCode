@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 // 官方 v3.15.1 已把单测迁移到 vitest：root vitest 会收集所有 *.test.ts，
 // node:test 风格的文件因为没有 vitest 套件而整体报 No test suite found。
 import { test } from "vitest";
@@ -34,13 +34,17 @@ test("portable detection: nsis layout with an uninstaller is not portable", () =
 });
 
 test("portable detection: unpacked zip layout without an uninstaller resolves to the exe dir", () => {
+  // win32 判定逻辑本身与宿主无关，但反斜杠假路径的 dirname 切分由 node:path 按
+  // 宿主 OS 计算（posix 上会得到 "."）。按宿主语义推导期望值，保持「返回 exe 所在
+  // 目录」的断言语义，测试得以在 Linux CI 上运行（官方 v3.15.1 起单测跑在 Linux）。
+  const exePath = "E:\\ZCodePortable\\ZCode.exe";
   const result = resolvePortableAppHomeDir({
     platform: "win32",
     isPackaged: true,
-    executablePath: "E:\\ZCodePortable\\ZCode.exe",
+    executablePath: exePath,
     listDirEntries: () => ["ZCode.exe", "resources", "electron.exe"],
   });
-  assert.equal(result, "E:\\ZCodePortable");
+  assert.equal(result, dirname(exePath));
 });
 
 test("portable detection: dev runtime and non-windows platforms never match", () => {
