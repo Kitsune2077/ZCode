@@ -14,3 +14,8 @@ third-party/runtime/*.txt -text -whitespace
 docs/knip/docs/LICENSE -text -whitespace
 docs/knip/docs/licenses/** -text -whitespace
 third-party/inventory.json linguist-generated=true
+
+# Gen UI vendor 快照按字节参与构建期 sha256 校验（packages/desktop/scripts/gen-ui-runtime-assets.mjs，
+# 官方 v3.15.1 引入）。autocrlf 的 LF→CRLF 转换会让 Windows 检出后的哈希与 manifest
+# 对不上，tsup plugin-sandbox 配置的 onSuccess 直接抛错，Windows 打包全挂。
+apps/zcode-cli/packages/visualize-plugin/skills/visualize/assets/vendor/** -text -whitespace
