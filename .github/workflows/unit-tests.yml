@@ -61,6 +61,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build CLI adapters package
+        # @zcode/adapters 的 "./storage" 子路径导出指向 dist（构建产物）；root vitest 的
+        # 部分单测（如 storagePreparationProtocol）经 bootstrap 源码引用它，CI 全新
+        # 环境没有本地残留 dist，必须先构建（本地开发机因曾构建过而未暴露）。
+        run: pnpm --dir apps/zcode-cli --filter @zcode/adapters build
+
       - name: Typecheck
         run: pnpm typecheck
 

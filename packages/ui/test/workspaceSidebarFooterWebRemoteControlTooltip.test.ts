@@ -40,6 +40,20 @@ vi.mock("@/hooks/usePlatform.js", () => ({
   }),
 }));
 
+// 本仓库定制：侧栏底部的 NewAPI 账户徽标依赖 useServices/ServiceProvider（组件内
+// 直接调用 useServices 取 credentialService，以及 useNewApiAccount 读取连接态）；
+// 本测试（来自官方 v3.15.1）不搭建 Provider 环境，两者都 mock 掉即可覆盖远控提示行为。
+vi.mock("@/hooks/useServices.js", () => ({
+  useServices: () => ({ credentialService: {} }),
+}));
+vi.mock("@/hooks/useNewApiAccount.js", () => ({
+  useNewApiAccount: () => ({
+    state: { status: "idle" },
+    connection: null,
+    refreshConnection: vi.fn(),
+  }),
+}));
+
 vi.mock("@/i18n/IntlProvider.js", () => ({
   useZCodeIntl: () => ({
     locale: "zh-CN",
