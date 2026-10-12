@@ -1,0 +1,71 @@
+# 单元测试与静态检查（typecheck / lint / vitest 单测）。
+#
+# 为什么用 CI 而不是本地跑：
+#   - 本地 Windows 全量单测耗时 30 分钟以上且持续占用 CPU，影响其他工作；
+#   - Linux runner 更快也更接近官方 CI 环境，能在合入前暴露平台差异问题；
+#   - push / PR 自动触发，结果可追溯，避免"本机过了但环境不同"的盲区。
+#
+# 仅覆盖单测（test:unit 已排除 desktop e2e）；E2E 需要真实 Electron 窗口，
+# 由专门的 e2e 流水线或本地 `pnpm test:e2e` 承担。
+name: Unit tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+
+permissions:
+  contents: read
+
+# 同一 ref 的新推送取消旧运行，节省 runner 时间；单测没有产物依赖，可安全取消。
+concurrency:
+  group: unit-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: typecheck / lint / unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      HUSKY: "0"
+      # tsc -b 全仓构建 + vitest 并发 worker 的堆需求远超 Node 默认 2GB，
+      # 本地默认堆会 OOM（见本地合并 v3.15.1 时的实测）；runner 内存 16GB，给到 8GB。
+      NODE_OPTIONS: --max-old-space-size=8192
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          # 与 mise.toml / package.json 的 packageManager 保持一致。
+          version: 10.33.2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # 与 mise.toml 的 node 版本保持一致。
+          node-version: 24.14.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit tests
+        run: pnpm test:unit
