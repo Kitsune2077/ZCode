@@ -17,6 +17,7 @@ export type {
   DwfRunIntrospectionQueries,
   DwfRunLifeSpan,
 } from "./session-store/repositories/dwf-journal.js";
+export type { DwfEventPageQuery } from "./session-store/repositories/dwf-journal-pages.js";
 export type {
   DwfRunDetailRow,
   DwfRunListItem,
@@ -35,7 +36,4 @@ export type {
   SqliteSessionStoreOptions,
 } from "./session-store/options.js";
 
-export type {
-  AsyncSqliteMigrationOptions,
-  SqliteMigrationProgress,
-} from "./session-store/migration-runner.js";
+export type { AsyncSqliteMigrationOptions, SqliteMigrationProgress } from "./session-store/migration-runner.js";

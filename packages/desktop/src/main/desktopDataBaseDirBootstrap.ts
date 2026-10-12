@@ -1,14 +1,22 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { join } from "node:path";
 import { setDataBaseDir } from "@zcode/services/node";
 import {
   ensurePortableHomeWritable,
   planEarlyDataBaseDir,
   portableAwareSettingsFile,
   resolvePortableAppHomeDir,
+  resolveSettingsHomeAnchor,
 } from "./desktopPortableHome.js";
 
-function extractBootstrapDataBaseDir(rawValue: unknown): string | null {
+export function resolveBootstrapSettingsFile(
+  homePath: string = resolveSettingsHomeAnchor(process.env, homedir()),
+): string {
+  return join(homePath, ".zcode", "v2", "setting.json");
+}
+
+export function extractBootstrapDataBaseDir(rawValue: unknown): string | null {
   if (!rawValue || typeof rawValue !== "object") {
     return null;
   }
