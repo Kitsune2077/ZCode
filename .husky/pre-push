@@ -1,9 +1,10 @@
 #!/usr/bin/env sh
 
-# 推送前先跑 lint 再跑单测，先用更快的静态检查尽早拦住低成本问题，
-# 避免还没过代码质量门槛就进入更慢的测试阶段。
-# Git 会通过 stdin 传入本次 push 的 local/remote ref 与 sha；先缓存下来，后续
-# affected-test 脚本才能用远端当前 sha 作为 base，而不是误退回到默认分支。
+# 推送前只跑 lint 与架构检查（秒级静态门禁）；单测已移至 GitHub Actions 的
+# unit-tests workflow（.github/workflows/unit-tests.yml），避免本地全量单测
+# 长时间占用 CPU。需要本地跑受影响单测时手动执行 pnpm run test:unit:affected。
+# Git 会通过 stdin 传入本次 push 的 local/remote ref 与 sha；先缓存下来，手动
+# 运行 affected-test 脚本时才能用远端当前 sha 作为 base，而不是误退回到默认分支。
 # 手工执行 hook 时 stdin 可能是终端，避免直接 cat 卡住调试。
 pre_push_stdin=""
 if [ ! -t 0 ]; then

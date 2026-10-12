@@ -25,6 +25,10 @@ function resolvePnpmCliPath(env) {
   const npmExecPath = env.npm_execpath;
   if (
     npmExecPath &&
+    // npm_execpath 可能指向 mise/standalone 安装的 pnpm.exe 或 .cmd shim，
+    // 只有 JS 入口能用 node 直接执行；exe 交给 node 会按脚本解析直接报语法错误
+    // （Windows 实测：MZ\u001a... SyntaxError）。非 JS 入口走下方 PATH 解析回退。
+    /\.(cjs|mjs|js)$/iu.test(npmExecPath) &&
     (npmExecPath.toLowerCase().includes("\\pnpm\\") ||
       npmExecPath.toLowerCase().includes("/pnpm/"))
   ) {
