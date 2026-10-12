@@ -41,6 +41,12 @@ jobs:
       # tsc -b 全仓构建 + vitest 并发 worker 的堆需求远超 Node 默认 2GB，
       # 本地默认堆会 OOM（见本地合并 v3.15.1 时的实测）；runner 内存 16GB，给到 8GB。
       NODE_OPTIONS: --max-old-space-size=8192
+      # electron 的 postinstall 会从 GitHub Releases 下载约 110MB 的运行时二进制，
+      # 自托管 runner 直连 GitHub 经常 socket hang up，导致 pnpm install 整体失败；
+      # 改走 npmmirror（与 build-desktop.yml 同一镜像）。Linux 上 desktop 的
+      # postinstall 还会执行 electron-rebuild 下载 Electron 头文件，@electron/get
+      # 同样遵循该变量，npmmirror 同时托管 headers，一处设置两处生效。
+      ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
 
     steps:
       - uses: actions/checkout@v4
