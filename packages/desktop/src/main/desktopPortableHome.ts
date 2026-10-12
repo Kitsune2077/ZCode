@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 /**
@@ -6,10 +6,12 @@ import { dirname, join } from "node:path";
  *
  * 产品规则见 packages/desktop/docs/portable-data-dir.md。要点：
  * - 便携版默认把 `.zcode` 放在 exe 同目录，安装版（NSIS，带卸载器）行为不变；
- * - 显式环境变量 / setting.json 的 dataBaseDir 永远优先于便携默认；
+ * - 用户在 exe 同目录手动创建 `data` 目录后，锚点整体切换为该目录
+ *   （状态落在 `<exe>/data/.zcode`），删除后下次启动恢复 exe 目录锚点，不做数据迁移；
+ * - 显式环境变量 / setting.json 的 dataBaseDir 永远优先于便携默认与 data 目录约定；
  * - exe 目录不可写时回退用户主目录。
  *
- * 本模块保持纯函数 + 依赖注入，便于 node:test 直接覆盖判定与优先级逻辑；
+ * 本模块保持纯函数 + 依赖注入，便于 vitest 直接覆盖判定与优先级逻辑；
  * IO 副作用（读 setting.json、探测可写、写 env）由 desktopDataBaseDirBootstrap 施加。
  */
 
@@ -74,12 +76,44 @@ export function resolveSettingsHomeAnchor(
   return override && override.length > 0 ? override : homeDir;
 }
 
+/** data 目录约定的目录名；大小写由文件系统决定（便携判定仅 win32，天然大小写不敏感）。 */
+export const PORTABLE_DATA_DIR_NAME = "data";
+
+function isExistingDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 便携分支下用户手动创建的 `data` 目录（见 spec 的 data 目录约定）：
+ * 存在且是目录 → 返回该路径并作为锚点；不存在 / 同名文件 / 非便携 → null。
+ * 与旧 `<exe>/.zcode` 之间不做迁移，切换语义见 spec。
+ */
+export function resolvePortableDataDir(
+  portableHomeDir: string | null,
+  directoryExists: (path: string) => boolean = isExistingDirectory,
+): string | null {
+  if (!portableHomeDir) {
+    return null;
+  }
+  const candidate = join(portableHomeDir, PORTABLE_DATA_DIR_NAME);
+  return directoryExists(candidate) ? candidate : null;
+}
+
 export interface EarlyDataBaseDirPlanInput {
   env: Record<string, string | undefined>;
   /** 用户主目录（回退与安装版默认）。 */
   homeDir: string;
   /** 便携判定结果；null 表示安装版 / 开发态 / 非 Windows。 */
   portableHomeDir: string | null;
+  /**
+   * 便携分支下用户手动创建的 `<exe>/data` 目录（resolvePortableDataDir 的结果）；
+   * 存在时替换便携默认锚点。非便携分支必须传 null。
+   */
+  portableDataDir: string | null;
   /** 读取 `<home>/.zcode/v2/setting.json` 的 dataBaseDir 字段；null 表示无显式配置。 */
   readConfiguredDataBaseDir: (settingsHome: string) => string | null;
 }
@@ -97,10 +131,11 @@ export interface EarlyDataBaseDirPlan {
  * 启动早期数据目录优先级计划（纯函数）：
  *
  * 1. 显式 `ZCODE_DATA_BASE_DIR` / `ZCODE_DESKTOP_HOME_DIR`（开发者与 e2e 隔离）——
- *    便携判定不覆盖任何显式配置，此时计划保持现状语义；
- * 2. setting.json 里用户显式配置的 `dataBaseDir`（settings 锚点下的 setting.json）；
- * 3. 便携默认：exe 同目录（同时成为 settings 锚点）；
- * 4. 默认主目录（安装版现状）。
+ *    便携判定（含 data 目录约定）不覆盖任何显式配置，此时计划保持现状语义；
+ * 2. 当前生效锚点的 setting.json 里用户显式配置的 `dataBaseDir`；
+ * 3. 便携 `data` 目录约定：用户手动创建的 `<exe>/data` 替换便携默认锚点；
+ * 4. 便携默认：exe 同目录（同时成为 settings 锚点）；
+ * 5. 默认主目录（安装版现状）。
  */
 export function planEarlyDataBaseDir(input: EarlyDataBaseDirPlanInput): EarlyDataBaseDirPlan {
   const explicitData = input.env.ZCODE_DATA_BASE_DIR?.trim() || null;
@@ -115,16 +150,18 @@ export function planEarlyDataBaseDir(input: EarlyDataBaseDirPlanInput): EarlyDat
     };
   }
 
-  // 便携分支：settings 锚点与数据根默认都落在 exe 目录。
-  const settingsHome = input.portableHomeDir ?? input.homeDir;
+  // 便携分支：锚点 = 手动 data 目录 ?? exe 目录；setting.json 始终从当前生效锚点读取。
+  const settingsHome = input.portableHomeDir
+    ? (input.portableDataDir ?? input.portableHomeDir)
+    : input.homeDir;
   const configured = input.readConfiguredDataBaseDir(settingsHome);
   if (configured) {
-    // 用户在（便携目录下的）setting.json 里显式指定了数据目录：尊重显式配置。
+    // 用户在（当前锚点下的）setting.json 里显式指定了数据目录：尊重显式配置。
     return { settingsHome, dataBaseDir: configured, propagateSettingsHomeEnv: input.portableHomeDir !== null };
   }
   return {
     settingsHome,
-    dataBaseDir: input.portableHomeDir,
+    dataBaseDir: input.portableHomeDir ? (input.portableDataDir ?? input.portableHomeDir) : null,
     propagateSettingsHomeEnv: input.portableHomeDir !== null,
   };
 }

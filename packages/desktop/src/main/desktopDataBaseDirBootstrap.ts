@@ -7,6 +7,7 @@ import {
   planEarlyDataBaseDir,
   portableAwareSettingsFile,
   resolvePortableAppHomeDir,
+  resolvePortableDataDir,
   resolveSettingsHomeAnchor,
 } from "./desktopPortableHome.js";
 
@@ -55,10 +56,15 @@ export function applyEarlyDataBaseDirBootstrap(): string | null {
     portableHomeDir = null;
   }
 
+  // data 目录约定：便携判定生效且用户手动创建了 <exe>/data 目录时，锚点整体切到该目录
+  // （规则与切换语义见 docs/portable-data-dir.md；不可写回退已将 portableHomeDir 置 null）。
+  const portableDataDir = resolvePortableDataDir(portableHomeDir);
+
   const plan = planEarlyDataBaseDir({
     env: process.env,
     homeDir: homedir(),
     portableHomeDir,
+    portableDataDir,
     readConfiguredDataBaseDir: (settingsHome) =>
       readBootstrapDataBaseDirFromDisk(portableAwareSettingsFile(settingsHome)),
   });

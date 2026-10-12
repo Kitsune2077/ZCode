@@ -10,6 +10,7 @@ import {
   planEarlyDataBaseDir,
   portableAwareSettingsFile,
   resolvePortableAppHomeDir,
+  resolvePortableDataDir,
   type EarlyDataBaseDirPlanInput,
 } from "../src/main/desktopPortableHome.js";
 
@@ -18,6 +19,7 @@ function planWith(overrides: Partial<EarlyDataBaseDirPlanInput> = {}) {
     env: {},
     homeDir: "C:\\Users\\tester",
     portableHomeDir: null,
+    portableDataDir: null,
     readConfiguredDataBaseDir: () => null,
     ...overrides,
   });
@@ -117,6 +119,79 @@ test("plan priority: portable without explicit config defaults the data dir to t
   assert.equal(plan.settingsHome, "E:\\ZCodePortable");
   assert.equal(plan.dataBaseDir, "E:\\ZCodePortable");
   assert.equal(plan.propagateSettingsHomeEnv, true);
+});
+
+test("plan priority: a manually created data dir replaces the portable anchor", () => {
+  // 场景 H：锚点整体切换，settings 读取位置与数据根默认都落到 data 目录。
+  const readFrom: string[] = [];
+  const plan = planWith({
+    portableHomeDir: "E:\\ZCodePortable",
+    portableDataDir: "E:\\ZCodePortable\\data",
+    readConfiguredDataBaseDir: (settingsHome) => {
+      readFrom.push(settingsHome);
+      return null;
+    },
+  });
+  assert.deepEqual(readFrom, ["E:\\ZCodePortable\\data"]);
+  assert.equal(plan.settingsHome, "E:\\ZCodePortable\\data");
+  assert.equal(plan.dataBaseDir, "E:\\ZCodePortable\\data");
+  assert.equal(plan.propagateSettingsHomeEnv, true);
+});
+
+test("plan priority: explicit env still wins over the portable data dir", () => {
+  // 场景 I：e2e/开发者显式隔离不被 data 目录约定覆盖。
+  const plan = planWith({
+    env: { ZCODE_DESKTOP_HOME_DIR: "C:\\e2e-home" },
+    portableHomeDir: "E:\\ZCodePortable",
+    portableDataDir: "E:\\ZCodePortable\\data",
+  });
+  assert.equal(plan.settingsHome, "C:\\e2e-home");
+  assert.equal(plan.dataBaseDir, null);
+  assert.equal(plan.propagateSettingsHomeEnv, false);
+});
+
+test("plan priority: dataBaseDir configured inside the data anchor wins over the data dir default", () => {
+  // 场景 K：setting.json 改从 data 锚点读取，其中的显式 dataBaseDir 依旧生效。
+  const readFrom: string[] = [];
+  const plan = planWith({
+    portableHomeDir: "E:\\ZCodePortable",
+    portableDataDir: "E:\\ZCodePortable\\data",
+    readConfiguredDataBaseDir: (settingsHome) => {
+      readFrom.push(settingsHome);
+      return "D:\\MyData";
+    },
+  });
+  assert.deepEqual(readFrom, ["E:\\ZCodePortable\\data"]);
+  assert.equal(plan.settingsHome, "E:\\ZCodePortable\\data");
+  assert.equal(plan.dataBaseDir, "D:\\MyData");
+  assert.equal(plan.propagateSettingsHomeEnv, true);
+});
+
+test("resolvePortableDataDir: only an existing directory under a portable home counts", () => {
+  const exeDir = "E:\\ZCodePortable";
+  // 非便携（null home）→ 约定不可用。
+  assert.equal(resolvePortableDataDir(null, () => true), null);
+  // 目录存在 → 返回约定路径。
+  assert.equal(resolvePortableDataDir(exeDir, () => true), "E:\\ZCodePortable\\data");
+  // 不存在 / 同名文件（directoryExists 为 false）→ 维持便携默认。
+  assert.equal(resolvePortableDataDir(exeDir, () => false), null);
+});
+
+test("resolvePortableDataDir: detects a real data directory on disk", () => {
+  const root = mkdtempSync(join(tmpdir(), "zcode-portable-data-dir-"));
+  try {
+    // 未创建时为 null。
+    assert.equal(resolvePortableDataDir(root), null);
+    // 创建目录后命中约定。
+    mkdirSync(join(root, "data"), { recursive: true });
+    assert.equal(resolvePortableDataDir(root), join(root, "data"));
+    // 同名文件不算目录（场景 J）。
+    rmSync(join(root, "data"), { recursive: true });
+    writeFileSync(join(root, "data"), "not a dir");
+    assert.equal(resolvePortableDataDir(root), null);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("plan priority: installed builds keep the legacy home-anchored behavior", () => {

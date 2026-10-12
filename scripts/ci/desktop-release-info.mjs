@@ -247,8 +247,9 @@ function render() {
       "`sudo xattr -rd com.apple.quarantine /Applications/ZCode.app`。",
   );
   lines.push(
-    "- Windows 便携 ZIP：解压到任意目录后直接双击 `ZCode.exe` 即可运行，无需安装、不写注册表" +
-      "（应用数据仍保存在用户目录的 `.zcode` 下）。",
+    "- Windows 便携 ZIP：解压到任意目录后直接双击 `ZCode.exe` 即可运行，无需安装、不写注册表。" +
+      "数据默认保存在 exe 同目录的 `.zcode` 下（拷走整个目录即迁移配置）；" +
+      "如需数据与程序分开存放，可先在 exe 同目录手动创建 `data` 文件夹，数据将保存在该文件夹内。",
   );
   if (larkCli) {
     lines.push(
