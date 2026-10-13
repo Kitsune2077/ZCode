@@ -302,6 +302,10 @@ describe("Guarded finite command contract", () => {
   });
   it("does not apply Bash grammar to legacy or unsupported shells", () => {
     expect(matchDangerousCommand("rm -rf build", "legacy-shell").status).toBe("unsupported");
+    // PowerShell 没有专用文法分析器，必须退回 unsupported 而不是用 bash 文法误判。
+    expect(matchDangerousCommand("Remove-Item -Recurse -Force build", "powershell").status).toBe(
+      "unsupported",
+    );
   });
 
   it.each(["posix", "git-bash", "cmd"] as const)(

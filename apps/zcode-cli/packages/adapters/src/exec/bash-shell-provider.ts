@@ -153,6 +153,9 @@ function createShellProviderFromSelection(
   if (selection.dialect === "posix") {
     return createPosixShellProvider(selection.path);
   }
+  if (selection.dialect === "powershell") {
+    return createPowerShellProvider(selection.path);
+  }
   return undefined;
 }
 
@@ -189,6 +192,23 @@ function resolveEffectiveWindowsBashShellSelection(
             id: override.id,
             label: override.label,
             path: cmdPath,
+            source: "user-config",
+          }),
+        };
+      }
+    }
+    if (override.dialect === "powershell") {
+      // pwsh 没有裸名 fallback：探测层给出的都是具体路径，path 失效时与 git-bash
+      // 一致回落 auto（Git Bash → legacy），不用过期的 pwsh 路径。
+      if (override.path && isExecutableCandidate(override.path, options.exists)) {
+        return {
+          provider: createPowerShellProvider(override.path),
+          selection: shellSelection({
+            dialect: "powershell",
+            displayName: "PowerShell 7",
+            id: override.id,
+            label: override.label,
+            path: override.path,
             source: "user-config",
           }),
         };
@@ -276,6 +296,14 @@ function createWindowsCmdProvider(shellPath: string): BashShellProvider {
     dialect: "cmd",
     file: shellPath,
     shell: shellPath,
+  };
+}
+
+function createPowerShellProvider(shellPath: string): BashShellProvider {
+  return {
+    dialect: "powershell",
+    file: shellPath,
+    shell: false,
   };
 }
 

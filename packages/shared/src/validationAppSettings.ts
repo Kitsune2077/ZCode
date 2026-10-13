@@ -53,12 +53,17 @@ export const integratedTerminalShellSelectionSchema = z.discriminatedUnion("mode
   }),
   z.object({
     mode: z.literal("shell"),
-    dialect: z.enum(["cmd", "git-bash"]),
+    dialect: z.enum(["cmd", "git-bash", "powershell"]),
     id: nonEmptyStringSchema,
     label: nonEmptyStringSchema,
     path: nonEmptyStringSchema,
   }),
 ]);
+// launch.md「The user's choice」：降级端读到新版本写入的未知 dialect 时按未知值处理，
+// 只丢弃 shell 偏好字段本身，不能让整份设置文件或协议消息解析失败。
+export const integratedTerminalShellSettingSchema = integratedTerminalShellSelectionSchema
+  .optional()
+  .catch(undefined);
 const enabledBuiltinAgentCliProvidersSchema = z
   // 兼容旧 settings：历史列表可能残留三方 CLI provider，解析后统一归一为 ZCode Agent。
   .array(z.enum(["claude", "opencode", "gemini", "codex", "glm"]))
@@ -468,7 +473,7 @@ const appSettingsObjectSchema = z.object({
   localePreference: localePreferenceSchema.default("system"),
   terminalInheritSystemProfile: z.boolean().default(true),
   terminalFontFamily: nonEmptyStringSchema.optional(),
-  integratedTerminalShell: integratedTerminalShellSelectionSchema.optional(),
+  integratedTerminalShell: integratedTerminalShellSettingSchema,
   httpProxy: nonEmptyStringSchema.optional(),
   httpProxyNoProxy: nonEmptyStringSchema.optional(),
   httpProxyCaCertPath: nonEmptyStringSchema.optional(),
@@ -550,7 +555,7 @@ export const appSettingsPatchSchema = z.object({
   localePreference: localePreferenceSchema.optional(),
   terminalInheritSystemProfile: z.boolean().optional(),
   terminalFontFamily: nonEmptyStringSchema.optional(),
-  integratedTerminalShell: integratedTerminalShellSelectionSchema.optional(),
+  integratedTerminalShell: integratedTerminalShellSettingSchema,
   httpProxy: nonEmptyStringSchema.optional(),
   httpProxyNoProxy: nonEmptyStringSchema.optional(),
   httpProxyCaCertPath: nonEmptyStringSchema.optional(),

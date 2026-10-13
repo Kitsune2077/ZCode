@@ -40,6 +40,14 @@ describe("supportsEmbeddedSearchShellSelection", () => {
     ).toBe(false);
     expect(
       supportsEmbeddedSearchShellSelection({
+        dialect: "powershell",
+        display: { name: "PowerShell 7" },
+        path: "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+        source: "user-config",
+      } satisfies ExecutionShellSelection),
+    ).toBe(false);
+    expect(
+      supportsEmbeddedSearchShellSelection({
         dialect: "legacy-shell",
         display: { name: "system shell" },
         source: "legacy-fallback",

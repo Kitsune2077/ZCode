@@ -3206,6 +3206,10 @@ function sendProtocolSessionEvent(
   logProtocolSessionEventSent(context, event, mappedEvent);
 }
 
+function integratedTerminalShellDisplayName(dialect: IntegratedTerminalShellSelection["dialect"]) {
+  return dialect === "git-bash" ? "Git Bash" : dialect === "powershell" ? "PowerShell 7" : "CMD";
+}
+
 function integratedTerminalShellToExecutionSelection(
   selection: IntegratedTerminalShellSelection | undefined,
 ): ExecutionShellSelection | undefined {
@@ -3214,7 +3218,7 @@ function integratedTerminalShellToExecutionSelection(
   }
   return {
     display: {
-      name: selection.dialect === "git-bash" ? "Git Bash" : "CMD",
+      name: integratedTerminalShellDisplayName(selection.dialect),
     },
     dialect: selection.dialect,
     id: selection.id,

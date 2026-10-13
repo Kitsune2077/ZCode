@@ -59,7 +59,7 @@ eval <user command> && pwd -P > <cwdFile>
 - `resolvedCwd` 不得写入 `BashOutput`，不得进入 `formatBashModelContent`、tool result serializer、history persistence 的 provider-visible content；只有真正 reset 时可以暴露 `Shell cwd was reset to <root>` 文案。
 - Bash failed / timed_out / cancelled / spawn_error / backgrounded 都不得更新 cwd。
 - Bash tool metadata 当前 `concurrentSafe: false`，本实现不改变并发调度语义；如果未来允许并行 Bash，再单独设计 cwd update ordering。
-- Windows 也必须支持 cwd capture，但实现要使用 `cmd.exe` 兼容语法，不能把 POSIX wrapper 套到 Windows shell 上。第一版只覆盖默认 `cmd.exe` / `ComSpec` 路径；如果未来 Bash tool 支持显式 PowerShell shell，再单独补 PowerShell wrapper。
+- Windows 也必须支持 cwd capture，但实现要使用 `cmd.exe` 兼容语法，不能把 POSIX wrapper 套到 Windows shell 上。第一版只覆盖默认 `cmd.exe` / `ComSpec` 路径；如果未来 Bash tool 支持显式 PowerShell shell，再单独补 PowerShell wrapper。（已落地：PowerShell wrapper 随 `bash-windows-powershell-shell-provider-plan.md` 接入。）
 
 ## 文件职责
 
@@ -766,7 +766,7 @@ Expected: 第二个 Bash result 的 stdout 是 `/tmp/zcode-cwd-smoke/child`。
 | 并发 Bash 更新顺序不确定 | 保持 Bash `concurrentSafe: false`，本计划不改变调度语义。 |
 | cwd file 泄漏 | adapter 读取后 `finally` 删除；读取失败也删除。 |
 | subagent 污染 main runtime cwd | setter 只更新当前 runtime 实例。 |
-| Windows 行为偏移 | 默认 `cmd.exe` / `ComSpec` shell 已使用 cmd-compatible wrapper 捕获 cwd；PowerShell / Git Bash shell provider 仍作为后续独立范围。 |
+| Windows 行为偏移 | 默认 `cmd.exe` / `ComSpec` shell 已使用 cmd-compatible wrapper 捕获 cwd；PowerShell wrapper 已随 `bash-windows-powershell-shell-provider-plan.md` 接入，Git Bash 沿用 POSIX wrapper。 |
 
 ## 完成标准
 

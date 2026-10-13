@@ -153,6 +153,18 @@ function createShellProviderCommand(
     };
   }
 
+  if (provider.dialect === "powershell") {
+    // -NoProfile 与 cmd 跳过 AutoRun 的行为对齐：工具执行要干净可预测，
+    // $PROFILE 里的激活脚本/别名不参与；-NonInteractive 让交互调用直接失败而非挂起。
+    return {
+      args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+      cwdDialect: provider.dialect,
+      envOverlay: provider.envOverlay,
+      file: provider.file,
+      shell: provider.shell,
+    };
+  }
+
   return {
     args: ["-c", "-l", command],
     cwdDialect: provider.dialect,
@@ -186,6 +198,17 @@ export function applyResolvedShellCommand(
       ...resolved,
       args: [],
       file: command,
+    };
+  }
+
+  if (resolved.cwdDialect === "powershell") {
+    // pwsh 载荷固定在 args 末位（-Command 后的脚本串），整体替换而不是走
+    // file=command 的 fallback，否则命令会绕过 pwsh 被直接当可执行文件 spawn。
+    const args = [...resolved.args];
+    args[args.length - 1] = command;
+    return {
+      ...resolved,
+      args,
     };
   }
 

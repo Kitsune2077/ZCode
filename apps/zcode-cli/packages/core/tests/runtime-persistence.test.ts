@@ -2283,6 +2283,108 @@ describe("AgentRuntime session persistence", () => {
     }
   });
 
+  it("restores a persisted PowerShell shell selection across resume", async () => {
+    const sessionId = createSessionId("runtime-persistence-powershell-snapshot");
+    const store = createRecordingSessionStore();
+    const workingDirectory = mkdtempSync(join(tmpdir(), "zcode-powershell-snapshot-"));
+    const shellPath = createExecutableShell(workingDirectory, "pwsh.exe");
+
+    try {
+      const firstRuntime = createTestAgentRuntime(
+        sessionId,
+        {
+          bashShellSelection: {
+            dialect: "powershell",
+            display: { name: "PowerShell 7" },
+            id: `powershell:${shellPath}`,
+            label: "PowerShell 7",
+            path: shellPath,
+            source: "user-config",
+          },
+          currentDate: "2026-06-20",
+          workingDirectory,
+        },
+        {
+          eventStore: createTestSessionEventStore(),
+          modelFactory: createTestModelFactory({
+            async generateText() {
+              return {
+                text: "first answer",
+                finishReason: "stop",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            },
+          } as never),
+          sessionStore: store,
+        },
+      );
+      await firstRuntime.executeTurn("persisted prompt");
+
+      const toolRegistry = createToolRegistry();
+      const getCapturedContext = registerShellSnapshotProbe(toolRegistry);
+
+      const responses = [
+        {
+          text: "probe shell",
+          finishReason: "tool-calls",
+          usage: { inputTokens: 10, outputTokens: 4, totalTokens: 14 },
+          toolCalls: [
+            {
+              id: "shell-snapshot-probe",
+              name: "ShellSnapshotProbe",
+              input: {},
+            },
+          ],
+        },
+        {
+          text: "done",
+          finishReason: "stop",
+          usage: { inputTokens: 12, outputTokens: 5, totalTokens: 17 },
+        },
+      ];
+      const resumedRuntime = createTestAgentRuntime(
+        sessionId,
+        {
+          // resume 端的当前选择故意不同：恢复必须以落库快照为准，而不是读最新 settings。
+          bashShellSelection: {
+            dialect: "cmd",
+            display: { name: "CMD" },
+            id: "cmd",
+            label: "CMD",
+            path: "cmd.exe",
+            source: "user-config",
+          },
+          currentDate: "2026-06-20",
+          workingDirectory,
+        },
+        {
+          eventStore: createTestSessionEventStore(),
+          modelFactory: createTestModelFactory({
+            async generateText() {
+              const response = responses.shift();
+              if (!response) throw new Error("unexpected model request");
+              return response;
+            },
+          } as never),
+          sessionStore: store,
+          toolRegistry,
+        },
+      );
+
+      await resumedRuntime.resumeFromStore();
+      await resumedRuntime.executeTurn("resumed prompt");
+
+      expect(getCapturedContext()?.bashShellSelection).toMatchObject({
+        display: { name: "PowerShell 7" },
+        dialect: "powershell",
+        path: shellPath,
+        source: "user-config",
+      });
+    } finally {
+      rmSync(workingDirectory, { force: true, recursive: true });
+    }
+  });
+
   it("falls back to the current Bash shell selection when the persisted snapshot is stale", async () => {
     const sessionId = createSessionId("runtime-persistence-stale-shell-snapshot");
     const store = createRecordingSessionStore();

@@ -9,6 +9,8 @@ const WINDOWS_GIT_BASH_PATHS = [
   "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
 ] as const;
 
+const WINDOWS_PWSH_PATH_SEGMENTS = ["PowerShell", "7", "pwsh.exe"] as const;
+
 export function listIntegratedTerminalShellOptions(options: {
   env: NodeJS.ProcessEnv;
   isExecutable?: ExecutableCheck;
@@ -27,6 +29,16 @@ export function listIntegratedTerminalShellOptions(options: {
       label: "Git Bash",
       path: gitBash.path,
       source: gitBash.source,
+    });
+  }
+  const powershell = resolveWindowsPowerShell(options.env, options.isExecutable);
+  if (powershell) {
+    shellOptions.push({
+      dialect: "powershell",
+      id: `powershell:${powershell.path}`,
+      label: "PowerShell 7",
+      path: powershell.path,
+      source: powershell.source,
     });
   }
 
@@ -73,6 +85,32 @@ function inferWindowsGitBashPathsFromGitExe(gitExe: string): string[] {
     win32.normalize(win32.join(gitDir, "..", "bin", "bash.exe")),
     win32.normalize(win32.join(gitDir, "..", "..", "bin", "bash.exe")),
   ];
+}
+
+function resolveWindowsPowerShell(
+  env: NodeJS.ProcessEnv,
+  isExecutable?: ExecutableCheck,
+): { path: string; source: "system" | "path" } | undefined {
+  for (const candidate of windowsPowerShellCandidatePaths(env)) {
+    if (isExecutableCandidate(candidate, isExecutable)) {
+      return { path: candidate, source: "system" };
+    }
+  }
+
+  const pwshExe = windowsExecutableCandidates("pwsh", env).find((candidate) =>
+    isExecutableCandidate(candidate, isExecutable),
+  );
+  return pwshExe ? { path: pwshExe, source: "path" } : undefined;
+}
+
+function windowsPowerShellCandidatePaths(env: NodeJS.ProcessEnv): string[] {
+  // MSI 默认装在 %ProgramFiles%\PowerShell\7，用环境变量推导以兼容非 C 盘安装；
+  // Microsoft Store 版没有固定文件路径，交由调用方的 PATH 扫描兜底。
+  const roots = [
+    getWindowsEnvValue(env, "ProgramFiles"),
+    getWindowsEnvValue(env, "ProgramFiles(x86)"),
+  ].filter((root): root is string => typeof root === "string" && root.trim().length > 0);
+  return roots.map((root) => win32.normalize(win32.join(root, ...WINDOWS_PWSH_PATH_SEGMENTS)));
 }
 
 function windowsExecutableCandidates(command: string, env: NodeJS.ProcessEnv): string[] {

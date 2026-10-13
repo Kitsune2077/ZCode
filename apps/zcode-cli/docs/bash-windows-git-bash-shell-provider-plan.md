@@ -208,7 +208,7 @@ export type IntegratedTerminalShellSelection =
 说明：
 
 - Phase 2 的本机枚举可以发现更多 shell，但第一版只把 `cmd` 和 `git-bash` 作为 Bash execution 支持 dialect。
-- PowerShell 不在本计划里接入 Bash tool。要支持 PowerShell 应新增 provider-visible `PowerShell` tool 或单独 runtime 语义。
+- PowerShell 不在本计划里接入 Bash tool。要支持 PowerShell 应新增 provider-visible `PowerShell` tool 或单独 runtime 语义。（后续已按“集成终端Shell”显式选择接入 PowerShell 7，见 `bash-windows-powershell-shell-provider-plan.md`；provider-visible `PowerShell` tool 仍不在范围内。）
 - WSL 不在本计划里接入本地 Bash fallback。WSL 应作为 remote/workspace adapter 设计。
 
 ## 明确不做

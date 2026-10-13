@@ -85,7 +85,7 @@ export type ZCodeInteractionBehavior = "queue" | "guide";
 export type ElectronReleaseChannel = "stable" | "preview";
 
 /** Windows Bash 工具可使用的集成终端 shell 方言。 */
-export type IntegratedTerminalShellDialect = "cmd" | "git-bash";
+export type IntegratedTerminalShellDialect = "cmd" | "git-bash" | "powershell";
 
 /** 设置页中 Windows Bash shell 的用户选择。 */
 export type IntegratedTerminalShellSelection =

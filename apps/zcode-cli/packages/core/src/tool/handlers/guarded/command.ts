@@ -52,7 +52,15 @@ export function matchDangerousCommand(
   command: string,
   dialect: ExecutionShellSelection["dialect"],
 ): DangerousCommandResult {
-  if (command.length > MAX_LENGTH || dialect === "legacy-shell") return { status: "unsupported" };
+  // PowerShell 没有专用文法分析器，用 bash/cmd 文法匹配 pwsh 命令比不判更危险；
+  // 与 legacy-shell 一致返回 unsupported，由 guarded 的保守审批姿态兜底。
+  if (
+    command.length > MAX_LENGTH ||
+    dialect === "legacy-shell" ||
+    dialect === "powershell"
+  ) {
+    return { status: "unsupported" };
+  }
   const windows = dialect === "cmd" || dialect === "git-bash";
   let commands: CommandWord[][];
   let unsupported: boolean;

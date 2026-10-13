@@ -34,10 +34,12 @@ export function createCwdCapturePlan(
   const wrappedCommand =
     options.dialect === "cmd"
       ? createWindowsCmdCwdCaptureCommand(request.command.command, cwdFilePath)
-      : createPosixCwdCaptureCommand(
-          request.command.command,
-          options.dialect === "git-bash" ? windowsPathToGitBashPath(cwdFilePath) : cwdFilePath,
-        );
+      : options.dialect === "powershell"
+        ? createPowerShellCwdCaptureCommand(request.command.command, cwdFilePath)
+        : createPosixCwdCaptureCommand(
+            request.command.command,
+            options.dialect === "git-bash" ? windowsPathToGitBashPath(cwdFilePath) : cwdFilePath,
+          );
 
   return {
     command: {
@@ -64,6 +66,18 @@ function createWindowsCmdCwdCaptureCommand(command: string, cwdFilePath: string)
     `if "%__zcode_status%"=="0" cd > ${cmdQuote(cwdFilePath)}`,
     "exit /b %__zcode_status%",
   ].join("\r\n");
+}
+
+function createPowerShellCwdCaptureCommand(command: string, cwdFilePath: string): string {
+  // pwsh -Command 的进程退出码不透传 $LASTEXITCODE，必须由 wrapper 显式 exit 才能保住命令事实；
+  // $? 与 bash 的 wrapper 语义一致，反映最后一条语句的成败。
+  // $PWD.ProviderPath 输出纯文件系统路径，避免 PSDrive 前缀进入宿主 cwd。
+  return [
+    command,
+    "$__zcode_status = if ($?) { 0 } else { 1 }",
+    `if ($__zcode_status -eq 0) { [IO.File]::WriteAllText('${powershellQuote(cwdFilePath)}', $PWD.ProviderPath) }`,
+    "exit $__zcode_status",
+  ].join("\n");
 }
 
 export function readCapturedCwd(
@@ -102,4 +116,8 @@ function shellQuote(value: string): string {
 
 function cmdQuote(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
+}
+
+function powershellQuote(value: string): string {
+  return value.replaceAll("'", "''");
 }

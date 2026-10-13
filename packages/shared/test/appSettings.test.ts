@@ -128,13 +128,15 @@ describe("app settings", () => {
     ).toEqual(selection);
   });
 
-  it("accepts auto mode and rejects incomplete shell selections", () => {
+  it("accepts auto mode and degrades incomplete shell selections to auto", () => {
     expect(
       appSettingsPatchSchema.parse({ integratedTerminalShell: { mode: "auto" } })
         .integratedTerminalShell,
     ).toEqual({ mode: "auto" });
 
-    expect(() =>
+    // launch.md「The user's choice」：形状不完整的 shell 选择按未知值降级为 undefined
+    // （回退“自动选择”），不能让一个偏好字段把整份设置或 patch 读坏。
+    expect(
       appSettingsPatchSchema.parse({
         integratedTerminalShell: {
           mode: "shell",
@@ -142,8 +144,52 @@ describe("app settings", () => {
           id: "git-bash",
           label: "Git Bash",
         },
-      }),
-    ).toThrow();
+      }).integratedTerminalShell,
+    ).toBeUndefined();
+  });
+
+  it("persists a PowerShell 7 integrated terminal shell selection", () => {
+    const selection = {
+      mode: "shell",
+      dialect: "powershell",
+      id: "powershell:C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+      label: "PowerShell 7",
+      path: "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+    } as const;
+
+    expect(
+      appSettingsSchema.parse({ integratedTerminalShell: selection }).integratedTerminalShell,
+    ).toEqual(selection);
+    expect(
+      appSettingsPatchSchema.parse({ integratedTerminalShell: selection }).integratedTerminalShell,
+    ).toEqual(selection);
+  });
+
+  it("degrades an unknown integrated terminal shell dialect instead of failing the whole settings", () => {
+    // launch.md「The user's choice」：旧版本读到新版本写入的未知 dialect 时按未知值丢弃，
+    // 不能让一个偏好字段把整份设置读坏。
+    expect(
+      appSettingsSchema.parse({
+        integratedTerminalShell: {
+          mode: "shell",
+          dialect: "future-shell",
+          id: "future-shell:x",
+          label: "Future",
+          path: "C:\\x.exe",
+        },
+      }).integratedTerminalShell,
+    ).toBeUndefined();
+    expect(
+      appSettingsPatchSchema.parse({
+        integratedTerminalShell: {
+          mode: "shell",
+          dialect: "future-shell",
+          id: "x",
+          label: "x",
+          path: "x",
+        },
+      }).integratedTerminalShell,
+    ).toBeUndefined();
   });
 
   it("accepts desktop zoom levels within the supported window range", () => {

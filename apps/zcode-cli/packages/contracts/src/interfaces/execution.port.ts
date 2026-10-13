@@ -27,7 +27,7 @@ export type ExecutionCommand =
       shellOverride?: ExecutionShellSelection;
     };
 
-export type ExecutionShellDialect = "cmd" | "posix" | "git-bash";
+export type ExecutionShellDialect = "cmd" | "posix" | "git-bash" | "powershell";
 
 export type ExecutionShellSource = "auto-detected" | "user-config" | "legacy-fallback";
 

@@ -29,10 +29,7 @@ describe("systemService", () => {
         PATH: "C:\\Program Files\\Git\\cmd",
       },
       isExecutable: (path) =>
-        [
-          "C:\\Windows\\System32\\cmd.exe",
-          "C:\\Program Files\\Git\\bin\\bash.exe",
-        ].includes(path),
+        ["C:\\Windows\\System32\\cmd.exe", "C:\\Program Files\\Git\\bin\\bash.exe"].includes(path),
       platform: "win32",
     });
 
@@ -61,10 +58,7 @@ describe("systemService", () => {
         Path: "D:\\Tools\\Git\\cmd",
       },
       isExecutable: (path) =>
-        [
-          "D:\\Tools\\Git\\cmd\\git.exe",
-          "D:\\Tools\\Git\\bin\\bash.exe",
-        ].includes(path),
+        ["D:\\Tools\\Git\\cmd\\git.exe", "D:\\Tools\\Git\\bin\\bash.exe"].includes(path),
       platform: "win32",
     });
 
@@ -104,15 +98,67 @@ describe("systemService", () => {
     ]);
   });
 
+  it("listIntegratedTerminalShells 在 ProgramFiles 下检测到 pwsh 时追加 PowerShell 7 选项", async () => {
+    const service = createSystemService({
+      env: {
+        ComSpec: "C:\\Windows\\System32\\cmd.exe",
+        ProgramFiles: "C:\\Program Files",
+        PATH: "",
+      },
+      isExecutable: (path) => path === "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+      platform: "win32",
+    });
+
+    await expect(service.listIntegratedTerminalShells()).resolves.toEqual([
+      {
+        dialect: "cmd",
+        id: "cmd:C:\\Windows\\System32\\cmd.exe",
+        label: "CMD",
+        path: "C:\\Windows\\System32\\cmd.exe",
+        source: "system",
+      },
+      {
+        dialect: "powershell",
+        id: "powershell:C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+        label: "PowerShell 7",
+        path: "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+        source: "system",
+      },
+    ]);
+  });
+
+  it("listIntegratedTerminalShells 在 ProgramFiles 未命中时通过 PATH 找 pwsh", async () => {
+    const windowsApps = "C:\\Users\\dev\\AppData\\Local\\Microsoft\\WindowsApps";
+    const service = createSystemService({
+      env: {
+        ComSpec: "C:\\Windows\\System32\\cmd.exe",
+        PATH: windowsApps,
+      },
+      isExecutable: (path) => path === `${windowsApps}\\pwsh.exe`,
+      platform: "win32",
+    });
+
+    await expect(service.listIntegratedTerminalShells()).resolves.toEqual([
+      {
+        dialect: "cmd",
+        id: "cmd:C:\\Windows\\System32\\cmd.exe",
+        label: "CMD",
+        path: "C:\\Windows\\System32\\cmd.exe",
+        source: "system",
+      },
+      {
+        dialect: "powershell",
+        id: `powershell:${windowsApps}\\pwsh.exe`,
+        label: "PowerShell 7",
+        path: `${windowsApps}\\pwsh.exe`,
+        source: "path",
+      },
+    ]);
+  });
+
   it("probeIntranet 只要命中一个探测目标就会判定为内网", async () => {
     const tcpProbe = vi
-      .fn<(
-        params: {
-          host: string;
-          port: number;
-          timeoutMs: number;
-        },
-      ) => Promise<number>>()
+      .fn<(params: { host: string; port: number; timeoutMs: number }) => Promise<number>>()
       .mockImplementationOnce(async () => 23);
     const service = createSystemService({ tcpProbe, now: () => 1700000000000 });
 
@@ -148,13 +194,7 @@ describe("systemService", () => {
   it("probeIntranet 会按 attempts 重试并在达到阈值前保持 false", async () => {
     const hostCallCount = new Map<string, number>();
     const tcpProbe = vi.fn<
-      (
-        params: {
-          host: string;
-          port: number;
-          timeoutMs: number;
-        },
-      ) => Promise<number>
+      (params: { host: string; port: number; timeoutMs: number }) => Promise<number>
     >(async ({ host }) => {
       const nextCount = (hostCallCount.get(host) ?? 0) + 1;
       hostCallCount.set(host, nextCount);
@@ -237,13 +277,13 @@ describe("systemService", () => {
 
   it("probeIntranet 支持基于内网服务的 marker 探测", async () => {
     const serviceProbe = vi
-      .fn<(
-        params: {
+      .fn<
+        (params: {
           url: string;
           timeoutMs: number;
           token?: string;
-        },
-      ) => Promise<{ latencyMs: number; marker?: string }>>()
+        }) => Promise<{ latencyMs: number; marker?: string }>
+      >()
       .mockResolvedValueOnce({
         latencyMs: 19,
         marker: "zcode-intranet-lab",
@@ -290,13 +330,13 @@ describe("systemService", () => {
 
   it("probeIntranet 在 marker 不匹配时会判定失败", async () => {
     const serviceProbe = vi
-      .fn<(
-        params: {
+      .fn<
+        (params: {
           url: string;
           timeoutMs: number;
           token?: string;
-        },
-      ) => Promise<{ latencyMs: number; marker?: string }>>()
+        }) => Promise<{ latencyMs: number; marker?: string }>
+      >()
       .mockResolvedValue({
         latencyMs: 12,
         marker: "wrong-marker",

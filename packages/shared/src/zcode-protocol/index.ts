@@ -81,7 +81,7 @@ import {
 import { browserClientModeSchema, browserCommandSchema } from "../browser-use/commands.js";
 import { browserCommandResultSchema } from "../browser-use/result.js";
 import { OFFICIAL_MCP_AUTH_PORT_FAILURE_REASONS } from "../official-mcp-auth.js";
-import { integratedTerminalShellSelectionSchema } from "../validationAppSettings.js";
+import { integratedTerminalShellSettingSchema } from "../validationAppSettings.js";
 import {
   zcodeSyntheticUserMessageSourceSchema as legacyZcodeSyntheticUserMessageSourceSchema,
   zcodeDeliveryKindSchema,
@@ -2073,7 +2073,7 @@ export const zcodeSessionRuntimePreferencesResultSchema = z
     subagentRuntimeConfigEnabled: z.boolean().optional(),
     memoryEnabled: z.boolean().default(false),
     askUserQuestionAutoResolutionEnabled: z.boolean().default(true),
-    integratedTerminalShell: integratedTerminalShellSelectionSchema.optional(),
+    integratedTerminalShell: integratedTerminalShellSettingSchema,
     // 兼容旧 Host：缺少字段时在协议解析边界使用当前默认策略。
     modelContextBudgetStrategy: zcodeModelContextBudgetStrategySchema.default(
       DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,

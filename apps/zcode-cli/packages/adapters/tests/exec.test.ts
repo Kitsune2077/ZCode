@@ -2294,9 +2294,39 @@ describe("NodeExecutionAdapter", () => {
     }
   });
 
+  it("creates a PowerShell cwd capture wrapper for pwsh shell commands", () => {
+    const plan = createCwdCapturePlan(
+      {
+        command: {
+          mode: "shell",
+          command: "Set-Location subdir",
+          shellProfile: "posix-bash",
+        },
+        captureCwdAfterSuccess: true,
+      },
+      { dialect: "powershell", platform: "win32" },
+    );
+
+    expect(plan.cwdFilePath).toBeDefined();
+    expect(plan.command.mode).toBe("shell");
+    if (plan.command.mode === "shell") {
+      expect(plan.command.command).toContain("Set-Location subdir");
+      expect(plan.command.command).toContain("$__zcode_status = if ($?) { 0 } else { 1 }");
+      expect(plan.command.command).toContain("[IO.File]::WriteAllText('");
+      expect(plan.command.command).toContain("$PWD.ProviderPath");
+      expect(plan.command.command).toContain("exit $__zcode_status");
+      expect(plan.command.command).not.toContain("%ERRORLEVEL%");
+      expect(plan.command.command).not.toContain("pwd -P");
+    }
+  });
+
   it("normalizes captured Git Bash cwd back to a Windows host path", () => {
     expect(normalizeCapturedCwdForHost("/c/path/to/repo", "git-bash")).toBe("C:\\path\\to\\repo");
     expect(normalizeCapturedCwdForHost("C:\\path\\to\\repo", "cmd")).toBe("C:\\path\\to\\repo");
+    // pwsh 的 $PWD.ProviderPath 已经是宿主路径，不需要转换。
+    expect(normalizeCapturedCwdForHost("C:\\path\\to\\repo", "powershell")).toBe(
+      "C:\\path\\to\\repo",
+    );
   });
 
   it("emits progress events with elapsed time, byte counts, and tail output", async () => {
@@ -2859,6 +2889,112 @@ describe("NodeExecutionAdapter", () => {
       args: ["-c", "-l", expect.any(String)],
       cwdDialect: "git-bash",
       file: "D:\\Tools\\Git\\bin\\bash.exe",
+      shell: false,
+    });
+  });
+
+  it("uses a valid user-configured PowerShell 7 override on Windows", () => {
+    const resolved = resolveExecutionCommand(
+      {
+        mode: "shell",
+        command: "Get-Location",
+        shellProfile: "posix-bash",
+        shellOverride: {
+          dialect: "powershell",
+          id: "powershell:C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+          label: "PowerShell 7",
+          path: "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+          source: "user-config",
+        },
+      },
+      {
+        env: {
+          COMSPEC: "C:\\Windows\\System32\\cmd.exe",
+          PATH: "C:\\Windows\\System32",
+        },
+        exists: (path) => path === "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+        platform: "win32",
+      },
+    );
+
+    expect(resolved).toMatchObject({
+      args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "Get-Location"],
+      cwdDialect: "powershell",
+      file: "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+      shell: false,
+    });
+  });
+
+  it("keeps login-mode rewrites and command rewrites on the PowerShell provider shape", () => {
+    const resolved = resolveExecutionCommand(
+      {
+        mode: "shell",
+        command: "Write-Output before",
+        shellProfile: "posix-bash",
+        shellOverride: {
+          dialect: "powershell",
+          id: "powershell:C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+          label: "PowerShell 7",
+          path: "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+          source: "user-config",
+        },
+      },
+      {
+        env: { COMSPEC: "C:\\Windows\\System32\\cmd.exe" },
+        exists: (path) => path === "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+        platform: "win32",
+      },
+    );
+
+    expect(resolved.args).toEqual([
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "Write-Output before",
+    ]);
+    // pwsh 形状不识别 -c login 切换；rewrite 只允许替换 -Command 载荷，不能退化成 file=command。
+    expect(setResolvedShellLoginMode(resolved, false).args).toEqual(resolved.args);
+
+    const rewritten = applyResolvedShellCommandForTest(resolved, "Write-Output after");
+    expect(rewritten.args).toEqual([
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "Write-Output after",
+    ]);
+    expect(rewritten.file).toBe("C:\\Program Files\\PowerShell\\7\\pwsh.exe");
+    expect(rewritten.shell).toBe(false);
+  });
+
+  it("falls back to auto detection when the configured PowerShell path no longer exists", () => {
+    const resolved = resolveExecutionCommand(
+      {
+        mode: "shell",
+        command: "Get-Location",
+        shellProfile: "posix-bash",
+        shellOverride: {
+          dialect: "powershell",
+          id: "powershell:D:\\Missing\\pwsh.exe",
+          label: "PowerShell 7",
+          path: "D:\\Missing\\pwsh.exe",
+          source: "user-config",
+        },
+      },
+      {
+        env: {
+          COMSPEC: "C:\\Windows\\System32\\cmd.exe",
+          PATH: "C:\\Windows\\System32",
+        },
+        exists: (path) => path === "C:\\Program Files\\Git\\bin\\bash.exe",
+        platform: "win32",
+      },
+    );
+
+    expect(resolved).toMatchObject({
+      cwdDialect: "git-bash",
+      file: "C:\\Program Files\\Git\\bin\\bash.exe",
       shell: false,
     });
   });
