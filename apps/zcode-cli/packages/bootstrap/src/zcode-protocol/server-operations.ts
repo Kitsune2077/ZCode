@@ -75,6 +75,7 @@ import {
   type ZCodeAutomationBotDeliveryTarget,
   type ZCodeSessionCreateParams,
   type ZCodeDeliveryKind,
+  type IntegratedTerminalShellDialect,
   type IntegratedTerminalShellSelection,
   type ZCodeSessionRuntimePreferencesScope,
   type ZCodeSessionRuntimePreferencesResult,
@@ -3206,7 +3207,9 @@ function sendProtocolSessionEvent(
   logProtocolSessionEventSent(context, event, mappedEvent);
 }
 
-function integratedTerminalShellDisplayName(dialect: IntegratedTerminalShellSelection["dialect"]) {
+// 注意不能用 IntegratedTerminalShellSelection["dialect"]：auto 分支没有 dialect 键，
+// 对 union 的索引访问会报 TS2339（只有 CLI 打包构建的 tsc 会跑到这里）。
+function integratedTerminalShellDisplayName(dialect: IntegratedTerminalShellDialect) {
   return dialect === "git-bash" ? "Git Bash" : dialect === "powershell" ? "PowerShell 7" : "CMD";
 }
 
