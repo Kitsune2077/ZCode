@@ -3338,7 +3338,7 @@ const enUS: Record<string, string> = {
   "settings.migration.title": "Migration",
   "settings.migration.sectionTitle": "External Agent History Migration",
   "settings.migration.sectionDescription":
-    "Scan and import sessions from native Claude Code, OpenCode, and DeepSeek Harness history on this machine. Imported sessions land in their matching workspace task lists and stay resumable.",
+    "Scan and import sessions from native Claude Code, OpenCode, and DeepSeek Harness history on this machine, or from an installed ZCode edition (home-directory data; aimed at portable instances). Imported sessions land in their matching workspace task lists and stay resumable.",
   "settings.migration.badge.localOnly": "Local Claude records",
   "settings.migration.badge.manualOnly": "Manual only",
   "settings.migration.currentWorkspace": "Current workspace",
@@ -3359,6 +3359,7 @@ const enUS: Record<string, string> = {
   "settings.migration.provider.claude": "Claude Code",
   "settings.migration.provider.openCode": "OpenCode",
   "settings.migration.provider.deepseekHarness": "DeepSeek Harness",
+  "settings.migration.provider.zcodeInstalled": "ZCode installed edition",
   "settings.migration.workspaceFilterLabel": "Workspace filter",
   "settings.migration.workspaceFilter.all": "All workspaces",
   "settings.migration.workspaceFilter.current": "Current workspace only",
@@ -3375,6 +3376,15 @@ const enUS: Record<string, string> = {
   "settings.migration.scanFailedDescription.openCode": "Failed to read OpenCode native history: {error}",
   "settings.migration.scanFailedDescription.deepseekHarness":
     "Failed to read DeepSeek Harness native history: {error}",
+  "settings.migration.scanFailedDescription.zcodeInstalled":
+    "Failed to read ZCode installed-edition sessions: {error}",
+  "settings.migration.installedSourceHint":
+    "Reads the installed ZCode session data from this machine's user home directory (read-only; installed data is never modified). Imported sessions become resumable conversations in the current instance.",
+  "settings.migration.installedConfigImport": "Import installed-edition configs",
+  "settings.migration.installedConfigHint":
+    "Copies provider configs, sign-in credentials, and the CLI config from the installed edition into this instance. Existing files are never overwritten; some configs apply after a restart.",
+  "settings.migration.installedConfigResult":
+    "Config import finished: {copied} copied, {skipped} skipped (already present or missing at the source).",
   "settings.migration.candidatesTitle": "Candidates",
   "settings.migration.candidatesDescription":
     "Select one or more sessions to import. Each imported session is written back into the task list for its own workspace.",

@@ -12,5 +12,8 @@ export const sessionImportModule = {
     "opencodeNativeSessionImportService.ts",
     "../dsh-native/dshNativeSessionImportRepo.ts",
     "../dsh-native/dshNativeSessionImportService.ts",
+    "../zcode-installed-native/zcodeInstalledSessionImportRepo.ts",
+    "../zcode-installed-native/zcodeInstalledSessionImportService.ts",
+    "../zcode-installed-native/zcodeInstalledConfigImport.ts",
   ],
 } as const;

@@ -2,7 +2,7 @@
 
 一页以内。只写类型与测试表达不了的三样：模块存在的意图、不变量、与其它模块的交集在哪个 hook 点处理。
 
-意图：把外部 Agent（OpenCode、DeepSeek Harness）的原生会话库转成可续聊的 ZCode 会话。每个来源一个 `*-native` 子目录，形状遵循 `contract.ts` 的 scan/import 两意图。
+意图：把外部 Agent（OpenCode、DeepSeek Harness）与 ZCode 安装版（真实用户主目录 `~/.zcode`）的原生会话库转成可续聊的 ZCode 会话，面向 Windows 便携版实例接收安装版数据。每个来源一个 `*-native` 子目录，形状遵循 `contract.ts` 的 scan/import 两意图；zcode-installed 来源的位置是确定性的（`os.homedir()` 下的安装版数据，repo 拒绝指向当前运行实例自身），并提供独立的配置导入（provider/凭据/CLI 配置，只补缺失不覆盖）。
 
 不变量：
 

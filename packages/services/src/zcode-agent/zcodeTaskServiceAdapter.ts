@@ -169,6 +169,9 @@ import { opencodeNativeSessionImportRepo } from "#src/session/opencode-native/op
 import { importOpenCodeNativeSessions } from "#src/session/opencode-native/opencodeNativeSessionImportService.js";
 import { dshNativeSessionImportRepo } from "#src/session/dsh-native/dshNativeSessionImportRepo.js";
 import { importDshNativeSessions } from "#src/session/dsh-native/dshNativeSessionImportService.js";
+import { zcodeInstalledSessionImportRepo } from "#src/session/zcode-installed-native/zcodeInstalledSessionImportRepo.js";
+import { importZCodeInstalledSessions } from "#src/session/zcode-installed-native/zcodeInstalledSessionImportService.js";
+import { importZCodeInstalledConfigs } from "#src/session/zcode-installed-native/zcodeInstalledConfigImport.js";
 import {
   MODEL_CONFIG_ID,
   MODE_CONFIG_ID,
@@ -2923,6 +2926,78 @@ export function createZCodeTaskServiceAdapter(
           // 与 Claude/OpenCode 导入同因：导入后必须是真实 ZCode session 才能续聊；
           // migrationSource=deepseekHarness 供任务列表稳定识别 DSH 迁移来源。
           return updateIndexedPresentation({ ...meta, migrationSource: "deepseekHarness" });
+        },
+        onTaskImported: (meta) => {
+          rememberIndexedTaskMeta(meta);
+          emitWorkspaceTaskListChanged(
+            {
+              workspacePath: meta.workspacePath,
+              workspaceIdentity: meta.workspaceIdentity,
+              taskId: meta.taskId,
+            },
+            meta,
+            "task_meta_changed",
+          );
+        },
+      });
+    },
+
+    async scanImportableZCodeInstalledSessions(params: {
+      workspacePath?: string;
+      workspaceIdentity?: string;
+      modifiedSince?: number;
+      limit?: number;
+    }): Promise<ZCodeImportableSessionCandidate[]> {
+      // 与其它来源同因：扫描按 session.directory 与可选 workspacePath 过滤，
+      // workspaceIdentity 只影响导入落盘，不参与扫描。
+      void params.workspaceIdentity;
+      return zcodeInstalledSessionImportRepo.scanImportableSessions({
+        workspacePath: params.workspacePath,
+        modifiedSince: params.modifiedSince,
+        limit: params.limit,
+      });
+    },
+
+    async importZCodeInstalledConfigs(): Promise<{ copied: string[]; skipped: string[] }> {
+      return importZCodeInstalledConfigs();
+    },
+
+    async importZCodeInstalledSessions(params: {
+      workspacePath?: string;
+      workspaceIdentity?: string;
+      sessionIds: string[];
+    }): Promise<ZCodeImportSessionsResult> {
+      return importZCodeInstalledSessions({
+        taskIndexRepo,
+        workspacePath: params.workspacePath,
+        workspaceIdentity: params.workspaceIdentity,
+        sessionIds: params.sessionIds,
+        createImportedSession: async (source) => {
+          const targetWorkspaceIdentity = params.workspacePath
+            ? params.workspaceIdentity
+            : undefined;
+          const snapshot = await options.zcodeAgentService.createSession({
+            workspacePath: source.workspacePath,
+            workspaceIdentity: targetWorkspaceIdentity,
+            // 显式重新导入产生新 CLI 会话，不能用来源 hash 覆盖已删除或已继续对话的记录（与其它来源同因）。
+            sessionTraceId: createSessionTraceId(),
+            persistence: "immediate",
+            importedHistory: {
+              source: "zcodeInstalled",
+              title: source.title,
+              createdAt: source.createdAt,
+              updatedAt: source.updatedAt,
+              messages: source.messages.map((message) => ({
+                role: message.role,
+                content: message.content,
+                timestamp: message.timestamp,
+              })),
+            },
+          });
+          const meta = await syncTaskIndexSnapshot(snapshot);
+          // 与其它来源同因：导入后必须是真实 ZCode session 才能续聊；
+          // migrationSource=zcodeInstalled 供任务列表稳定识别安装版迁移来源。
+          return updateIndexedPresentation({ ...meta, migrationSource: "zcodeInstalled" });
         },
         onTaskImported: (meta) => {
           rememberIndexedTaskMeta(meta);

@@ -613,6 +613,24 @@ export interface IZCodeTaskService {
     sessionIds: string[];
   }): Promise<ZCodeImportSessionsResult>;
 
+  /** 扫描 ZCode 安装版（真实用户主目录 ~/.zcode）中可导入的 session；只读，供便携版实例接收安装版数据。 */
+  scanImportableZCodeInstalledSessions(params: {
+    workspacePath?: string;
+    workspaceIdentity?: string;
+    modifiedSince?: number;
+    limit?: number;
+  }): Promise<ZCodeImportableSessionCandidate[]>;
+
+  /** 导入选中的 ZCode 安装版 session 为真实可续聊 ZCode session；不传 workspacePath 时按原始 workspace 导入。 */
+  importZCodeInstalledSessions(params: {
+    workspacePath?: string;
+    workspaceIdentity?: string;
+    sessionIds: string[];
+  }): Promise<ZCodeImportSessionsResult>;
+
+  /** 把安装版主目录的 provider/凭据/CLI 配置导入当前实例；只补缺失，不覆盖已有文件。 */
+  importZCodeInstalledConfigs(): Promise<{ copied: string[]; skipped: string[] }>;
+
   /** 切换 task 模式 */
   setMode(params: { taskId: string; mode: ZCodeTaskMode }): Promise<void>;
 

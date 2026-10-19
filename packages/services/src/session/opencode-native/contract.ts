@@ -2,15 +2,19 @@
  * session-import 对外契约：调用方要想正确调用就必须知道的一切都写在这里；其余对外不可见。
  * 每个方法注释写清：前置/后置条件、幂等性、发出哪些事件、是否等待持久化。
  *
- * 模块聚合各外部 Agent（OpenCode / DeepSeek Harness）的原生会话导入源。每个来源提供两个意图：
- * 扫描候选与执行导入；具体实现文件是各 `*-native` 目录下的 `*SessionImportRepo.ts`
- * （扫描）与 `*SessionImportService.ts`（导入），协议命令与 UI hook 只依赖本契约描述的形状。
+ * 模块聚合各外部来源（OpenCode / DeepSeek Harness / ZCode 安装版）的原生会话导入源。
+ * 每个来源提供两个意图：扫描候选与执行导入；具体实现文件是各 `*-native` 目录下的
+ * `*SessionImportRepo.ts`（扫描）与 `*SessionImportService.ts`（导入），协议命令与 UI hook
+ * 只依赖本契约描述的形状。zcode-installed 来源的位置是确定性的（真实用户主目录下的
+ * 安装版 db.sqlite，repo 拒绝指向当前运行实例自身）；其配置导入（zcodeInstalledConfigImport）
+ * 是一次性动作，只补缺失文件、不覆盖当前实例已有配置。
  */
 import type {
   ZCodeImportableSessionCandidate,
   ZCodeImportSessionsResult,
   ZCodeTaskMeta,
 } from "@zcode/shared";
+import type { TaskIndexRepo } from "#src/session/taskIndexRepo.js";
 
 /** 扫描参数：workspacePath 只做候选过滤，不决定能力可用性；limit/modifiedSince 可选收紧范围。 */
 export interface SessionImportScanParams {
@@ -22,9 +26,10 @@ export interface SessionImportScanParams {
 
 /**
  * 导入参数：createImportedSession 必须由调用方提供（桌面端经适配器创建真实 ZCode session），
- * 服务侧只允许在其返回的索引行上补 presentation/searchable，不能凭空创建第二条会话事实。
+ * 服务侧只允许在其返回的索引行上补 presentation/searchable，不能再凭空创建第二条会话事实。
  */
 export interface SessionImportRunParams<Source> {
+  taskIndexRepo: TaskIndexRepo;
   sessionIds: string[];
   workspacePath?: string;
   workspaceIdentity?: string;

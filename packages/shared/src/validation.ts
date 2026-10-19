@@ -1086,7 +1086,12 @@ export const hostLogResponseSchema = z.object({
 
 export { zcodeProviderSchema };
 
-export const zcodeTaskMigrationSourceSchema = z.enum(["claudeCode", "openCode", "deepseekHarness"]);
+export const zcodeTaskMigrationSourceSchema = z.enum([
+  "claudeCode",
+  "openCode",
+  "deepseekHarness",
+  "zcodeInstalled",
+]);
 
 export const hostAgentProcessSpawnedResponseSchema = z.object({
   type: z.literal("agent-process-spawned"),

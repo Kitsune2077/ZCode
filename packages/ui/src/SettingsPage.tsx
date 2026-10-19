@@ -2174,6 +2174,7 @@ export function SettingsPage({
                               workspacePath={activeWorkspacePath}
                               workspaceIdentity={activeWorkspaceIdentity}
                               isDesktop={isDesktop}
+                              isWindowsDesktop={Boolean(isWindowsDesktop)}
                             />
                           ) : activeSection === "archives" ? (
                             <div className="min-w-0 space-y-6">

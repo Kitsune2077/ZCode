@@ -3128,7 +3128,7 @@ const zhCN: Record<string, string> = {
   "settings.migration.title": "迁移",
   "settings.migration.sectionTitle": "外部 Agent 历史迁移",
   "settings.migration.sectionDescription":
-    "从本机的 Claude Code、OpenCode 与 DeepSeek Harness 原生历史中扫描并导入会话；导入后的会话会写入对应 workspace 的任务列表，并可继续对话。",
+    "从本机的 Claude Code、OpenCode、DeepSeek Harness 原生历史或 ZCode 安装版（主目录数据，面向便携版实例）中扫描并导入会话；导入后的会话会写入对应 workspace 的任务列表，并可继续对话。",
   "settings.migration.badge.localOnly": "本机 Claude 记录",
   "settings.migration.badge.manualOnly": "手动执行",
   "settings.migration.currentWorkspace": "当前工作区",
@@ -3148,6 +3148,7 @@ const zhCN: Record<string, string> = {
   "settings.migration.provider.claude": "Claude Code",
   "settings.migration.provider.openCode": "OpenCode",
   "settings.migration.provider.deepseekHarness": "DeepSeek Harness",
+  "settings.migration.provider.zcodeInstalled": "ZCode 安装版",
   "settings.migration.workspaceFilterLabel": "workspace 筛选",
   "settings.migration.workspaceFilter.all": "全部 workspace",
   "settings.migration.workspaceFilter.current": "仅当前 workspace",
@@ -3164,6 +3165,15 @@ const zhCN: Record<string, string> = {
   "settings.migration.scanFailedDescription.openCode": "读取 OpenCode 原生历史失败：{error}",
   "settings.migration.scanFailedDescription.deepseekHarness":
     "读取 DeepSeek Harness 原生历史失败：{error}",
+  "settings.migration.scanFailedDescription.zcodeInstalled":
+    "读取 ZCode 安装版会话记录失败：{error}",
+  "settings.migration.installedSourceHint":
+    "将读取本机用户主目录中安装版 ZCode 的会话数据（只读，不修改安装版数据），导入后成为当前实例里可继续对话的会话。",
+  "settings.migration.installedConfigImport": "导入安装版配置",
+  "settings.migration.installedConfigHint":
+    "把安装版的 provider 配置、登录凭据与 CLI 配置补进当前实例；已存在的文件不会被覆盖，部分配置重启后生效。",
+  "settings.migration.installedConfigResult":
+    "配置导入完成：新复制 {copied} 项，跳过 {skipped} 项（已存在或来源缺失）。",
   "settings.migration.candidatesTitle": "候选会话",
   "settings.migration.candidatesDescription":
     "选择一个或多个会话后执行导入；每条记录会写入它自己的目标 workspace 任务列表。",

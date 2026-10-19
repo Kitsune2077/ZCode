@@ -727,6 +727,7 @@ modules:
     roots:
       - packages/services/src/session/opencode-native
       - packages/services/src/session/dsh-native
+      - packages/services/src/session/zcode-installed-native
     managed: true
     requires:
       - services
@@ -738,6 +739,9 @@ modules:
       - packages/services/src/session/opencode-native/opencodeNativeSessionImportService.ts
       - packages/services/src/session/dsh-native/dshNativeSessionImportRepo.ts
       - packages/services/src/session/dsh-native/dshNativeSessionImportService.ts
+      - packages/services/src/session/zcode-installed-native/zcodeInstalledSessionImportRepo.ts
+      - packages/services/src/session/zcode-installed-native/zcodeInstalledSessionImportService.ts
+      - packages/services/src/session/zcode-installed-native/zcodeInstalledConfigImport.ts
     layers:
       adapters: .
     owner: conversation

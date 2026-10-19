@@ -13,5 +13,9 @@ export async function exampleSessionImportScan(params: SessionImportScanParams) 
 export async function exampleSessionImportRun(
   params: SessionImportRunParams<OpenCodeNativeImportedSessionSource>,
 ) {
-  return importOpenCodeNativeSessions(params);
+  return importOpenCodeNativeSessions({
+    ...params,
+    /** 测试/高级用法注入的来源库路径；生产调用缺省解析 ~/.local/share/opencode。 */
+    databasePaths: undefined,
+  });
 }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Loader2, RefreshCcw, TriangleAlert } from "lucide-react";
+import { Loader2, RefreshCcw, Settings2, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import {
   Card,
@@ -33,19 +33,29 @@ const SCAN_FAILED_DESCRIPTION_KEYS: Record<SessionMigrationProvider, string> = {
   claude: "settings.migration.scanFailedDescription",
   openCode: "settings.migration.scanFailedDescription.openCode",
   deepseekHarness: "settings.migration.scanFailedDescription.deepseekHarness",
+  zcodeInstalled: "settings.migration.scanFailedDescription.zcodeInstalled",
 };
 
 export function MigrationSection({
   workspacePath,
   workspaceIdentity,
   isDesktop,
+  isWindowsDesktop,
 }: {
   workspacePath: string | null;
   workspaceIdentity?: string;
   isDesktop?: boolean;
+  isWindowsDesktop?: boolean;
 }) {
   const { intl, locale } = useZCodeIntl();
   const [provider, setProvider] = useState<SessionMigrationProvider>("claude");
+  const [isImportingConfigs, setIsImportingConfigs] = useState(false);
+  const [configImportNotice, setConfigImportNotice] = useState<string | null>(null);
+  const providerOptions = useMemo(
+    () =>
+      isWindowsDesktop ? ([...PROVIDER_OPTIONS, "zcodeInstalled"] as const) : PROVIDER_OPTIONS,
+    [isWindowsDesktop],
+  );
   const {
     supportState,
     workspaceFilterMode,
@@ -66,6 +76,7 @@ export function MigrationSection({
     isImporting,
     scan,
     importSelectedSessions,
+    importInstalledConfigs,
     toggleSessionSelection,
     selectAllSessions,
     clearSelectedSessions,
@@ -141,7 +152,7 @@ export function MigrationSection({
                 value={provider}
                 disabled={!supportState.supported || isScanning || isImporting}
                 onValueChange={(value) =>
-                  setProvider(PROVIDER_OPTIONS.includes(value as SessionMigrationProvider)
+                  setProvider(providerOptions.includes(value as SessionMigrationProvider)
                     ? (value as SessionMigrationProvider)
                     : "claude")
                 }
@@ -150,7 +161,7 @@ export function MigrationSection({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {PROVIDER_OPTIONS.map((option) => (
+                  {providerOptions.map((option) => (
                     <SelectItem key={option} value={option}>
                       {intl.formatMessage({ id: `settings.migration.provider.${option}` })}
                     </SelectItem>
@@ -228,6 +239,49 @@ export function MigrationSection({
               </div>
             </div>
           </div>
+
+          {provider === "zcodeInstalled" ? (
+            <div className="space-y-2">
+              <div className="text-ui-base text-foreground-subtle">
+                {intl.formatMessage({ id: "settings.migration.installedSourceHint" })}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={!supportState.supported || isImportingConfigs}
+                  onClick={() => {
+                    setIsImportingConfigs(true);
+                    setConfigImportNotice(null);
+                    void importInstalledConfigs().then((result) => {
+                      setIsImportingConfigs(false);
+                      if (!result) return;
+                      setConfigImportNotice(
+                        intl.formatMessage(
+                          { id: "settings.migration.installedConfigResult" },
+                          { copied: String(result.copied.length), skipped: String(result.skipped.length) },
+                        ),
+                      );
+                    });
+                  }}
+                >
+                  {isImportingConfigs ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Settings2 className="size-3.5" />
+                  )}
+                  {intl.formatMessage({ id: "settings.migration.installedConfigImport" })}
+                </Button>
+                {configImportNotice ? (
+                  <span className="text-ui-base text-foreground-subtle">{configImportNotice}</span>
+                ) : null}
+              </div>
+              <div className="text-ui-base text-foreground-subtle">
+                {intl.formatMessage({ id: "settings.migration.installedConfigHint" })}
+              </div>
+            </div>
+          ) : null}
 
           {scanError ? (
             <Alert>

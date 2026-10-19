@@ -8,7 +8,11 @@ import { invalidateTaskQueryCacheByScopes } from "@/store/taskQueryCacheStore.js
 export type ClaudeMigrationRange = "all" | "7d" | "30d" | "90d";
 type ClaudeMigrationWorkspaceFilterMode = "all" | "current";
 /** 迁移来源 provider；缺省 claude 保持 Onboarding 既有行为不变。 */
-export type SessionMigrationProvider = "claude" | "openCode" | "deepseekHarness";
+export type SessionMigrationProvider =
+  | "claude"
+  | "openCode"
+  | "deepseekHarness"
+  | "zcodeInstalled";
 
 const DEFAULT_LIMIT = 100;
 const MAX_SCAN_LIMIT = 500;
@@ -65,7 +69,13 @@ export function useClaudeSessionMigration(params: {
 }) {
   const provider = params.provider ?? "claude";
   const providerLabel =
-    provider === "openCode" ? "OpenCode" : provider === "deepseekHarness" ? "DSH" : "Claude";
+    provider === "openCode"
+      ? "OpenCode"
+      : provider === "deepseekHarness"
+        ? "DSH"
+        : provider === "zcodeInstalled"
+          ? "ZCodeInstalled"
+          : "Claude";
   const zcodeTaskService = useZCodeTaskService(
     params.workspacePath ?? undefined,
     undefined,
@@ -174,7 +184,9 @@ export function useClaudeSessionMigration(params: {
           ? await zcodeTaskService.scanImportableOpenCodeSessions(scanParams)
           : provider === "deepseekHarness"
             ? await zcodeTaskService.scanImportableDshSessions(scanParams)
-            : await zcodeTaskService.scanImportableClaudeSessions(scanParams);
+            : provider === "zcodeInstalled"
+              ? await zcodeTaskService.scanImportableZCodeInstalledSessions(scanParams)
+              : await zcodeTaskService.scanImportableClaudeSessions(scanParams);
       setCandidates(nextCandidates);
       // 关键业务逻辑：重扫后只保留仍然可见的勾选项。
       // 这样用户调筛选条件或刷新结果时，不会把已经不在当前列表里的旧 session 混进导入请求。
@@ -227,7 +239,9 @@ export function useClaudeSessionMigration(params: {
             ? await zcodeTaskService.importOpenCodeSessions(importParams)
             : provider === "deepseekHarness"
               ? await zcodeTaskService.importDshSessions(importParams)
-              : await zcodeTaskService.importClaudeSessions(importParams);
+              : provider === "zcodeInstalled"
+                ? await zcodeTaskService.importZCodeInstalledSessions(importParams)
+                : await zcodeTaskService.importClaudeSessions(importParams);
         setLastImportResult(result);
         const handledSessionIds = new Set([
           ...result.imported.map((item) => item.sessionId),
@@ -278,6 +292,28 @@ export function useClaudeSessionMigration(params: {
     return importSessions(selectedSessionIds);
   }, [importSessions, selectedSessionIds]);
 
+  // zcodeInstalled 专属：把安装版主目录的 provider/凭据/CLI 配置补进当前实例。
+  // 与会话导入解耦（配置是一次性动作，没有候选/勾选语义），结果只做 toast 级反馈。
+  const importInstalledConfigs = useCallback(async (): Promise<{
+    copied: string[];
+    skipped: string[];
+  } | null> => {
+    if (!supportState.supported || provider !== "zcodeInstalled") {
+      return null;
+    }
+    try {
+      const result = await zcodeTaskService.importZCodeInstalledConfigs();
+      logger.info(
+        `[Migration] ZCode 安装版配置导入完成 copied=${result.copied.length} skipped=${result.skipped.length}`,
+      );
+      return result;
+    } catch (error) {
+      logger.error("[Migration] ZCode 安装版配置导入失败", error);
+      setImportError(error instanceof Error ? error.message : String(error));
+      return null;
+    }
+  }, [provider, supportState.supported, zcodeTaskService]);
+
   return {
     supportState,
     workspaceFilterMode,
@@ -299,6 +335,7 @@ export function useClaudeSessionMigration(params: {
     scan,
     importSessions,
     importSelectedSessions,
+    importInstalledConfigs,
     toggleSessionSelection,
     selectAllSessions,
     clearSelectedSessions,
