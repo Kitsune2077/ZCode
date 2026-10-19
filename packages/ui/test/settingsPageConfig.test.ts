@@ -50,7 +50,7 @@ describe("settingsPageConfig", () => {
         id: "agentCapabilities",
         sections: ["memory", "subagents", "plugin", "mcp", "skill", "commands", "hooks"],
       },
-      { id: "dataAndStats", sections: ["usage", "archives"] },
+      { id: "dataAndStats", sections: ["usage", "archives", "migration"] },
     ]);
     expect(settingsSections.map((section) => section.id)).toEqual([
       "general",
@@ -68,6 +68,7 @@ describe("settingsPageConfig", () => {
       "shortcuts",
       "usage",
       "archives",
+      "migration",
     ]);
   });
 

@@ -3336,9 +3336,9 @@ const enUS: Record<string, string> = {
   "sidebar.settings.theme.zai-dark": "Dark theme",
   "sidebar.settings.theme.dark": "Dark theme",
   "settings.migration.title": "Migration",
-  "settings.migration.sectionTitle": "Claude History Migration",
+  "settings.migration.sectionTitle": "External Agent History Migration",
   "settings.migration.sectionDescription":
-    "Scan native Claude Code history on this machine, optionally filter by workspace and activity window, then import the selected sessions into their matching ZCode task lists.",
+    "Scan and import sessions from native Claude Code, OpenCode, and DeepSeek Harness history on this machine. Imported sessions land in their matching workspace task lists and stay resumable.",
   "settings.migration.badge.localOnly": "Local Claude records",
   "settings.migration.badge.manualOnly": "Manual only",
   "settings.migration.currentWorkspace": "Current workspace",
@@ -3354,7 +3354,11 @@ const enUS: Record<string, string> = {
   "settings.migration.unsupported.desktopOnly": "Migration is currently available on desktop only.",
   "settings.migration.filtersTitle": "Filters",
   "settings.migration.filtersDescription":
-    "Filter by workspace, recent activity, and result size, then manually fetch the candidate sessions.",
+    "Filter by import source, workspace, recent activity, and result size, then manually fetch the candidate sessions.",
+  "settings.migration.providerLabel": "Import source",
+  "settings.migration.provider.claude": "Claude Code",
+  "settings.migration.provider.openCode": "OpenCode",
+  "settings.migration.provider.deepseekHarness": "DeepSeek Harness",
   "settings.migration.workspaceFilterLabel": "Workspace filter",
   "settings.migration.workspaceFilter.all": "All workspaces",
   "settings.migration.workspaceFilter.current": "Current workspace only",
@@ -3368,6 +3372,9 @@ const enUS: Record<string, string> = {
   "settings.migration.scan": "Scan sessions",
   "settings.migration.scanFailedTitle": "Scan failed",
   "settings.migration.scanFailedDescription": "Failed to read Claude native history: {error}",
+  "settings.migration.scanFailedDescription.openCode": "Failed to read OpenCode native history: {error}",
+  "settings.migration.scanFailedDescription.deepseekHarness":
+    "Failed to read DeepSeek Harness native history: {error}",
   "settings.migration.candidatesTitle": "Candidates",
   "settings.migration.candidatesDescription":
     "Select one or more sessions to import. Each imported session is written back into the task list for its own workspace.",

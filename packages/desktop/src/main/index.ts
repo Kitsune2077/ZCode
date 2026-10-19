@@ -289,8 +289,13 @@ const localMediaPreviewPathRegistry = createLocalMediaPreviewPathRegistry();
 // e2e 由 Chromedriver 管理远程调试端口；如果这里继续固定到 9229，
 // 会和开发态已打开的 ZCode Dev 抢端口，导致 WebDriver session 创建前白屏超时。
 // 仅本地开发运行默认开启远程调试端口，并允许 e2e 通过环境变量交给 Chromedriver 接管。
+// 9229 同时也是 Node inspector 的默认端口，被其它进程（含残留的僵尸 socket）占用时
+// Chromium 会静默绑定失败；ZCODE_REMOTE_DEBUGGING_PORT 允许不重启机器换端口。
 if (!app.isPackaged && process.env.ZCODE_DISABLE_FIXED_REMOTE_DEBUGGING_PORT !== "1") {
-  app.commandLine.appendSwitch("remote-debugging-port", "9229");
+  app.commandLine.appendSwitch(
+    "remote-debugging-port",
+    process.env.ZCODE_REMOTE_DEBUGGING_PORT?.trim() || "9229",
+  );
 }
 
 app.setName(runtimeApplicationName);
