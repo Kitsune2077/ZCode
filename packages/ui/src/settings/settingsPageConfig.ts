@@ -20,6 +20,7 @@ import {
   HardDrive,
   Keyboard,
   FileSearch,
+  ArrowLeftRight,
 } from "lucide-react";
 import { isSettingsSectionEnabled, type SettingsSectionId } from "@/lib/settingsNavigation.js";
 import type { Theme } from "@/useTheme.js";
@@ -172,12 +173,15 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     titleId: "archives.nav",
     groupId: "dataAndStats",
   },
-  // 暂时隐藏设置页里的 Migration 入口，只保留页面实现，后续可以直接恢复这一项。
-  // {
-  //   id: "migration",
-  //   icon: ArrowLeftRight,
-  //   titleId: "settings.migration.title",
-  // },
+  // 外部 Agent 历史迁移（Claude Code / OpenCode / DeepSeek Harness）。
+  // 上游曾把该入口注释隐藏（仅保留页面实现）；feat/opencode-session-import 特性
+  // 依赖侧栏导航触达迁移页，合并时按特性分支意图恢复为可见入口。
+  {
+    id: "migration",
+    icon: ArrowLeftRight,
+    titleId: "settings.migration.title",
+    groupId: "dataAndStats",
+  },
 ];
 
 // 兼容既有只读消费者：默认配置代表不带桌面平台能力的 Web 视图；

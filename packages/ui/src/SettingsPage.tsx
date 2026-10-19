@@ -1829,6 +1829,13 @@ export function SettingsPage({
                           {activeSection === "general" ? (
                             <GeneralSectionHeader localePreference={localePreference} />
                           ) : null}
+                          {activeSection === "migration" ? (
+                            // 与常规页的 GeneralSectionHeader 同构：标题块需要一段头部内容，
+                            // 否则迁移页的卡片直接从滚动容器顶起步，比其它分区整体上移约 45px。
+                            <p className="mt-4 max-w-3xl text-ui-base text-foreground-subtle">
+                              {intl.formatMessage({ id: "settings.migration.sectionDescription" })}
+                            </p>
+                          ) : null}
                         </div>
                         <div className="space-y-8">
                           {activeSection === "general" ? (

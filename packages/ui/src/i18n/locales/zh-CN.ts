@@ -3126,9 +3126,9 @@ const zhCN: Record<string, string> = {
   "sidebar.settings.theme.zai-dark": "深色主题",
   "sidebar.settings.theme.dark": "深色主题",
   "settings.migration.title": "迁移",
-  "settings.migration.sectionTitle": "Claude 历史迁移",
+  "settings.migration.sectionTitle": "外部 Agent 历史迁移",
   "settings.migration.sectionDescription":
-    "扫描本机 Claude Code 原生历史，可按 workspace 和时间范围筛选，再把选中的会话导入到对应的 ZCode 任务列表。",
+    "从本机的 Claude Code、OpenCode 与 DeepSeek Harness 原生历史中扫描并导入会话；导入后的会话会写入对应 workspace 的任务列表，并可继续对话。",
   "settings.migration.badge.localOnly": "本机 Claude 记录",
   "settings.migration.badge.manualOnly": "手动执行",
   "settings.migration.currentWorkspace": "当前工作区",
@@ -3143,7 +3143,11 @@ const zhCN: Record<string, string> = {
   "settings.migration.unsupported.desktopOnly": "迁移能力当前只支持桌面端。",
   "settings.migration.filtersTitle": "筛选条件",
   "settings.migration.filtersDescription":
-    "可按 workspace、最近活跃时间和返回数量筛选，然后手动触发一次候选会话扫描。",
+    "可按导入来源、workspace、最近活跃时间和返回数量筛选，然后手动触发一次候选会话扫描。",
+  "settings.migration.providerLabel": "导入来源",
+  "settings.migration.provider.claude": "Claude Code",
+  "settings.migration.provider.openCode": "OpenCode",
+  "settings.migration.provider.deepseekHarness": "DeepSeek Harness",
   "settings.migration.workspaceFilterLabel": "workspace 筛选",
   "settings.migration.workspaceFilter.all": "全部 workspace",
   "settings.migration.workspaceFilter.current": "仅当前 workspace",
@@ -3157,6 +3161,9 @@ const zhCN: Record<string, string> = {
   "settings.migration.scan": "扫描候选会话",
   "settings.migration.scanFailedTitle": "扫描失败",
   "settings.migration.scanFailedDescription": "读取 Claude 原生历史失败：{error}",
+  "settings.migration.scanFailedDescription.openCode": "读取 OpenCode 原生历史失败：{error}",
+  "settings.migration.scanFailedDescription.deepseekHarness":
+    "读取 DeepSeek Harness 原生历史失败：{error}",
   "settings.migration.candidatesTitle": "候选会话",
   "settings.migration.candidatesDescription":
     "选择一个或多个会话后执行导入；每条记录会写入它自己的目标 workspace 任务列表。",

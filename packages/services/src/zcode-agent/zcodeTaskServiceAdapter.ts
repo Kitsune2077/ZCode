@@ -165,6 +165,10 @@ import { claudeNativeSessionImportRepo } from "#src/session/claude-native/claude
 import { importClaudeNativeSessions } from "#src/session/claude-native/claudeNativeSessionImportService.js";
 import { repairImportedClaudeSessionSnapshot } from "#src/session/claude-native/importedClaudeHistoryRepair.js";
 import { safeParseLegacyTaskSessionFile } from "#src/session/legacyTaskSessionFile.js";
+import { opencodeNativeSessionImportRepo } from "#src/session/opencode-native/opencodeNativeSessionImportRepo.js";
+import { importOpenCodeNativeSessions } from "#src/session/opencode-native/opencodeNativeSessionImportService.js";
+import { dshNativeSessionImportRepo } from "#src/session/dsh-native/dshNativeSessionImportRepo.js";
+import { importDshNativeSessions } from "#src/session/dsh-native/dshNativeSessionImportService.js";
 import {
   MODEL_CONFIG_ID,
   MODE_CONFIG_ID,
@@ -2793,6 +2797,143 @@ export function createZCodeTaskServiceAdapter(
             },
             meta,
             // 导入沿用 task_meta_changed 旧语义。
+            "task_meta_changed",
+          );
+        },
+      });
+    },
+
+    async scanImportableOpenCodeSessions(params: {
+      workspacePath?: string;
+      workspaceIdentity?: string;
+      modifiedSince?: number;
+      limit?: number;
+    }): Promise<ZCodeImportableSessionCandidate[]> {
+      // 与 scanImportableClaudeSessions 同因：OpenCode 扫描按 session.directory 与
+      // 可选 workspacePath 过滤，workspaceIdentity 只影响导入落盘，不参与扫描。
+      void params.workspaceIdentity;
+      return opencodeNativeSessionImportRepo.scanImportableSessions({
+        workspacePath: params.workspacePath,
+        modifiedSince: params.modifiedSince,
+        limit: params.limit,
+      });
+    },
+
+    async importOpenCodeSessions(params: {
+      workspacePath?: string;
+      workspaceIdentity?: string;
+      sessionIds: string[];
+    }): Promise<ZCodeImportSessionsResult> {
+      return importOpenCodeNativeSessions({
+        taskIndexRepo,
+        workspacePath: params.workspacePath,
+        workspaceIdentity: params.workspaceIdentity,
+        sessionIds: params.sessionIds,
+        createImportedSession: async (source) => {
+          const targetWorkspaceIdentity = params.workspacePath
+            ? params.workspaceIdentity
+            : undefined;
+          const snapshot = await options.zcodeAgentService.createSession({
+            workspacePath: source.workspacePath,
+            workspaceIdentity: targetWorkspaceIdentity,
+            // 与 Claude 导入同因：显式重新导入产生新 CLI 会话，不能用来源 hash
+            // 覆盖已删除或已继续对话的记录（上游 3.15.x 根因修复的同一语义）。
+            sessionTraceId: createSessionTraceId(),
+            persistence: "immediate",
+            importedHistory: {
+              source: "openCode",
+              title: source.title,
+              createdAt: source.createdAt,
+              updatedAt: source.updatedAt,
+              messages: source.messages.map((message) => ({
+                role: message.role,
+                content: message.content,
+                timestamp: message.timestamp,
+              })),
+            },
+          });
+          const meta = await syncTaskIndexSnapshot(snapshot);
+          // 导入后的任务必须是真实 ZCode session 才能续聊；
+          // migrationSource=openCode 供任务列表稳定识别 OpenCode 迁移来源。
+          return updateIndexedPresentation({ ...meta, migrationSource: "openCode" });
+        },
+        onTaskImported: (meta) => {
+          rememberIndexedTaskMeta(meta);
+          emitWorkspaceTaskListChanged(
+            {
+              workspacePath: meta.workspacePath,
+              workspaceIdentity: meta.workspaceIdentity,
+              taskId: meta.taskId,
+            },
+            meta,
+            "task_meta_changed",
+          );
+        },
+      });
+    },
+
+    async scanImportableDshSessions(params: {
+      workspacePath?: string;
+      workspaceIdentity?: string;
+      modifiedSince?: number;
+      limit?: number;
+    }): Promise<ZCodeImportableSessionCandidate[]> {
+      // 与其它原生扫描同因：DSH 扫描按 session 头里的 cwd 与可选 workspacePath 过滤，
+      // workspaceIdentity 只影响导入落盘，不参与扫描。
+      void params.workspaceIdentity;
+      return dshNativeSessionImportRepo.scanImportableSessions({
+        workspacePath: params.workspacePath,
+        modifiedSince: params.modifiedSince,
+        limit: params.limit,
+      });
+    },
+
+    async importDshSessions(params: {
+      workspacePath?: string;
+      workspaceIdentity?: string;
+      sessionIds: string[];
+    }): Promise<ZCodeImportSessionsResult> {
+      return importDshNativeSessions({
+        taskIndexRepo,
+        workspacePath: params.workspacePath,
+        workspaceIdentity: params.workspaceIdentity,
+        sessionIds: params.sessionIds,
+        createImportedSession: async (source) => {
+          const targetWorkspaceIdentity = params.workspacePath
+            ? params.workspaceIdentity
+            : undefined;
+          const snapshot = await options.zcodeAgentService.createSession({
+            workspacePath: source.workspacePath,
+            workspaceIdentity: targetWorkspaceIdentity,
+            // 与 Claude/OpenCode 导入同因：重新导入必须产生新 CLI 会话。
+            sessionTraceId: createSessionTraceId(),
+            persistence: "immediate",
+            importedHistory: {
+              source: "deepseekHarness",
+              title: source.title,
+              createdAt: source.createdAt,
+              updatedAt: source.updatedAt,
+              messages: source.messages.map((message) => ({
+                role: message.role,
+                content: message.content,
+                timestamp: message.timestamp,
+              })),
+            },
+          });
+          const meta = await syncTaskIndexSnapshot(snapshot);
+          // 与 Claude/OpenCode 导入同因：导入后必须是真实 ZCode session 才能续聊；
+          // migrationSource=deepseekHarness 供任务列表稳定识别 DSH 迁移来源。
+          return updateIndexedPresentation({ ...meta, migrationSource: "deepseekHarness" });
+        },
+        onTaskImported: (meta) => {
+          rememberIndexedTaskMeta(meta);
+          emitWorkspaceTaskListChanged(
+            {
+              workspacePath: meta.workspacePath,
+              workspaceIdentity: meta.workspaceIdentity,
+              taskId: meta.taskId,
+            },
+            meta,
             "task_meta_changed",
           );
         },
