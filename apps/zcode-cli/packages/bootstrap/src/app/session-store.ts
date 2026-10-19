@@ -121,6 +121,25 @@ export async function openStartupSessionStore(
 /** 会话库的文档化默认值（contracts DefaultConfig 同字面量），用于识别“用户未显式改路径”。 */
 const DEFAULT_SESSION_DB_CONFIG_VALUE = "~/.zcode/cli/db/db.sqlite";
 
+export async function openStartupZCodeProtocolSessionStore(
+  configResult: ConfigResult,
+  startupTimer: StartupTimer,
+): Promise<SqliteSessionStore> {
+  const dbPath = getSessionDbPath(configResult);
+  startupTimer.start("ZCode Protocol SQLite migration started", {
+    context: { dbPath },
+    event: "zcode_protocol.startup.sqlite_migration.started",
+    stage: "migrate_session_db",
+  });
+  const store = await SqliteSessionStore.openStartup({ dbPath });
+  startupTimer.mark("ZCode Protocol SQLite migration completed", {
+    context: { dbPath },
+    event: "zcode_protocol.startup.sqlite_migration.completed",
+    stage: "migrate_session_db",
+  });
+  return store;
+}
+
 export function getSessionDbPath(configResult: ConfigResult, workingDirectory?: string): string {
   const configured = configResult.config.storage.sessionDbPath;
   // 配置仍是默认字面量且宿主下发了 ZCODE_DATA_BASE_DIR（桌面便携态）时，

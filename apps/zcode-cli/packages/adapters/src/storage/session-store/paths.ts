@@ -1,7 +1,5 @@
-import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
-import { maybeThrowStorageFsFault } from "../fs-fault-injection.js";
+import { join } from "node:path";
 
 /**
  * usage 会话库的基目录：显式 `ZCODE_DATA_BASE_DIR`（桌面便携态由 main 下发）优先，
@@ -17,12 +15,4 @@ export function getDefaultSessionDbPath(): string {
   // 便携版（数据根 = exe 目录）下 usage 库必须随程序走，否则迁移时丢用量历史；
   // 此前裸用 homedir()，ZCODE_DATA_BASE_DIR 被无视，是便携数据目录功能的一致性缺口。
   return join(resolveSessionDbBaseDir(), ".zcode", "cli", "db", "db.sqlite");
-}
-
-export function ensureParentDir(filePath: string): void {
-  const parent = dirname(filePath);
-  if (!existsSync(parent)) {
-    maybeThrowStorageFsFault({ operation: "mkdir", path: parent });
-    mkdirSync(parent, { recursive: true });
-  }
 }
