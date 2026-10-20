@@ -1,3 +1,4 @@
+import { isAuxiliarySessionKind } from "@zcode/shared";
 import { createBotTopicAdmission } from "#src/zcode-agent/botTopicAdmission.js";
 import {
   readBotGroupRuntimeSnapshot,
@@ -169,9 +170,11 @@ import { opencodeNativeSessionImportRepo } from "#src/session/opencode-native/op
 import { importOpenCodeNativeSessions } from "#src/session/opencode-native/opencodeNativeSessionImportService.js";
 import { dshNativeSessionImportRepo } from "#src/session/dsh-native/dshNativeSessionImportRepo.js";
 import { importDshNativeSessions } from "#src/session/dsh-native/dshNativeSessionImportService.js";
-import { zcodeInstalledSessionImportRepo } from "#src/session/zcode-installed-native/zcodeInstalledSessionImportRepo.js";
-import { importZCodeInstalledSessions } from "#src/session/zcode-installed-native/zcodeInstalledSessionImportService.js";
-import { importZCodeInstalledConfigs } from "#src/session/zcode-installed-native/zcodeInstalledConfigImport.js";
+import {
+  resolveInstalledConversationSource,
+  scanImportableZcodeDesktopSessions as scanZcodeDesktopSourceSessions,
+} from "#src/session/zcode-native/zcodeNativeConversationSource.js";
+import { importZcodeNativeSessions } from "#src/session/zcode-native/zcodeNativeConversationImportService.js";
 import {
   MODEL_CONFIG_ID,
   MODE_CONFIG_ID,
@@ -1436,7 +1439,7 @@ export function createZCodeTaskServiceAdapter(
     snapshot: ZCodeSessionStateSnapshot,
     broadcastReason: ZCodeWorkspaceTaskListChanged["reason"] | null = "task_status_changed",
   ): Promise<ZCodeTaskMeta> {
-    if (snapshot.session.sessionKind === "subagent_child") return snapshotToMeta(snapshot);
+    if (isAuxiliarySessionKind(snapshot.session.sessionKind)) return snapshotToMeta(snapshot);
     return rememberIndexedTaskMeta(
       await taskIndexSyncer.syncSnapshotAndBroadcast(snapshot, {
         broadcastReason,
@@ -2839,7 +2842,8 @@ export function createZCodeTaskServiceAdapter(
           const snapshot = await options.zcodeAgentService.createSession({
             workspacePath: source.workspacePath,
             workspaceIdentity: targetWorkspaceIdentity,
-            // 显式重新导入产生新 CLI 会话，不能用来源 hash 覆盖已删除或已继续对话的记录（与 Claude 导入同因）。
+            // 与 Claude 导入同因：显式重新导入产生新 CLI 会话，不能用来源 hash
+            // 覆盖已删除或已继续对话的记录（上游 3.15.x 根因修复的同一语义）。
             sessionTraceId: createSessionTraceId(),
             persistence: "immediate",
             importedHistory: {
@@ -2855,7 +2859,7 @@ export function createZCodeTaskServiceAdapter(
             },
           });
           const meta = await syncTaskIndexSnapshot(snapshot);
-          // 与 Claude 导入同因：导入后必须是真实 ZCode session 才能续聊；
+          // 导入后的任务必须是真实 ZCode session 才能续聊；
           // migrationSource=openCode 供任务列表稳定识别 OpenCode 迁移来源。
           return updateIndexedPresentation({ ...meta, migrationSource: "openCode" });
         },
@@ -2907,7 +2911,7 @@ export function createZCodeTaskServiceAdapter(
           const snapshot = await options.zcodeAgentService.createSession({
             workspacePath: source.workspacePath,
             workspaceIdentity: targetWorkspaceIdentity,
-            // 显式重新导入产生新 CLI 会话，不能用来源 hash 覆盖已删除或已继续对话的记录（与 Claude/OpenCode 导入同因）。
+            // 与 Claude/OpenCode 导入同因：重新导入必须产生新 CLI 会话。
             sessionTraceId: createSessionTraceId(),
             persistence: "immediate",
             importedHistory: {
@@ -2942,63 +2946,55 @@ export function createZCodeTaskServiceAdapter(
       });
     },
 
-    async scanImportableZCodeInstalledSessions(params: {
+    async scanImportableZcodeDesktopSessions(params: {
       workspacePath?: string;
       workspaceIdentity?: string;
       modifiedSince?: number;
       limit?: number;
     }): Promise<ZCodeImportableSessionCandidate[]> {
-      // 与其它来源同因：扫描按 session.directory 与可选 workspacePath 过滤，
-      // workspaceIdentity 只影响导入落盘，不参与扫描。
+      // 与其它原生扫描同因：workspaceIdentity 只影响导入落盘，安装版扫描按 session.directory 过滤。
       void params.workspaceIdentity;
-      return zcodeInstalledSessionImportRepo.scanImportableSessions({
+      // 源端解析内部已排除"当前数据根即安装版数据根"（开发态/安装版内），此时返回空列表。
+      const source = await resolveInstalledConversationSource();
+      if (!source) {
+        return [];
+      }
+      return scanZcodeDesktopSourceSessions({
+        source,
         workspacePath: params.workspacePath,
         modifiedSince: params.modifiedSince,
         limit: params.limit,
       });
     },
 
-    async importZCodeInstalledConfigs(): Promise<{ copied: string[]; skipped: string[] }> {
-      return importZCodeInstalledConfigs();
-    },
-
-    async importZCodeInstalledSessions(params: {
+    async importZcodeDesktopSessions(params: {
       workspacePath?: string;
       workspaceIdentity?: string;
       sessionIds: string[];
     }): Promise<ZCodeImportSessionsResult> {
-      return importZCodeInstalledSessions({
+      // 安装版导入是原生合并：taskId 即源 session id，不需要 createImportedSession 回调；
+      // CLI 会话行由 host 短事务直写（spec 第 3 节写入边界），运行期唯一写者仍是 agent CLI。
+      void params.workspaceIdentity;
+      const source = await resolveInstalledConversationSource();
+      if (!source) {
+        return {
+          imported: [],
+          skipped: [],
+          failed: params.sessionIds
+            .map((sessionId) => sessionId.trim())
+            .filter(Boolean)
+            .map((sessionId) => ({
+              provider: "zcodeDesktop" as const,
+              sessionId,
+              reason: "installed_data_not_found",
+            })),
+        };
+      }
+      return importZcodeNativeSessions({
         taskIndexRepo,
+        source,
         workspacePath: params.workspacePath,
-        workspaceIdentity: params.workspaceIdentity,
         sessionIds: params.sessionIds,
-        createImportedSession: async (source) => {
-          const targetWorkspaceIdentity = params.workspacePath
-            ? params.workspaceIdentity
-            : undefined;
-          const snapshot = await options.zcodeAgentService.createSession({
-            workspacePath: source.workspacePath,
-            workspaceIdentity: targetWorkspaceIdentity,
-            // 显式重新导入产生新 CLI 会话，不能用来源 hash 覆盖已删除或已继续对话的记录（与其它来源同因）。
-            sessionTraceId: createSessionTraceId(),
-            persistence: "immediate",
-            importedHistory: {
-              source: "zcodeInstalled",
-              title: source.title,
-              createdAt: source.createdAt,
-              updatedAt: source.updatedAt,
-              messages: source.messages.map((message) => ({
-                role: message.role,
-                content: message.content,
-                timestamp: message.timestamp,
-              })),
-            },
-          });
-          const meta = await syncTaskIndexSnapshot(snapshot);
-          // 与其它来源同因：导入后必须是真实 ZCode session 才能续聊；
-          // migrationSource=zcodeInstalled 供任务列表稳定识别安装版迁移来源。
-          return updateIndexedPresentation({ ...meta, migrationSource: "zcodeInstalled" });
-        },
         onTaskImported: (meta) => {
           rememberIndexedTaskMeta(meta);
           emitWorkspaceTaskListChanged(

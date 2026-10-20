@@ -1522,6 +1522,17 @@ const enUS: Record<string, string> = {
   "sidePane.expand": "Expand side pane",
   "sidePane.collapse": "Collapse side pane",
   "sidePane.togglePanel": "Toggle panel",
+  "sidePane.fullView.enter": "Enter full view",
+  "sidePane.fullView.exit": "Exit full view",
+  "sidePane.fullView.openAnswer": "Show messages",
+  "sidePane.fullView.minimize": "Minimize editor",
+  "sidePane.fullView.restore": "Restore editor",
+  "sidePane.fullView.openConversation": "Open in full view",
+  "sidePane.fullView.handle": "Drag to move · Click for options",
+  "sidePane.fullView.expandMessages": "Expand messages",
+  "sidePane.fullView.collapseMessages": "Collapse messages",
+  "sidePane.fullView.statusRunning": "Running",
+  "sidePane.fullView.statusIdle": "Idle",
   "sidePane.maximize": "Expand panel",
   "sidePane.restoreSize": "Restore panel width",
   "sidePane.addTab": "Add tab",
@@ -2673,6 +2684,8 @@ const enUS: Record<string, string> = {
   "settings.source.deviceNameRequired": "Device name is required.",
   "settings.source.error.connection-profile-unavailable":
     "This connection is no longer available. Refresh and try again.",
+  "settings.source.error.recent-project-unresolved":
+    "The original project cannot be identified. Select a project from the sidebar.",
   "settings.source.connectionNameRequired": "Connection name is required.",
   "settings.source.keepSavedSecret": "Leave blank to keep the saved credential",
   "settings.source.otherSavedConnections": "Other saved connections",
@@ -2914,15 +2927,10 @@ const enUS: Record<string, string> = {
   "taskList.renameFailed": "Could not rename task",
   "taskList.pinFailed": "Could not update pinned state",
   "taskList.markAsUnread": "Mark as unread",
-  "taskList.openInSplitPane": "Open in split view",
   "chat.toolCall.agent.openInSidePane": "Open in side pane",
-  "v4Pane.splitRight": "Split right",
   "v4Pane.renamePlaceholder": "Rename session…",
   "v4Pane.renameSession": "Rename session",
   "v4Pane.deleteSession": "Delete session",
-  "v4Pane.splitRightTitle": "Split a new pane to the right (new session)",
-  "v4Pane.splitDown": "Split down",
-  "v4Pane.splitDownTitle": "Split a new pane below (new session)",
   "v4Pane.closePane": "Close pane",
   "v4Pane.closePaneTitle": "Close pane (session keeps running)",
   "v4Pane.remote": "Remote",
@@ -3116,6 +3124,7 @@ const enUS: Record<string, string> = {
   "settings.shortcuts.command.toggleSidebar": "Toggle Sidebar",
   "settings.shortcuts.command.switchTheme": "Toggle Light/Dark Theme",
   "settings.shortcuts.command.toggleSidePane": "Toggle Side Pane",
+  "settings.shortcuts.command.toggleSidePaneFullView": "Enter or Exit Full View",
   "settings.shortcuts.command.toggleTerminal": "Toggle Terminal",
   "settings.shortcuts.command.previousConversation": "Previous Task",
   "settings.shortcuts.command.nextConversation": "Next Task",
@@ -3338,7 +3347,7 @@ const enUS: Record<string, string> = {
   "settings.migration.title": "Migration",
   "settings.migration.sectionTitle": "External Agent History Migration",
   "settings.migration.sectionDescription":
-    "Scan and import sessions from native Claude Code, OpenCode, and DeepSeek Harness history on this machine, or from an installed ZCode edition (home-directory data; aimed at portable instances). Imported sessions land in their matching workspace task lists and stay resumable.",
+    "Scan and import sessions from native Claude Code, OpenCode, and DeepSeek Harness history on this machine. Imported sessions land in their matching workspace task lists and stay resumable.",
   "settings.migration.badge.localOnly": "Local Claude records",
   "settings.migration.badge.manualOnly": "Manual only",
   "settings.migration.currentWorkspace": "Current workspace",
@@ -3359,7 +3368,7 @@ const enUS: Record<string, string> = {
   "settings.migration.provider.claude": "Claude Code",
   "settings.migration.provider.openCode": "OpenCode",
   "settings.migration.provider.deepseekHarness": "DeepSeek Harness",
-  "settings.migration.provider.zcodeInstalled": "ZCode installed edition",
+  "settings.migration.provider.zcodeDesktop": "ZCode (installed app)",
   "settings.migration.workspaceFilterLabel": "Workspace filter",
   "settings.migration.workspaceFilter.all": "All workspaces",
   "settings.migration.workspaceFilter.current": "Current workspace only",
@@ -3376,15 +3385,8 @@ const enUS: Record<string, string> = {
   "settings.migration.scanFailedDescription.openCode": "Failed to read OpenCode native history: {error}",
   "settings.migration.scanFailedDescription.deepseekHarness":
     "Failed to read DeepSeek Harness native history: {error}",
-  "settings.migration.scanFailedDescription.zcodeInstalled":
-    "Failed to read ZCode installed-edition sessions: {error}",
-  "settings.migration.installedSourceHint":
-    "Reads the installed ZCode session data from this machine's user home directory (read-only; installed data is never modified). Imported sessions become resumable conversations in the current instance.",
-  "settings.migration.installedConfigImport": "Import installed-edition configs",
-  "settings.migration.installedConfigHint":
-    "Copies provider configs, sign-in credentials, and the CLI config from the installed edition into this instance. Existing files are never overwritten; some configs apply after a restart.",
-  "settings.migration.installedConfigResult":
-    "Config import finished: {copied} copied, {skipped} skipped (already present or missing at the source).",
+  "settings.migration.scanFailedDescription.zcodeDesktop":
+    "Failed to read conversation history from the installed ZCode app: {error}",
   "settings.migration.candidatesTitle": "Candidates",
   "settings.migration.candidatesDescription":
     "Select one or more sessions to import. Each imported session is written back into the task list for its own workspace.",

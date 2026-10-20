@@ -60,7 +60,9 @@ IZCodeTaskService.importOpenCodeSessions()
             ├─ session 行（title、workspace、时间戳）
             ├─ message + text part（确定性 id `{sessionId}_import_{n}`、时间戳单调收敛）
             └─ removePreviousImportedSessionHistory → 重导幂等
-   → writeImportedLegacyTaskSnapshot + taskIndexRepo.syncTaskMeta(migration_source="openCode")
+   → writeImportedLegacyTaskSnapshot + taskIndexRepo.updateTaskPresentation(migration_source="openCode")
+        + updateTaskState(archived=false)（合并上游 3.15.x 后：syncTaskMeta upsert 路径已删除，
+          索引行由 CLI 事实写入，服务只补展示与解除归档）
   ▼ ③ 广播
 sessions-index → tasks-index → workspace_task_list_changed → 侧边栏出现 → session/resume 可续聊
 ```
@@ -80,7 +82,7 @@ sessions-index → tasks-index → workspace_task_list_changed → 侧边栏出�
 ## 6. 不变量
 
 1. 导入消息数组顺序即 transcript 顺序；`persistImportedSessionHistory` 写库前把时间戳收敛为单调递增（既有逻辑，openCode 复用）。
-2. taskId 确定性：`opencode-import-{sha256("opencode:"+workspacePath+":"+sessionId)[:24]}`，同一 (workspace, sessionId) 重复导入落到同一 session id，靠 removePreviousImportedSessionHistory 幂等。
+2. taskId 由 CLI 创建的持久会话决定：合并上游 3.15.x 后适配器不再传确定性 sessionId（重导同一来源会生成新会话，避免覆盖已删除或已继续对话的记录）。`opencode-import-{sha256(...)}` 确定性 id 仅保留在 `buildImportedOpenCodeTaskFile` 的缺省构造里，供测试与无 CLI 兜底使用。
 3. 解析结果至少含 1 条可见消息，否则抛错并计入 `failed`（与 claude-native 一致）。
 4. 来源库只读；任何异常（库缺失、schema 不识别、JSON 损坏）降级为该 session 跳过/失败，不中断整批。
 
@@ -94,7 +96,7 @@ sessions-index → tasks-index → workspace_task_list_changed → 侧边栏出�
 
 1. 扫描：能列出本机 opencode.db 中未归档的主会话，含标题/时间/workspace；子代理与归档会话不出现。
 2. 导入：选中会话导入后，侧边栏出现该任务（migration_source=openCode），打开可查看完整 user/assistant 文本轮次并能继续对话。
-3. 幂等：同一 session 重复导入不产生重复消息（确定性 id + removePrevious 语义）。
+3. 重导语义：同一 session 再次导入产生新的 ZCode 会话（上游根因修复：不能用来源 hash 覆盖已删除或已继续对话的记录）；原确定性 id + removePrevious 幂等仅在 CLI 侧同 session 重放时生效。
 4. 过滤：workspaceFilter=current 时只出现 directory 等于当前 workspace 的候选。
 5. 降级：纯工具调用会话（无 text part 的 user 轮）导入失败原因明确（无可导入消息），不产生空会话。
 6. 回归：provider=claude 的既有扫描/导入行为与文案不变。

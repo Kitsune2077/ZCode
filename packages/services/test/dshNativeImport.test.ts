@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+// 官方 v3.15.1 已把单测栈迁移到 vitest（root vitest 收集全部 *.test.ts），
+// node:test 风格文件因无 vitest 套件会整体报 No test suite found。
 import { test } from "vitest";
 import { zstdCompressSync } from "node:zlib";
-import type { ZCodeTaskMeta } from "@zcode/shared";
 import { getLegacyTaskSessionSnapshotPath, setDataBaseDir } from "../src/paths.js";
 import { parseLegacyTaskSessionFile } from "../src/session/legacyTaskSessionFile.js";
 import { TaskIndexRepo } from "../src/session/taskIndexRepo.js";
@@ -200,9 +201,11 @@ test("repo scan picks the highest version file and honors filters", async () => 
     assert.equal(target?.previewTitle, "v4 标题");
     assert.ok(target?.sourcePath.endsWith("session.v4.jsonl.zstd"));
 
+    // 过滤输入按宿主 join 推导（Linux CI 上反斜杠字面量永远匹配不上 posix 归一化，
+    // 见 fork 定制清单"平台差异坑模式"）；win32 上仍覆盖反斜杠+大小写归一化语义。
     const filtered = await dshNativeSessionImportRepo.scanImportableSessions({
       sessionsRoots: [sessionsRoot],
-      workspacePath: "D:\\work\\demo",
+      workspacePath: join("D:", "work", "demo"),
     });
     assert.equal(filtered.length, 2);
     assert.ok(filtered.every((candidate) => candidate.workspacePath === "D:/work/demo"));
@@ -256,12 +259,20 @@ test("importDshNativeSessions persists legacy snapshot and task index with deeps
       sessionsRoots: [sessionsRoot],
       createImportedSession: async (source) => {
         captured.push(source);
-        // 模拟真实适配器：createSession 先把 CLI 事实写进 task index，
-        // 服务侧只允许在其上补 presentation/searchable，不能再凭空建行。
+        // 模拟真实链路：CLI 创建持久会话并把事实写入 task index（mock 固定用确定性
+        // taskId，便于断言）。缺这一步时 updateTaskPresentation 找不到索引行。
         const taskFile = buildImportedDshTaskFile(source);
-        const meta: ZCodeTaskMeta = { ...taskFile.meta, mode: "build" };
-        await taskIndexRepo.applyCliFacts({ meta, titleSource: "generated" });
-        return meta;
+        return taskIndexRepo.applyCliFacts({
+          meta: {
+            taskId: taskFile.meta.taskId,
+            traceId: taskFile.meta.traceId,
+            title: taskFile.meta.title,
+            workspacePath: source.workspacePath,
+            createdAt: source.createdAt,
+            updatedAt: source.updatedAt,
+            mode: "build",
+          },
+        });
       },
       onTaskImported: () => {},
     });

@@ -91,9 +91,14 @@ export async function importOpenCodeNativeSessions(params: {
       });
 
       const targetWorkspaceIdentity = params.workspacePath ? params.workspaceIdentity : undefined;
-      // 导入只能由 CLI 创建持久会话；备份文件不能成为第二个会话事实写者（与 Claude 导入同构）。
+      // 导入只能由 CLI 创建持久会话；备份文件不能成为第二个会话事实写者。
+      // （与 Claude 导入同构：syncTaskMeta upsert 写入路径已随上游重构移除。）
       const created = await params.createImportedSession(importedSource);
-      const sessionFile = buildImportedOpenCodeTaskFile(importedSource, undefined, created.taskId);
+      const sessionFile = buildImportedOpenCodeTaskFile(
+        importedSource,
+        undefined,
+        created.taskId,
+      );
       await writeImportedLegacyTaskSnapshot({
         sessionFile: {
           ...sessionFile,
@@ -109,7 +114,6 @@ export async function importOpenCodeNativeSessions(params: {
         searchableText: buildSearchableTextFromMessages(sessionFile.messages),
       });
       if (!meta) throw new Error("CLI import did not persist session facts");
-      // 已导入会话被归档后再次导入，显式恢复可见，避免导入成功却进不了 active 列表。
       await params.taskIndexRepo.updateTaskState({ ...created, patch: { archived: false } });
       params.onTaskImported(meta);
 

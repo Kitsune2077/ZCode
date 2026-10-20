@@ -3,8 +3,9 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
+// 官方 v3.15.1 已把单测栈迁移到 vitest（root vitest 收集全部 *.test.ts），
+// node:test 风格文件因无 vitest 套件会整体报 No test suite found。
 import { test } from "vitest";
-import type { ZCodeTaskMeta } from "@zcode/shared";
 import { getLegacyTaskSessionSnapshotPath, setDataBaseDir } from "../src/paths.js";
 import { parseLegacyTaskSessionFile } from "../src/session/legacyTaskSessionFile.js";
 import { TaskIndexRepo } from "../src/session/taskIndexRepo.js";
@@ -399,12 +400,20 @@ test("importOpenCodeNativeSessions persists legacy snapshot and task index with 
       databasePaths: [dbPath],
       createImportedSession: async (source) => {
         captured.push(source);
-        // 模拟真实适配器：createSession 先把 CLI 事实写进 task index，
-        // 服务侧只允许在其上补 presentation/searchable，不能再凭空建行。
+        // 模拟真实链路：CLI 创建持久会话并把事实写入 task index（mock 固定用确定性
+        // taskId，便于断言）。缺这一步时 updateTaskPresentation 找不到索引行。
         const taskFile = buildImportedOpenCodeTaskFile(source);
-        const meta: ZCodeTaskMeta = { ...taskFile.meta, mode: "build" };
-        await taskIndexRepo.applyCliFacts({ meta, titleSource: "generated" });
-        return meta;
+        return taskIndexRepo.applyCliFacts({
+          meta: {
+            taskId: taskFile.meta.taskId,
+            traceId: taskFile.meta.traceId,
+            title: taskFile.meta.title,
+            workspacePath: source.workspacePath,
+            createdAt: source.createdAt,
+            updatedAt: source.updatedAt,
+            mode: "build",
+          },
+        });
       },
       onTaskImported: (meta) => {
         importedMetas.push({ taskId: meta.taskId, migrationSource: meta.migrationSource });

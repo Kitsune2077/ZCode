@@ -1090,7 +1090,7 @@ export const zcodeTaskMigrationSourceSchema = z.enum([
   "claudeCode",
   "openCode",
   "deepseekHarness",
-  "zcodeInstalled",
+  "zcodeDesktop",
 ]);
 
 export const hostAgentProcessSpawnedResponseSchema = z.object({

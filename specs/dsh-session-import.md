@@ -32,7 +32,8 @@
 
 完全复用 OpenCode 导入的管线（见 opencode spec 第 4 节）：opencode-native 换成 dsh-native，
 RPC `session/create` 的 `importedHistory.source = "deepseekHarness"`，tasks-index
-`migration_source = "deepseekHarness"`，taskId 前缀 `dsh-import-`。单一写者仍是 CLI agent 进程；
+`migration_source = "deepseekHarness"`。taskId 由 CLI 创建的持久会话决定（合并上游 3.15.x 后
+不再使用确定性前缀 id，重导产生新会话）；单一写者仍是 CLI agent 进程；
 dsh-native 对 `~/.dsh` 只读。
 
 ```
@@ -54,7 +55,7 @@ dsh-native 对 `~/.dsh` 只读。
 
 ## 5. 不变量与失败语义
 
-1. taskId 确定性：`dsh-import-{sha256("dsh:"+workspacePath+":"+sessionId)[:24]}`，重导幂等同 OpenCode。
+1. taskId 由 CLI 创建的持久会话决定：重导同一来源生成新会话（与 OpenCode 合并后的语义一致）；`dsh-import-{sha256(...)}` 确定性 id 仅保留在 `buildImportedDshTaskFile` 的缺省构造里，供测试使用。
 2. 解析结果至少 1 条可见消息，否则该会话计入 `failed`。
 3. 坏帧/坏行/白名单外事件：跳过并 warn，不中断整会话/整批。
 4. `~/.dsh` 只读；会话文件正被 DSH 进程追加不影响只读解压（frame 边界自洽）。
@@ -64,7 +65,7 @@ dsh-native 对 `~/.dsh` 只读。
 
 1. 扫描列出本机 DSH 会话（含标题预览/时间/workspace）；workspaceFilter 生效。
 2. 导入后侧边栏出现任务（migration_source=deepseekHarness），打开可查看 user/assistant 文本轮次并可续聊。
-3. 同会话重导不产生重复消息。
+3. 同会话重导产生新的 ZCode 会话（重导语义同 OpenCode：不覆盖已删除或已继续对话的记录）。
 4. 纯工具会话（无 text 块）失败原因明确，不产生空会话。
 5. v3/v4 并存目录只读 v4。
 6. provider=claude/openCode 行为回归不变。

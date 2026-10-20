@@ -50,6 +50,7 @@ describe("settingsPageConfig", () => {
         id: "agentCapabilities",
         sections: ["memory", "subagents", "plugin", "mcp", "skill", "commands", "hooks"],
       },
+      // migration 入口随 feat/opencode-session-import 合并恢复为可见（归"数据与统计"组）。
       { id: "dataAndStats", sections: ["usage", "archives", "migration"] },
     ]);
     expect(settingsSections.map((section) => section.id)).toEqual([

@@ -173,9 +173,9 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     titleId: "archives.nav",
     groupId: "dataAndStats",
   },
-  // 外部历史迁移（Claude Code / OpenCode / DeepSeek Harness / ZCode 安装版数据）。
-  // 迁移页渲染分支此前已存在，但从未加入侧栏导航，导致入口只能靠 onboarding 向导触达；
-  // 归入“数据与统计”分组，与用量统计同属本机数据消费视角。
+  // 外部 Agent 历史迁移（Claude Code / OpenCode / DeepSeek Harness）。
+  // 上游曾把该入口注释隐藏（仅保留页面实现）；feat/opencode-session-import 特性
+  // 依赖侧栏导航触达迁移页，合并时按特性分支意图恢复为可见入口。
   {
     id: "migration",
     icon: ArrowLeftRight,
