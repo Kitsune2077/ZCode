@@ -201,9 +201,11 @@ test("repo scan picks the highest version file and honors filters", async () => 
     assert.equal(target?.previewTitle, "v4 标题");
     assert.ok(target?.sourcePath.endsWith("session.v4.jsonl.zstd"));
 
+    // 过滤输入按宿主 join 推导（Linux CI 上反斜杠字面量永远匹配不上 posix 归一化，
+    // 见 fork 定制清单"平台差异坑模式"）；win32 上仍覆盖反斜杠+大小写归一化语义。
     const filtered = await dshNativeSessionImportRepo.scanImportableSessions({
       sessionsRoots: [sessionsRoot],
-      workspacePath: "D:\\work\\demo",
+      workspacePath: join("D:", "work", "demo"),
     });
     assert.equal(filtered.length, 2);
     assert.ok(filtered.every((candidate) => candidate.workspacePath === "D:/work/demo"));

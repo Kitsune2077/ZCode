@@ -268,9 +268,11 @@ test("scanImportableZcodeDesktopSessions lists root sessions and filters subagen
     assert.equal(all[0]?.workspacePath, WORKSPACE_A);
     assert.equal(all[0]?.updatedAt, now);
 
+    // 过滤输入用正斜杠形式：zcode-native 的归一化在所有平台统一斜杠、
+    // 仅 win32 附加小写比较（Linux CI 上小写字面量永远匹配不上）。
     const filtered = await scanImportableZcodeDesktopSessions({
       source: fixture.source,
-      workspacePath: "d:\\work\\demo",
+      workspacePath: "D:/work/demo",
     });
     assert.deepEqual(
       filtered.map((candidate) => candidate.sessionId),
