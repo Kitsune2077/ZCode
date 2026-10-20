@@ -849,6 +849,8 @@ export function InlineEditableProviderCard({
           providerEnabled={provider.enabled}
           providerAccess={provider.config.access}
           models={models}
+          canFetchModels={!readOnlyEndpoints}
+          onPrepareFetchModels={() => commitPendingDraft("fetch-models")}
           onTestModel={onTestModel ? handleTestModel : undefined}
           onModelCommit={handleModelCommit}
           onModelEnabledChange={handleModelEnabledChange}

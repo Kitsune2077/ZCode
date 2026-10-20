@@ -890,6 +890,7 @@ exceptions:
       - packages/services/src/model-provider/newApiModelSync.ts
       - packages/services/src/model-provider/newApiProvisioning.ts
       - packages/services/src/model-provider/newApiSession.ts
+      - packages/services/src/model-provider/providerModelFetch.ts
       - packages/shared/src/newapi-login.ts
       - packages/ui/src/hooks/useNewApiAccount.ts
       - packages/ui/src/lib/newApiAccountRefresh.ts

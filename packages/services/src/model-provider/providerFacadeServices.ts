@@ -31,6 +31,11 @@ import {
   type NewApiModelSyncResult,
 } from "./newApiModelSync.js";
 import {
+  fetchProviderModelsFromEndpoint,
+  type ProviderModelFetchInput,
+  type ProviderModelFetchResult,
+} from "./providerModelFetch.js";
+import {
   fetchNewApiAccountInfo,
   type NewApiAccountInfo,
   type NewApiAccountInfoInput,
@@ -101,6 +106,12 @@ export interface IProviderSettingsService {
    * 已被删除时零写入；服务端无对话模型时抛 `no-chat-models` 保护本地列表。
    */
   syncNewApiModels(input: NewApiModelSyncInput): Promise<NewApiModelSyncResult>;
+  /**
+   * 「自动获取模型」：用个人 Provider 已保存的 baseUrl + API Key 调 OpenAI 兼容的
+   * `GET /v1/models`，把服务端模型 id 追加进本地列表（只增不删，已存在跳过）。
+   * 连接信息未保存或服务端返回空列表时抛带稳定 code 的 NewApiProvisioningError。
+   */
+  fetchProviderModels(input: ProviderModelFetchInput): Promise<ProviderModelFetchResult>;
   /** 读取 NewAPI 账号信息与近 7 天用量趋势，供左下角身份与用量页展示。 */
   getNewApiAccountInfo(input: NewApiAccountInfoInput): Promise<NewApiAccountInfo>;
   /**
@@ -314,6 +325,42 @@ export function createProviderSettingsService(
           },
           deletePersonalModel: async (providerId, modelId) => {
             await facade.deletePersonalModel(providerId, modelId);
+          },
+        },
+        { fetch: hostFetch ?? globalThis.fetch },
+        input,
+      );
+    },
+    fetchProviderModels: async (input) => {
+      await ensureReady();
+      return fetchProviderModelsFromEndpoint(
+        {
+          // 数据源与 NewAPI 同步同源：Provider 自身的 Personal 层连接快照。
+          // 设置页在调用前会先提交未保存的连接草稿（onPrepareFetchModels），
+          // 这里读到的即用户刚填写的 baseUrl / API Key。
+          readPersonalProvider: (providerId) => {
+            const provider = facade
+              .getView()
+              .providers.find((item) => item.providerId === providerId);
+            const personal = provider?.personalConfig;
+            const baseUrl = personal?.api?.baseUrl?.trim();
+            const apiKey =
+              personal?.access?.type === "api-key"
+                ? (personal.access.apiKey ?? "").trim()
+                : "";
+            if (!baseUrl || !apiKey) {
+              return undefined;
+            }
+            return {
+              apiKey,
+              baseUrl,
+              personalModelIds: personal?.personalModelIds ?? [],
+            };
+          },
+          // 与手动添加同语义：无自定义配置、默认启用，addPersonalModel 内部追加
+          // 并保持用户已保存的顺序。
+          addPersonalModel: async (providerId, modelId) => {
+            await facade.addPersonalModel(providerId, modelId, new ModelConfig());
           },
         },
         { fetch: hostFetch ?? globalThis.fetch },

@@ -16,13 +16,23 @@ import type { ProviderApiType } from "@zcode/provider";
 import {
   TID_MODEL_PROVIDER_ADD_MODEL_BUTTON,
   TID_MODEL_PROVIDER_BASE_URL_INPUT,
+  TID_MODEL_PROVIDER_FETCH_MODELS_BUTTON,
   TID_MODEL_PROVIDER_MODEL_DELETE_BUTTON,
   TID_MODEL_PROVIDER_MODEL_INPUT,
   TID_MODEL_PROVIDER_NAME_EDIT_BUTTON,
   TID_MODEL_PROVIDER_NAME_INPUT,
   testId,
 } from "@zcode/shared/test-ids";
-import { InfoIcon, LockKeyholeIcon, Plus, Pencil, Trash2, MoreHorizontal } from "lucide-react";
+import {
+  InfoIcon,
+  Loader2Icon,
+  LockKeyholeIcon,
+  Plus,
+  Pencil,
+  RefreshCwIcon,
+  Trash2,
+  MoreHorizontal,
+} from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { Input } from "@/components/ui/input.js";
 import {
@@ -47,6 +57,8 @@ import {
 } from "@/settings/model-provider-section/ProviderApiFormatSelect.js";
 import { SortableProviderModelList } from "@/settings/model-provider-section/SortableProviderModelList.js";
 import { useProviderModelDraft } from "@/settings/model-provider-section/useProviderModelDraft.js";
+import { useProviderDetailFeedback } from "@/settings/model-provider-section/ProviderDetailFeedback.js";
+import { logger } from "@/logger.js";
 import { ProviderLogo } from "@/settings/model-provider-section/ProviderLogo.js";
 import type { ProviderConfigObject } from "@zcode/provider";
 
@@ -356,6 +368,8 @@ export function ProviderModelsSection({
   providerEnabled = true,
   providerAccess,
   models,
+  canFetchModels = false,
+  onPrepareFetchModels,
   onTestModel,
   onModelCommit,
   onModelEnabledChange,
@@ -369,6 +383,10 @@ export function ProviderModelsSection({
   providerEnabled?: boolean;
   providerAccess?: ProviderConfigObject["access"];
   models: ProviderSettingsFormModel[];
+  /** 端点可编辑（自定义供应商）时才提供「自动获取模型」；预设供应商模型来自内置定义。 */
+  canFetchModels?: boolean;
+  /** 获取前先提交未保存的连接草稿（baseUrl/API Key），保证服务端读到最新输入。 */
+  onPrepareFetchModels?: () => Promise<void>;
   onTestModel?: (model: string) => Promise<ModelConnectivityResult>;
   onModelCommit: (
     originalModelId: string,
@@ -383,6 +401,8 @@ export function ProviderModelsSection({
 }) {
   const { intl } = useZCodeIntl();
   const { providerSettingsService } = useServices();
+  const { showFeedback } = useProviderDetailFeedback();
+  const [isFetchingModels, setIsFetchingModels] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addSaving, setAddSaving] = useState(false);
   const addSavingRef = useRef(false);
@@ -471,23 +491,102 @@ export function ProviderModelsSection({
       })
     : null;
 
+  const handleFetchModels = useCallback(async (): Promise<void> => {
+    if (isFetchingModels) return;
+    setIsFetchingModels(true);
+    const feedbackKey = `fetch-models:${providerId}`;
+    showFeedback({
+      key: feedbackKey,
+      message: intl.formatMessage({ id: "settings.modelProvider.fetchModelsPending" }),
+      state: "pending",
+      durationMs: 0,
+    });
+    try {
+      // 先落连接草稿：用户可能刚输入 baseUrl/API Key 还未 blur 保存，
+      // 服务端读的是 Personal 层快照，不提交会用旧连接获取。
+      await onPrepareFetchModels?.();
+      const result = await providerSettingsService.fetchProviderModels({ providerId });
+      showFeedback({
+        key: feedbackKey,
+        message: intl.formatMessage(
+          {
+            id:
+              result.addedModelIds.length > 0
+                ? "settings.modelProvider.fetchModelsSuccess"
+                : "settings.modelProvider.fetchModelsNoNew",
+          },
+          { total: String(result.modelIds.length), added: String(result.addedModelIds.length) },
+        ),
+        state: "success",
+      });
+    } catch (error) {
+      // RPC 层透传 NewApiProvisioningError.code；连接未保存是可操作的前置条件缺失，
+      // 与网络/接口失败分开提示。
+      const code = (error as { code?: unknown }).code;
+      const messageId =
+        code === "provider-connection-missing"
+          ? "settings.modelProvider.fetchModelsMissingConnection"
+          : "settings.modelProvider.fetchModelsFailure";
+      logger.warn("[ModelProviderSection] 自动获取模型失败", { providerId, error });
+      showFeedback({
+        key: feedbackKey,
+        message: intl.formatMessage(
+          { id: messageId },
+          { error: error instanceof Error ? error.message : String(error) },
+        ),
+        state: "failure",
+        dismissible: true,
+        dismissLabel: intl.formatMessage({ id: "common.close" }),
+      });
+    } finally {
+      setIsFetchingModels(false);
+    }
+  }, [
+    intl,
+    isFetchingModels,
+    onPrepareFetchModels,
+    providerId,
+    providerSettingsService,
+    showFeedback,
+  ]);
+
   return (
     <div>
       <div className="mb-1 flex flex-wrap items-center justify-between gap-3">
         <span className="text-ui-base text-foreground-subtle">
           {intl.formatMessage({ id: "settings.modelProvider.models" })}
         </span>
-        <Button
-          type="button"
-          variant="secondary"
-          size="default"
-          className="rounded-lg"
-          data-testid={TID_MODEL_PROVIDER_ADD_MODEL_BUTTON}
-          onClick={openAddDialog}
-        >
-          <Plus data-icon="inline-start" aria-hidden="true" />
-          {intl.formatMessage({ id: "settings.modelProvider.addModel" })}
-        </Button>
+        <div className="flex items-center gap-2">
+          {canFetchModels ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="default"
+              className="rounded-lg"
+              data-testid={TID_MODEL_PROVIDER_FETCH_MODELS_BUTTON}
+              disabled={isFetchingModels}
+              onClick={() => void handleFetchModels()}
+            >
+              {isFetchingModels ? (
+                <Loader2Icon data-icon="inline-start" className="animate-spin" aria-hidden="true" />
+              ) : (
+                <RefreshCwIcon data-icon="inline-start" aria-hidden="true" />
+              )}
+              {intl.formatMessage({ id: "settings.modelProvider.fetchModels" })}
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="secondary"
+            size="default"
+            className="rounded-lg"
+            data-testid={TID_MODEL_PROVIDER_ADD_MODEL_BUTTON}
+            onClick={openAddDialog}
+          >
+            <Plus data-icon="inline-start" aria-hidden="true" />
+            {intl.formatMessage({ id: "settings.modelProvider.addModel" })}
+          </Button>
+        </div>
       </div>
       {models.length > 0 ? (
         <div className="overflow-hidden rounded-lg border border-input-border bg-input">

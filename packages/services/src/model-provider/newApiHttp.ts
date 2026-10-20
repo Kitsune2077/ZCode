@@ -21,6 +21,8 @@ export type NewApiProvisioningErrorCode =
   | "usage-data-failed"
   // 浏览器登录得到的会话 cookie 换令牌失败（cookie 过期 / IP-UA 绑定不匹配 / 端点缺失）。
   | "session-exchange-failed"
+  // 「自动获取模型」时 Provider 尚未保存 baseUrl / API Key（providerModelFetch）。
+  | "provider-connection-missing"
   | "network-error";
 
 export class NewApiProvisioningError extends Error {
