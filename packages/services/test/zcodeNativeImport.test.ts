@@ -38,18 +38,20 @@ interface SourceSessionSeed {
 
 /**
  * 构造安装版 CLI 会话库 fixture：列集为基线子集（列交集合并按两侧都存在的列读写）。
- * slim 时省去 trace_id/last_outcome，模拟旧版本源库缺新列。
+ * slim 时省去 trace_id/last_outcome，模拟旧版本源库缺新列；preSoftDelete 再省去
+ * time_deleted，模拟 CLI < 0.16.9（迁移 0023 之前，如安装版 3.16.2）的源库。
  */
 async function createSessionDb(
   dbPath: string,
   sessions: SourceSessionSeed[],
-  options?: { slim?: boolean },
+  options?: { slim?: boolean; preSoftDelete?: boolean },
 ): Promise<void> {
   const db = new DatabaseSync(dbPath);
-  const sessionColumns = options?.slim
+  const softDeleteColumn = options?.preSoftDelete ? "" : ", time_deleted integer";
+  const sessionColumns = options?.slim || options?.preSoftDelete
     ? `id text primary key, project_id text not null, directory text not null,
        title text not null, time_created integer not null, time_updated integer not null,
-       parent_id text, time_deleted integer`
+       parent_id text${softDeleteColumn}`
     : `id text primary key, project_id text not null, directory text not null,
        title text not null, time_created integer not null, time_updated integer not null,
        parent_id text, time_deleted integer, trace_id text, last_outcome text`;
@@ -70,8 +72,8 @@ async function createSessionDb(
 
   const insertSession = db.prepare(
     `INSERT INTO session (id, project_id, directory, title, time_created, time_updated,
-      parent_id, time_deleted${options?.slim ? "" : ", trace_id, last_outcome"})
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?${options?.slim ? "" : ", ?, ?"})`,
+      parent_id${options?.preSoftDelete ? "" : ", time_deleted"}${options?.slim || options?.preSoftDelete ? "" : ", trace_id, last_outcome"})
+     VALUES (?, ?, ?, ?, ?, ?, ?${options?.preSoftDelete ? "" : ", ?"}${options?.slim || options?.preSoftDelete ? "" : ", ?, ?"})`,
   );
   const insertMessage = db.prepare(
     `INSERT INTO message (id, session_id, data) VALUES (?, ?, ?)`,
@@ -95,8 +97,10 @@ async function createSessionDb(
       session.timeCreated,
       session.timeUpdated,
       session.parentId ?? null,
-      session.timeDeleted ?? null,
-      ...(options?.slim ? [] : [session.traceId ?? null, session.lastOutcome ?? null]),
+      ...(options?.preSoftDelete ? [] : [session.timeDeleted ?? null]),
+      ...(options?.slim || options?.preSoftDelete
+        ? []
+        : [session.traceId ?? null, session.lastOutcome ?? null]),
     );
     for (const message of session.messages ?? []) {
       insertMessage.run(message.id, session.id, message.data);
@@ -145,12 +149,15 @@ interface InstalledFixture {
 }
 
 /** 在独立临时目录里搭一套"安装版"：home + .zcode/cli/db/db.sqlite。 */
-async function createInstalledFixture(sessions: SourceSessionSeed[]): Promise<InstalledFixture> {
+async function createInstalledFixture(
+  sessions: SourceSessionSeed[],
+  options?: { slim?: boolean; preSoftDelete?: boolean },
+): Promise<InstalledFixture> {
   const homeDir = await mkdtemp(join(tmpdir(), "zcode-installed-home-"));
   const sourceDataRoot = join(homeDir, ".zcode");
   const dbPath = join(sourceDataRoot, "cli", "db", "db.sqlite");
   await mkdir(join(sourceDataRoot, "cli", "db"), { recursive: true });
-  await createSessionDb(dbPath, sessions);
+  await createSessionDb(dbPath, sessions, options);
   return {
     homeDir,
     sourceDataRoot,
@@ -287,6 +294,47 @@ test("scanImportableZcodeDesktopSessions lists root sessions and filters subagen
       recent.map((candidate) => candidate.sessionId),
       ["ses_a"],
     );
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("scanImportableZcodeDesktopSessions tolerates pre-0.16.9 source db without time_deleted column", async () => {
+  // 安装版 3.16.2 及更早（CLI < 0.16.9，迁移 0023 之前）的 session 表没有
+  // time_deleted 列；扫描硬编码 "s.time_deleted IS NULL" 会让整个 provider 以
+  // "no such column: s.time_deleted" 失败。缺列时应跳过软删除过滤（旧库不存在
+  // 软删除行），其余过滤与排序照常。
+  const now = Date.now();
+  const fixture = await createInstalledFixture(
+    [
+      {
+        id: "ses_legacy",
+        title: "3.16.2 对话",
+        directory: WORKSPACE_A,
+        timeCreated: now - 5000,
+        timeUpdated: now,
+      },
+      {
+        id: "ses_legacy_child",
+        title: "旧库子代理",
+        directory: WORKSPACE_A,
+        timeCreated: now - 5000,
+        timeUpdated: now - 10,
+        parentId: "ses_legacy",
+      },
+    ],
+    { preSoftDelete: true },
+  );
+  try {
+    const candidates = await scanImportableZcodeDesktopSessions({
+      source: fixture.source,
+      limit: 50,
+    });
+    assert.deepEqual(
+      candidates.map((candidate) => candidate.sessionId),
+      ["ses_legacy"],
+    );
+    assert.equal(candidates[0]?.previewTitle, "3.16.2 对话");
   } finally {
     await fixture.cleanup();
   }

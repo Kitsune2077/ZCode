@@ -122,7 +122,10 @@ interface SourceSessionRow {
 /**
  * 只读扫描安装版根会话。子代理（parent_id / session_task_link）、已删除会话不出现。
  * 源库可能缺 session_task_link 表（旧版本），缺表时跳过该过滤条件。
- * schema 漂移由列交集吸收：只 SELECT 两侧都存在的列，这里恰好全部是基线列。
+ * schema 漂移由列交集吸收：只 SELECT 两侧都存在的列，这里恰好全部是基线列；
+ * WHERE 里的过滤列同样按 pragma table_info 探测——time_deleted 是 0.16.9 迁移
+ * 0023 新增列，3.16.2 及更早的安装版库没有该列（也没有软删除语义），缺列时
+ * 跳过对应过滤条件而不是让整个扫描以 "no such column: s.time_deleted" 失败。
  */
 export async function scanImportableZcodeDesktopSessions(params: {
   source: ZcodeNativeConversationSource;
@@ -135,6 +138,11 @@ export async function scanImportableZcodeDesktopSessions(params: {
   try {
     const db = new DatabaseSync(copyPath);
     try {
+      const sessionColumns = new Set(
+        (
+          db.prepare(`PRAGMA table_info(session)`).all() as Array<{ name: string }>
+        ).map((row) => row.name),
+      );
       const hasLinkTable = db
         .prepare(
           `SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'session_task_link'`,
@@ -144,12 +152,17 @@ export async function scanImportableZcodeDesktopSessions(params: {
         hasLinkTable.n > 0
           ? `AND NOT EXISTS (SELECT 1 FROM session_task_link l WHERE l.child_session_id = s.id)`
           : "";
+      const softDeleteFilter = sessionColumns.has("time_deleted")
+        ? `AND s.time_deleted IS NULL`
+        : "";
+      const parentFilter = sessionColumns.has("parent_id") ? `AND s.parent_id IS NULL` : "";
       const rows = db
         .prepare(
           `SELECT s.id, s.title, s.directory, s.time_created, s.time_updated
            FROM session s
-           WHERE s.time_deleted IS NULL
-             AND s.parent_id IS NULL
+           WHERE 1 = 1
+             ${softDeleteFilter}
+             ${parentFilter}
              ${linkFilter}
            ORDER BY s.time_updated DESC
            LIMIT ?`,

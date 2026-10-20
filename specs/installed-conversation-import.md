@@ -36,7 +36,11 @@ sourceSessionDbPath  = {sourceDataRoot}/cli/db/db.sqlite
 - 全新便携数据根没有 CLI 会话库时，导入直接以源库副本为初始库，schema 版本差异由
   agent CLI 启动迁移收敛（运行期它本就要支持旧版本库）；
 - 源端 schema 漂移通过**列交集**吸收：以两侧 `pragma table_info` 的交集列读写，
-  源库缺少的新列取目标默认值，源库多出的列丢弃。
+  源库缺少的新列取目标默认值，源库多出的列丢弃。扫描阶段的 WHERE 过滤列同样按
+  `pragma table_info` 探测：`time_deleted` 是 CLI 0.16.9 迁移 0023 新增列，3.16.2
+  及更早的安装版库没有该列（也不存在软删除行），缺列时跳过软删除过滤条件而不是
+  让扫描以 `no such column: s.time_deleted` 整体失败；`parent_id` / `session_task_link`
+  属基线列/表，缺失时同样跳过对应子代理过滤。
 
 ## 3. 状态所有者与写入边界
 
