@@ -14,6 +14,7 @@ import type {
 } from "@zcode/shared";
 import type { ISystemService } from "./system.js";
 import { listIntegratedTerminalShellOptions } from "./integratedTerminalShells.js";
+import { getDataBaseDir } from "#src/paths.js";
 
 const DEFAULT_PROBE_TIMEOUT_MS = 800;
 const DEFAULT_PROBE_ATTEMPTS = 2;
@@ -350,7 +351,10 @@ export function createSystemService(options: CreateSystemServiceOptions = {}): I
 
   return {
     async info(): Promise<SystemInfo> {
-      return { homedir: homedir(), platform: process.platform };
+      // dataBaseDir 上报"当前生效"的数据根而非 homedir：桌面便携态（exe 同目录 /
+      // data 目录锚点）只做进程内 setDataBaseDir + env 注入，不落 setting.json，
+      // 设置页若回退 homedir 会把便携数据根误显示为真实主目录。
+      return { homedir: homedir(), platform: process.platform, dataBaseDir: getDataBaseDir() };
     },
 
     async listIntegratedTerminalShells(): Promise<IntegratedTerminalShellOption[]> {

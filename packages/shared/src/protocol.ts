@@ -71,6 +71,12 @@ export interface WorkspaceFileEntry {
 export interface SystemInfo {
   homedir: string;
   platform: string;
+  /**
+   * 当前生效的数据根基目录（getDataBaseDir()：桌面便携态为 exe 同目录/`data`
+   * 目录锚点，安装态自定义时为 setting.json 的 dataBaseDir，否则等于 homedir）。
+   * 旧 host 可能缺省，消费方需回退 homedir。
+   */
+  dataBaseDir?: string;
 }
 
 /** 支持的语言 */

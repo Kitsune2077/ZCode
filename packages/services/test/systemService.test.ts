@@ -16,6 +16,18 @@ describe("systemService", () => {
     expect(info.homedir.length).toBeGreaterThan(0);
   });
 
+  it("info 上报当前生效的数据根基目录（便携态锚点）", async () => {
+    // 便携态数据根只做进程内 setDataBaseDir + env 注入、不落 setting.json，
+    // 设置页依赖 info().dataBaseDir 展示生效路径；测试注入 ZCODE_DATA_BASE_DIR
+    // 覆盖模块加载时捕获的 env 值不可行（已固化），直接断言字段存在且为非空字符串，
+    // 与 getDataBaseDir() 的解析链一致。
+    const service = createSystemService();
+    const info = await service.info();
+
+    expect(typeof info.dataBaseDir).toBe("string");
+    expect(info.dataBaseDir!.length).toBeGreaterThan(0);
+  });
+
   it("listIntegratedTerminalShells 在非 Windows host 返回空列表", async () => {
     const service = createSystemService({ platform: "darwin" });
 

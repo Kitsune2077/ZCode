@@ -150,6 +150,7 @@ export function GeneralSectionContent({
   httpProxyNoProxy = "",
   httpProxyCaCertPath = "",
   defaultHomeDir,
+  effectiveBaseDir = "",
   isDesktop,
   isWindowsDesktop,
   isLinuxDesktop,
@@ -212,6 +213,8 @@ export function GeneralSectionContent({
   httpProxyNoProxy?: string;
   httpProxyCaCertPath?: string;
   defaultHomeDir: string;
+  /** host 上报的当前生效数据根（便携态锚点）；dataBaseDir 未显式配置时的显示回退。 */
+  effectiveBaseDir?: string;
   isDesktop?: boolean;
   isWindowsDesktop?: boolean;
   /** Linux 桌面端（isDesktop 且非 win/mac）；关闭驻留托盘设置在 Linux 上按能力自适应展示 */
@@ -960,6 +963,7 @@ export function GeneralSectionContent({
             <DataBaseDirControl
               dataBaseDir={dataBaseDir}
               defaultHomeDir={defaultHomeDir}
+              effectiveBaseDir={effectiveBaseDir}
               onDataBaseDirChange={onDataBaseDirChange}
               onSelectDataBaseDir={onSelectDataBaseDir}
             />

@@ -227,6 +227,36 @@ describe("GeneralSectionContent data directory control", () => {
     expect(capturedInputs.some((input) => input.readOnly === true)).toBe(true);
   });
 
+  it("便携态未显式配置 dataBaseDir 时显示 host 上报的生效数据根而非主目录", async () => {
+    // 便携版数据根只做进程内注入、不落 setting.json：settings.dataBaseDir 为空、
+    // homedir 仍是真实主目录。显示回退必须优先 host 上报的 effectiveBaseDir，
+    // 否则设置页会把便携数据根误显示为 C:\Users\... 主目录。
+    await renderGeneralSection({
+      dataBaseDir: "",
+      defaultHomeDir: "C:\\Users\\Administrator",
+      effectiveBaseDir: "D:\\Portable\\ZCode",
+    });
+
+    const dataBaseDirInput = capturedInputs.find(
+      (input) => input.value === "D:\\Portable\\ZCode",
+    );
+    expect(dataBaseDirInput).toBeDefined();
+    expect(
+      capturedInputs.some((input) => input.value === "C:\\Users\\Administrator"),
+    ).toBe(false);
+  });
+
+  it("旧 host 未上报 effectiveBaseDir 时回退主目录显示（兼容）", async () => {
+    await renderGeneralSection({
+      dataBaseDir: "",
+      defaultHomeDir: "C:\\Users\\Administrator",
+    });
+
+    expect(
+      capturedInputs.some((input) => input.value === "C:\\Users\\Administrator"),
+    ).toBe(true);
+  });
+
   it("ModelIO 读取关闭值并通过标准设置开关提交", async () => {
     const onModelIoFullRetentionEnabledChange = vi.fn(async () => {});
 

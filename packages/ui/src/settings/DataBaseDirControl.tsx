@@ -14,16 +14,25 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 export function DataBaseDirControl({
   dataBaseDir,
   defaultHomeDir,
+  effectiveBaseDir,
   onDataBaseDirChange,
   onSelectDataBaseDir,
 }: {
   dataBaseDir: string;
   defaultHomeDir: string;
+  /**
+   * host 上报的当前生效数据根（getDataBaseDir()）。setting.json 未显式配置
+   * dataBaseDir 时的显示回退，优先于 defaultHomeDir：便携态的数据根是
+   * exe/data 锚点（只做进程内注入、不落 setting.json），回退 homedir 会把
+   * 便携数据根误显示为真实主目录。保存的"等于默认值写空串"仍以
+   * defaultHomeDir（安装态默认）为基准，避免把便携锚点固化成绝对路径。
+   */
+  effectiveBaseDir?: string;
   onDataBaseDirChange: (dir: string) => Promise<void>;
   onSelectDataBaseDir: () => Promise<string | null>;
 }) {
   const { intl } = useZCodeIntl();
-  const effectiveDir = dataBaseDir || defaultHomeDir;
+  const effectiveDir = dataBaseDir || effectiveBaseDir || defaultHomeDir;
   const [localDataBaseDir, setLocalDataBaseDir] = useState(effectiveDir);
   const [isPickingDataBaseDir, setIsPickingDataBaseDir] = useState(false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");

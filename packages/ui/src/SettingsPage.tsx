@@ -836,6 +836,9 @@ export function SettingsPage({
   const [zcodeInteractionBehavior, setZCodeInteractionBehavior] =
     useState<ZCodeInteractionBehavior>("queue");
   const [defaultHomeDir, setDefaultHomeDir] = useState("");
+  // host 上报的当前生效数据根（便携态 = exe/data 锚点）；setting.json 未显式配置
+  // dataBaseDir 时的显示回退，优先于 homedir，避免便携版把数据根误显示为主目录。
+  const [effectiveBaseDir, setEffectiveBaseDir] = useState("");
   const [hostPlatform, setHostPlatform] = useState("");
 
   useEffect(() => {
@@ -924,6 +927,7 @@ export function SettingsPage({
       .then((info) => {
         if (!active) return;
         setDefaultHomeDir(info.homedir);
+        setEffectiveBaseDir(info.dataBaseDir ?? "");
         setHostPlatform(info.platform);
         if (info.platform !== "win32") {
           setIntegratedTerminalShellOptions([]);
@@ -1871,6 +1875,7 @@ export function SettingsPage({
                               httpProxyNoProxy={httpProxyNoProxy}
                               httpProxyCaCertPath={httpProxyCaCertPath}
                               defaultHomeDir={defaultHomeDir}
+                              effectiveBaseDir={effectiveBaseDir}
                               showIntegratedTerminalShell={hostPlatform === "win32"}
                               setLocalePreference={handleFooterLocaleChange}
                               setNotificationEnabled={(enabled) =>
@@ -2188,7 +2193,6 @@ export function SettingsPage({
                               workspacePath={activeWorkspacePath}
                               workspaceIdentity={activeWorkspaceIdentity}
                               isDesktop={isDesktop}
-                              isWindowsDesktop={Boolean(isWindowsDesktop)}
                             />
                           ) : activeSection === "archives" ? (
                             <div className="min-w-0 space-y-6">
