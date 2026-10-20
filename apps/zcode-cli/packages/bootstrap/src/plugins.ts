@@ -4,7 +4,6 @@ import { isDeepStrictEqual } from "node:util";
 import {
   addSuppressedBuiltinInFileConfig,
   createConfig,
-  resolvePath,
   enablePluginsByDefaultInFileConfig,
   removePluginEnabledFromFileConfig,
   removePluginFromFileConfig,
@@ -13,6 +12,7 @@ import {
   updatePluginOptionsInFileConfig,
   type ConfigResult,
 } from "@zcode/adapters/config";
+import { resolveStorageRootDir } from "@zcode/adapters/storage";
 import {
   addMarketplace,
   comparePluginUpdate,
@@ -1044,7 +1044,7 @@ function resolvePluginContext(options: ResolveZCodePluginsOptions): {
       skipUserConfig: options.skipUserConfig,
       userConfigPath: options.userConfigPath,
     });
-  const storageRoot = resolvePath(configResult.config.storage.dir);
+  const storageRoot = resolveStorageRootDir(configResult.config.storage.dir);
   return {
     configResult,
     pluginStorageRoot:

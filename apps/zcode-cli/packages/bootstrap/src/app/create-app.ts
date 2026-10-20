@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import {
   createInMemorySessionEventStore,
   createNodeToolArtifactStore,
+  resolveStorageRootDir,
 } from "@zcode/adapters/storage";
 import { createNodeLoggerFactory } from "@zcode/adapters/logging";
 import { createConfig, resolvePath } from "@zcode/adapters/config";
@@ -216,7 +217,7 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
   let ownedNodeReplBrowserBroker: NodeReplBrowserBroker | undefined;
   let providerModelRuntime: ApiProviderModelRuntime | undefined;
   try {
-    const storageRoot = resolvePath(configResult.config.storage.dir);
+    const storageRoot = resolveStorageRootDir(configResult.config.storage.dir);
     const cliStorageRoot = getCliStorageRoot(storageRoot);
     const modelIoDir = getModelIoDir(
       cliStorageRoot,

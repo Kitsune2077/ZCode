@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
-import { createConfig, resolvePath } from "@zcode/adapters/config";
+import { createConfig } from "@zcode/adapters/config";
+import { resolveStorageRootDir } from "@zcode/adapters/storage";
 import { createNodeSkillAdapter } from "@zcode/adapters/skills";
 import type { Logger, SkillContent, SkillDiagnostic, SkillLoadOutcome } from "@zcode/contracts";
 import { resolveBundledSkillRoots } from "./app/bundled-skills.js";
@@ -112,7 +113,7 @@ function createSkillDiscovery(options: ListZCodeSkillsOptions):
 
   // 内置技能包与插件技能根并列注入：`zcode skills list`、引用目录与 runtime 看到同一份发现结果。
   const bundledSkillRoots = resolveBundledSkillRoots({
-    cliStorageRoot: getCliStorageRoot(resolvePath(configResult.config.storage.dir)),
+    cliStorageRoot: getCliStorageRoot(resolveStorageRootDir(configResult.config.storage.dir)),
     logger: options.logger,
   });
 

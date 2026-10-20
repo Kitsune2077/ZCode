@@ -51,7 +51,7 @@ import { listInstalledPluginRecords } from "@zcode/adapters/plugins";
 import { withPluginStorageLock } from "../lib/plugin-storage-lock.js";
 import { getCliStorageRoot, getPluginStorageRoot } from "../app/paths.js";
 import { resolveOfficialPluginHostMcpServerNames } from "../app/official-plugin-definitions.js";
-import { createConfig, resolvePath, type ConfigResult } from "@zcode/adapters/config";
+import { createConfig, resolvePath, type ConfigResult } from "@zcode/adapters/config";import { resolveStorageRootDir } from "@zcode/adapters/storage";
 import { parseParams, type ZCodeProtocolAgentServerContext } from "./server-types.js";
 
 // 把 CLI 的 PluginMetadata 投影成协议可序列化的 ZCodePluginInfo (只保留 UI 需要的字段)。
@@ -611,6 +611,6 @@ function toInstalledPluginSummary(input: {
 
 function resolvePluginStorageRoot(workingDirectory: string): string {
   const config = createConfig({ workingDirectory });
-  const storageRoot = resolvePath(config.config.storage.dir);
+  const storageRoot = resolveStorageRootDir(config.config.storage.dir);
   return getPluginStorageRoot(getCliStorageRoot(storageRoot));
 }

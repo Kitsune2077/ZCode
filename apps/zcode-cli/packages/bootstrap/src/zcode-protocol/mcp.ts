@@ -1,4 +1,5 @@
-import { createConfig, resolvePath } from "@zcode/adapters/config";
+import { createConfig } from "@zcode/adapters/config";
+import { resolveStorageRootDir } from "@zcode/adapters/storage";
 import type { Logger, McpConnectionSnapshot, McpPort, McpServerStatus } from "@zcode/contracts";
 import {
   zcodeMcpListParamsSchema,
@@ -37,7 +38,7 @@ export async function listMcpServers(
     env: context.deps.env,
     workingDirectory,
   });
-  const cliStorageRoot = getCliStorageRoot(resolvePath(configResult.config.storage.dir));
+  const cliStorageRoot = getCliStorageRoot(resolveStorageRootDir(configResult.config.storage.dir));
   const startupTimer = new StartupTimer(
     context.logger ?? noopLogger,
     {
