@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 // 官方 v3.15.1 已把单测栈迁移到 vitest（root vitest 收集全部 *.test.ts），
 // node:test 风格文件因无 vitest 套件会整体报 No test suite found。
 import { test } from "vitest";
@@ -18,6 +18,7 @@ import {
   scanImportableZcodeDesktopSessions,
 } from "../src/session/zcode-native/zcodeNativeConversationSource.js";
 import { importZcodeNativeSessions } from "../src/session/zcode-native/zcodeNativeConversationImportService.js";
+import { resolveProjectMemoryWorkspaceId } from "../src/session/zcode-native/zcodeNativeProjectImport.js";
 
 interface SourceSessionSeed {
   id: string;
@@ -136,6 +137,50 @@ async function createSessionDb(
 
 const WORKSPACE_A = "D:/work/demo";
 const WORKSPACE_B = "D:/work/other";
+
+interface SourceProjectSeed {
+  projectId: string;
+  name: string;
+  nameOverridden?: boolean;
+  pinned?: boolean;
+  roots: string[];
+  taskIds: string[];
+}
+
+/**
+ * 构造安装版 tasks-index fixture（只建本功能读取的三张表：tasks/projects/project_roots）。
+ * 模拟安装版侧的项目归属事实，供导入复刻。
+ */
+async function createSourceTasksIndex(
+  sourceDataRoot: string,
+  projects: SourceProjectSeed[],
+): Promise<void> {
+  const dbPath = join(sourceDataRoot, "v2", "tasks-index.sqlite");
+  await mkdir(join(sourceDataRoot, "v2"), { recursive: true });
+  const db = new DatabaseSync(dbPath);
+  db.exec(`CREATE TABLE tasks (task_id text primary key, project_id text)`);
+  db.exec(`CREATE TABLE projects (
+    project_id text primary key, host_id text not null, name text not null,
+    name_overridden integer not null default 0, pinned integer not null default 0,
+    deleted integer not null default 0)`);
+  db.exec(`CREATE TABLE project_roots (
+    project_id text not null, root_path text not null,
+    position integer not null, is_primary integer not null)`);
+  for (const project of projects) {
+    db.prepare(
+      `INSERT INTO projects (project_id, host_id, name, name_overridden, pinned) VALUES (?, 'local', ?, ?, ?)`,
+    ).run(project.projectId, project.name, project.nameOverridden ? 1 : 0, project.pinned ? 1 : 0);
+    project.roots.forEach((root, index) =>
+      db.prepare(
+        `INSERT INTO project_roots (project_id, root_path, position, is_primary) VALUES (?, ?, ?, ?)`,
+      ).run(project.projectId, root, index, index === 0 ? 1 : 0),
+    );
+    for (const taskId of project.taskIds) {
+      db.prepare(`INSERT INTO tasks (task_id, project_id) VALUES (?, ?)`).run(taskId, project.projectId);
+    }
+  }
+  db.close();
+}
 
 interface InstalledFixture {
   homeDir: string;
@@ -548,6 +593,166 @@ test("importZcodeNativeSessions skips sessions outside the workspace filter", as
     assert.equal(result.imported.length, 0);
     assert.equal(result.skipped.length, 1);
     assert.equal(result.skipped[0]?.reason, "session_not_found_or_workspace_mismatch");
+  } finally {
+    taskIndexRepo.close();
+    setDataBaseDir(null);
+    await rm(portableDir, { recursive: true, force: true });
+    await fixture.cleanup();
+  }
+});
+
+test("import replicates source projects, assigns sessions, and copies project memory", async () => {
+  const now = Date.now();
+  const fixture = await createInstalledFixture([
+    {
+      id: "ses_proj_a",
+      title: "项目会话 A",
+      directory: WORKSPACE_A,
+      timeCreated: now - 5000,
+      timeUpdated: now,
+    },
+    {
+      id: "ses_proj_b",
+      title: "项目会话 B",
+      directory: WORKSPACE_B,
+      timeCreated: now - 5000,
+      timeUpdated: now - 100,
+    },
+  ]);
+  // 安装版侧：A/B 同属一个双 root 项目（手工改名、置顶）。
+  await createSourceTasksIndex(fixture.sourceDataRoot, [
+    {
+      projectId: "src-p1",
+      name: "我的项目",
+      nameOverridden: true,
+      pinned: true,
+      roots: [WORKSPACE_A, WORKSPACE_B],
+      taskIds: ["ses_proj_a", "ses_proj_b"],
+    },
+  ]);
+  // 安装版侧项目记忆：WORKSPACE_A 有 MEMORY.md 与一条 item；WORKSPACE_B 无记忆。
+  const memoryWorkspaceId = resolveProjectMemoryWorkspaceId(WORKSPACE_A);
+  const sourceMemoryDir = join(
+    fixture.sourceDataRoot,
+    "cli",
+    "memories",
+    "projects",
+    memoryWorkspaceId,
+    "memory",
+  );
+  await mkdir(sourceMemoryDir, { recursive: true });
+  await writeFile(join(sourceMemoryDir, "MEMORY.md"), "# 项目记忆\n");
+  await writeFile(join(sourceMemoryDir, "api-notes.md"), "API 备忘\n");
+
+  const portableDir = await mkdtemp(join(tmpdir(), "zcode-portable-projects-"));
+  setDataBaseDir(portableDir);
+  const taskIndexRepo = new TaskIndexRepo();
+  try {
+    const result = await importZcodeNativeSessions({
+      taskIndexRepo,
+      source: fixture.source,
+      sessionIds: ["ses_proj_a", "ses_proj_b"],
+      onTaskImported: () => {},
+    });
+    assert.equal(result.imported.length, 2);
+
+    const projectRepository = await taskIndexRepo.getProjectRepository();
+    const tree = projectRepository.readTree();
+    // 复刻一个项目：手工名保留、roots 与源一致（顺序保持 primary 优先）、置顶保留。
+    assert.equal(tree.projects.length, 1);
+    const replicated = tree.projects[0]!;
+    assert.equal(replicated.name, "我的项目");
+    assert.equal(replicated.nameOverridden, true);
+    assert.equal(replicated.pinned, true);
+    assert.deepEqual(
+      replicated.roots.map((root) => root.rootPath),
+      [WORKSPACE_A, WORKSPACE_B],
+    );
+    assert.equal(replicated.roots[0]?.isPrimary, true);
+    // 两个导入会话都归入该项目（侧栏项目区可见，不再全落任务区）。
+    const taskA = tree.tasks.find((task) => task.taskId === "ses_proj_a");
+    const taskB = tree.tasks.find((task) => task.taskId === "ses_proj_b");
+    assert.equal(taskA?.projectId, replicated.id);
+    assert.equal(taskB?.projectId, replicated.id);
+
+    // 项目记忆按同 workspaceId 复制到当前数据根。
+    const targetMemoryDir = join(
+      portableDir,
+      ".zcode",
+      "cli",
+      "memories",
+      "projects",
+      memoryWorkspaceId,
+      "memory",
+    );
+    assert.equal(await readFile(join(targetMemoryDir, "MEMORY.md"), "utf8"), "# 项目记忆\n");
+    assert.equal(await readFile(join(targetMemoryDir, "api-notes.md"), "utf8"), "API 备忘\n");
+
+    // 重导：会话 already_imported、项目不重复创建、记忆不被覆盖。
+    await writeFile(join(targetMemoryDir, "MEMORY.md"), "便携侧已编辑\n");
+    const rerun = await importZcodeNativeSessions({
+      taskIndexRepo,
+      source: fixture.source,
+      sessionIds: ["ses_proj_a", "ses_proj_b"],
+      onTaskImported: () => {},
+    });
+    assert.equal(rerun.imported.length, 0);
+    assert.equal(rerun.skipped.length, 2);
+    assert.equal(projectRepository.readTree().projects.length, 1);
+    assert.equal(await readFile(join(targetMemoryDir, "MEMORY.md"), "utf8"), "便携侧已编辑\n");
+  } finally {
+    taskIndexRepo.close();
+    setDataBaseDir(null);
+    await rm(portableDir, { recursive: true, force: true });
+    await fixture.cleanup();
+  }
+});
+
+test("import falls back to per-directory single-root projects without source index and reuses existing", async () => {
+  const now = Date.now();
+  // 不建源 tasks-index（旧版安装版或从未建项目）：按目录建单 root 项目。
+  const fixture = await createInstalledFixture([
+    {
+      id: "ses_fallback_a",
+      title: "回退会话 A",
+      directory: WORKSPACE_A,
+      timeCreated: now - 5000,
+      timeUpdated: now,
+    },
+    {
+      id: "ses_fallback_b",
+      title: "回退会话 B",
+      directory: WORKSPACE_B,
+      timeCreated: now - 5000,
+      timeUpdated: now - 100,
+    },
+  ]);
+  const portableDir = await mkdtemp(join(tmpdir(), "zcode-portable-fallback-"));
+  setDataBaseDir(portableDir);
+  const taskIndexRepo = new TaskIndexRepo();
+  try {
+    // 目标侧已有包含 WORKSPACE_A 的项目：导入复用，不新建。
+    const projectRepository = await taskIndexRepo.getProjectRepository();
+    const existing = projectRepository.saveProject({ roots: [WORKSPACE_A], name: "已有项目" });
+
+    const result = await importZcodeNativeSessions({
+      taskIndexRepo,
+      source: fixture.source,
+      sessionIds: ["ses_fallback_a", "ses_fallback_b"],
+      onTaskImported: () => {},
+    });
+    assert.equal(result.imported.length, 2);
+
+    const tree = projectRepository.readTree();
+    assert.equal(tree.projects.length, 2);
+    const taskA = tree.tasks.find((task) => task.taskId === "ses_fallback_a");
+    const taskB = tree.tasks.find((task) => task.taskId === "ses_fallback_b");
+    assert.equal(taskA?.projectId, existing.id);
+    const created = tree.projects.find((project) => project.id !== existing.id)!;
+    // 无源项目：按目录建单 root 项目，名字按主要目录推导。
+    assert.deepEqual(created.roots.map((root) => root.rootPath), [WORKSPACE_B]);
+    assert.equal(taskB?.projectId, created.id);
+    assert.equal(created.name, basename(WORKSPACE_B));
   } finally {
     taskIndexRepo.close();
     setDataBaseDir(null);

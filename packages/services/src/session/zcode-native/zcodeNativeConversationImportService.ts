@@ -11,11 +11,17 @@ import {
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
 import {
   getLegacyTaskSessionSnapshotPath,
+  getZCodeDataRootDir,
 } from "#src/paths.js";
 import {
   getCurrentSessionDbPath,
 } from "#src/session/zcode-native/zcodeNativeConversationSource.js";
 import type { TaskIndexRepo } from "#src/session/taskIndexRepo.js";
+import {
+  assignImportedTaskProject,
+  copyProjectMemoryForDirectory,
+  readSourceTaskProjectAssignments,
+} from "#src/session/zcode-native/zcodeNativeProjectImport.js";
 import {
   copySessionDbToTemp,
   disposeSessionDbCopy,
@@ -194,6 +200,17 @@ export async function importZcodeNativeSessions(params: {
       throw new Error("source session schema unreadable");
     }
 
+    // 项目归属与记忆随导入带入（spec 第 1/3 节）：读取失败/无源索引走"按目录建单
+    // root 项目"回退；两个仓库句柄在批次内共享（归属按目录缓存，同目录只解析一次）。
+    const sourceProjects = await readSourceTaskProjectAssignments(
+      params.source,
+      normalizedSessionIds,
+    );
+    const projectRepository = await params.taskIndexRepo.getProjectRepository();
+    const resolvedProjectsByDirectory = new Map<string, string>();
+    const memoryCopiedDirectories = new Set<string>();
+    const targetMemoriesProjectsRoot = join(getZCodeDataRootDir(), "cli", "memories", "projects");
+
     for (const sessionId of normalizedSessionIds) {
       try {
         // 索引 meta 所需字段按交集列选取：旧版源库可能没有 trace_id/last_outcome。
@@ -296,6 +313,44 @@ export async function importZcodeNativeSessions(params: {
           });
           continue;
         }
+
+        // 项目归属：失败只降级为未归类（任务区可见），不把整个会话记为导入失败。
+        try {
+          await assignImportedTaskProject({
+            projectRepository,
+            taskId: sessionId,
+            workspacePath: sourceSession.directory,
+            sourceProject: sourceProjects.get(sessionId),
+            resolvedProjectsByDirectory,
+          });
+        } catch (error) {
+          logger.warn(undefined, `导入安装版对话的项目归属失败 session=${sessionId}`, error);
+        }
+
+        // 项目记忆：同目录只复制一次；失败不影响导入结果。
+        if (!memoryCopiedDirectories.has(sourceSession.directory)) {
+          memoryCopiedDirectories.add(sourceSession.directory);
+          try {
+            const copied = await copyProjectMemoryForDirectory({
+              sourceDataRoot: params.source.sourceDataRoot,
+              targetMemoriesProjectsRoot,
+              workspacePath: sourceSession.directory,
+            });
+            if (copied > 0) {
+              logger.info(
+                undefined,
+                `已复制安装版项目记忆 directory=${sourceSession.directory} files=${copied}`,
+              );
+            }
+          } catch (error) {
+            logger.warn(
+              undefined,
+              `复制安装版项目记忆失败 directory=${sourceSession.directory}`,
+              error,
+            );
+          }
+        }
+
         const meta = indexedMeta ?? indexMeta;
         params.onTaskImported(meta);
         result.imported.push({

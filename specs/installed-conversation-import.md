@@ -12,12 +12,21 @@ Windows 便携版（zip 解包直跑）的数据根在 `<exe>/.zcode` 或 `<exe>
 - 扫描：只读打开安装版 CLI 会话库，列出可导入的根会话（标题/时间/workspace 预览）；
 - 导入：按勾选把会话**原生合并**进当前（便携）数据根——taskId 保持不变、消息/分片/待办
   原样拷贝、可续聊；同时把任务索引行与 legacy 快照并入当前数据根；
+- **项目归属**：导入的会话按安装版的项目结构落位到侧栏"项目区"，不再全部堆在"任务区"——
+  安装版 tasks-index 里该会话有 local 项目 → 在目标侧复刻同名同 roots 的项目（目标已存在
+  等价项目则复用）；无归属（旧版源库 / 未归类）→ 按会话目录建单 root 项目（远端
+  Source Server 首次迁移同款先例，虚拟项目 spec 2026-10-15 裁决）；目标侧已有多个包含
+  该目录的项目 → 保持未归类（与首启归属"唯一匹配才归入"同一语义）；
+- **项目记忆**：导入会话的目录在安装版有项目记忆
+  （`{dataRoot}/.zcode/cli/memories/projects/{workspaceId}/memory/*.md`）时按同
+  workspaceId 复制到当前数据根（workspaceId 由目录派生，同目录两侧一致，无需重算）；
 - 仅当"当前数据根 ≠ 安装版数据根"时可用；安装版数据不存在时扫描返回空列表；
 - 幂等：已存在的会话/任务行/快照按**目标状态优先**跳过，可重复执行。
 
 不做的事（v1 边界）：
 
 - 不迁移凭据、设置、技能、hooks、自动化（cron/闲时）与模型用量统计（避免用量面板重复计数）；
+- 不迁移用户级记忆（`~/.claude/memory`，真实 HOME 下本就与便携实例共享）；
 - 不迁移 workflow/dwf 运行记录、输入队列、会话目标等运行态数据；
 - 不做整目录覆盖式迁移（`copyDataDirectory` 已覆盖"数据存储路径"切换场景）；
 - 不校验 workspace 目录是否存在（读历史仍有意义），但源目录缺失时续聊无法进行属预期。
@@ -48,7 +57,9 @@ sourceSessionDbPath  = {sourceDataRoot}/cli/db/db.sqlite
 | --- | --- | --- | --- |
 | CLI 会话库 | `{dataRoot}/.zcode/cli/db/db.sqlite` | agent CLI（运行期唯一写者） | host 侧以短事务合并（`busy_timeout` 5s；BUSY 时该会话计入 `failed`，可重试）。源端先把 `db.sqlite`（连同 `-wal`/`-shm`）整文件拷贝到临时目录、打开副本合并，**永不写源**；副本打开时允许 WAL 恢复。安装版正在运行时副本理论上可能撕裂，失败按会话暴露、关闭安装版后重试 |
 | 任务索引 | `{dataRoot}/.zcode/v2/tasks-index.sqlite` | host（TaskIndexRepo） | `applyCliFacts` 逐行并入（已存在行保留目标 pinned/archived/deleted 状态） |
+| 项目（projects/project_roots） | `{dataRoot}/.zcode/v2/tasks-index.sqlite` | host（ProjectRepository，UI 经 project 服务） | 复刻/复用源项目（`saveProject`）后经 `moveTask` 归入并置 `OWNERSHIP_DECIDED`（首启归属不再改判）；源侧经 tasks-index 副本只读 `tasks`/`projects`/`project_roots`，缺表走单 root 回退 |
 | legacy 快照 | `{dataRoot}/.zcode/v2/sessions/{hash}/{taskId}.json` | host | 源快照存在且目标不存在时复制；hash 按目标侧约定（workspacePath，无 identity）重算 |
+| 项目记忆 | `{dataRoot}/.zcode/cli/memories/projects/{workspaceId}/memory/*.md` | agent CLI（运行期） | 源目录存在时按同 workspaceId 复制 `.md` 文件；目标已存在跳过（目标优先） |
 
 事件顺序（单会话）：
 
@@ -59,6 +70,8 @@ BEGIN IMMEDIATE(target cli db)
 COMMIT
 → copy legacy snapshot（可选）
 → taskIndexRepo.applyCliFacts({ meta })（合成自 session 行 + 目标侧约定）
+→ assignImportedTaskProject（复刻/复用项目 + moveTask 置 OWNERSHIP_DECIDED；失败降级未归类）
+→ copyProjectMemoryForDirectory（同目录批次内一次；失败仅 warn）
 → onTaskImported(meta)（复用既有 task_meta_changed 广播，侧边栏出现任务）
 ```
 
@@ -108,11 +121,14 @@ COMMIT
 2. 扫描：列出安装版根会话（标题/时间/directory），子代理与已删除会话不出现；workspace
    过滤与时间范围过滤生效。
 3. 导入：勾选会话导入后，任务列表出现同名任务（taskId 与安装版一致），打开可查看完整
-   消息/工具分片，resume 后可继续对话。
+   消息/工具分片，resume 后可继续对话；会话按安装版项目结构出现在"项目区"（复刻项目名
+   与 roots），无源项目的目录自动建单 root 项目；该目录的项目记忆文件出现在当前数据根
+   的 `cli/memories/projects/{workspaceId}/memory/` 下。
 4. 幂等：再次导入同一批，结果为"新增 0、跳过 N"，目标侧对已导入任务做的归档/改题不被
-   回滚。
-5. 漂移：源库少一列（模拟旧版本）时导入仍成功，目标新列取默认值。
-6. 隔离：导入前后安装版 `db.sqlite` 文件字节不变（源只读）。
+   回滚，项目不重复创建，记忆文件不被覆盖。
+5. 漂移：源库少一列（模拟旧版本）时导入仍成功，目标新列取默认值；源 tasks-index 缺
+   projects 表（旧版本）时走单 root 项目回退。
+6. 隔离：导入前后安装版 `db.sqlite` / `tasks-index.sqlite` / 记忆目录文件字节不变（源只读）。
 
 ## 8. 兼容性边界
 
