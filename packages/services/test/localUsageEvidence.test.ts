@@ -282,4 +282,75 @@ describe("resolveAgentSessionDbPath（评审三轮 CR-01：不复制解析规则
       resolveAgentSessionDbPath({ env: {}, homedirPath: HOME, userConfigPath: USER_CONFIG }),
     ).rejects.toThrow();
   });
+
+  // 便携数据根分支（2026-10 便携隔离修订）：默认字面量 + 宿主下发
+  // ZCODE_DATA_BASE_DIR（桌面便携态）时会话库随数据根走，不得读安装版主目录的库。
+  describe("ZCODE_DATA_BASE_DIR（桌面便携态）", () => {
+    it("配置为默认字面量时随数据根走（便携首启引导被安装版会话库误吞的回归）", async () => {
+      const { HOME, USER_CONFIG } = freshHome();
+      const portableRoot = join(makeTempDir(), "portable");
+      await expect(
+        resolveAgentSessionDbPath({
+          env: { ZCODE_DATA_BASE_DIR: portableRoot },
+          homedirPath: HOME,
+          userConfigPath: USER_CONFIG,
+        }),
+      ).resolves.toBe(join(portableRoot, ".zcode", "cli", "db", "db.sqlite"));
+    });
+
+    it("user config 显式写默认字面量同样重定向（与 CLI getSessionDbPath 判定一致）", async () => {
+      const { HOME, USER_CONFIG } = freshHome();
+      const portableRoot = join(makeTempDir(), "portable");
+      mkdirSync(join(HOME, ".zcode", "cli"), { recursive: true });
+      writeFileSync(
+        USER_CONFIG,
+        JSON.stringify({ storage: { sessionDbPath: "~/.zcode/cli/db/db.sqlite" } }),
+      );
+      await expect(
+        resolveAgentSessionDbPath({
+          env: { ZCODE_DATA_BASE_DIR: portableRoot },
+          homedirPath: HOME,
+          userConfigPath: USER_CONFIG,
+        }),
+      ).resolves.toBe(join(portableRoot, ".zcode", "cli", "db", "db.sqlite"));
+    });
+
+    it("ZCODE_DATA_BASE_DIR 等于 homedir 时不重定向（安装态默认）", async () => {
+      const { HOME, USER_CONFIG } = freshHome();
+      await expect(
+        resolveAgentSessionDbPath({
+          env: { ZCODE_DATA_BASE_DIR: HOME },
+          homedirPath: HOME,
+          userConfigPath: USER_CONFIG,
+        }),
+      ).resolves.toBe(join(HOME, ".zcode", "cli", "db", "db.sqlite"));
+    });
+
+    it("user config 显式自定义路径优先于数据根重定向（CLI 对显式配置不重定向）", async () => {
+      const { HOME, USER_CONFIG } = freshHome();
+      const portableRoot = join(makeTempDir(), "portable");
+      mkdirSync(join(HOME, ".zcode", "cli"), { recursive: true });
+      writeFileSync(USER_CONFIG, JSON.stringify({ storage: { sessionDbPath: "~/data/s.sqlite" } }));
+      await expect(
+        resolveAgentSessionDbPath({
+          env: { ZCODE_DATA_BASE_DIR: portableRoot },
+          homedirPath: HOME,
+          userConfigPath: USER_CONFIG,
+        }),
+      ).resolves.toBe(join(HOME, "data", "s.sqlite"));
+    });
+
+    it("env ZCODE_SESSION_DB_PATH 显式路径优先于数据根重定向", async () => {
+      const customDb = join(makeTempDir(), "custom.sqlite");
+      const { HOME, USER_CONFIG } = freshHome();
+      const portableRoot = join(makeTempDir(), "portable");
+      await expect(
+        resolveAgentSessionDbPath({
+          env: { ZCODE_SESSION_DB_PATH: customDb, ZCODE_DATA_BASE_DIR: portableRoot },
+          homedirPath: HOME,
+          userConfigPath: USER_CONFIG,
+        }),
+      ).resolves.toBe(customDb);
+    });
+  });
 });

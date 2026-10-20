@@ -116,8 +116,9 @@ v1 文件不做启动迁移：读取时视为 `decisions: []`，下一次业务�
 - **使用证据（2026-10 修订）按"任一命中"判断，三个来源按序检查**：
   1. 设备全局 tasks-index 存在任意 Task（`includeDeleted: true`，含已删除 tombstone——
      清空过任务列表的存量用户不因删除行为失去资格）；
-  2. agent 会话库（默认 `~/.zcode/cli/db/db.sqlite`，按 homedir 展开、不随
-     dataBaseDir 迁移；env/配置覆盖与不可镜像跳过规则见下条；SQLite 只读查询
+  2. agent 会话库（默认 `~/.zcode/cli/db/db.sqlite`，按 homedir 展开；桌面便携态
+     下发 `ZCODE_DATA_BASE_DIR` 时随数据根走（见下条镜像规则），不得读安装版主目录
+     的库；env/配置覆盖与不可镜像跳过规则见下条；SQLite 只读查询
      `session` 表存在至少一行）；
   3. 旧版任务快照目录（`{dataBaseDir}/.zcode/v2/sessions/`，含 `.deleted.json`）非空。
 - **为什么不能只查 tasks-index**：索引是 session 同步器的衍生投影，同步器在 agent/provider
@@ -135,6 +136,13 @@ v1 文件不做启动迁移：读取时视为 `decisions: []`，下一次业务�
   2. `~/.zcode/cli/config.json` 的 `storage.sessionDbPath`（CLI `createConfig`
      默认 user config 位置在 home，**不随 App dataBaseDir 迁移**）；
   3. 默认 `~/.zcode/cli/db/db.sqlite`（`~/` 按 homedir 展开）。
+     **便携态数据根分支（2026-10 便携隔离修订）**：解析结果为默认字面量且宿主 env
+     存在 `ZCODE_DATA_BASE_DIR`（桌面便携态由 main 注入 host）时，改按
+     `{ZCODE_DATA_BASE_DIR}/.zcode/cli/db/db.sqlite` 定位——镜像 CLI bootstrap
+     `getSessionDbPath` 的同一分支。不镜像会把安装版的 `~/.zcode` 会话库误当
+     便携实例的本机使用证据，首启引导被跳过并落下 `existing_local_user` 决策，
+     违反便携数据根隔离承诺。用户显式配置的 env/绝对/`~/` 路径不受该分支影响
+     （CLI 对显式配置同样不重定向）。
      值为绝对路径（含 `~/` 展开）才作为证据位置；相对路径 → 未知 → 跳过本证据源
      （继续检查旧版快照目录），不得按 host cwd 猜测。配置读取/解析失败（非 ENOENT）
      上抛：配置读不出来时会话库位置未知，猜测默认值会漏判自定义会话库的存量用户。

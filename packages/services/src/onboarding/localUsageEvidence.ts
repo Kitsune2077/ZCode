@@ -19,7 +19,11 @@ import { DatabaseSync } from "node:sqlite";
  *      后者，与 CLI env adapter 的赋值顺序一致）；
  *    - ~/.zcode/cli/config.json 的 storage.sessionDbPath（CLI createConfig 默认
  *      位置在 home，不随 App dataBaseDir 迁移）；
- *    - 默认 ~/.zcode/cli/db/db.sqlite（homedir 展开）。
+ *    - 默认 ~/.zcode/cli/db/db.sqlite（homedir 展开）；配置为默认字面量且宿主下发
+ *      了 ZCODE_DATA_BASE_DIR（桌面便携态由 main 注入 host）时，镜像 CLI bootstrap
+ *      getSessionDbPath 的分支改按数据根定位——否则便携版会把安装版的
+ *      ~/.zcode/cli/db/db.sqlite 误当本机使用证据，首启引导被跳过并落下
+ *      existing_local_user 决策，违反便携数据根隔离。
  *    值为相对路径时按未知跳过本证据源（CLI 按各工作区 cwd 解析，host 无法镜像）；
  *    project 级配置覆盖同样视为未知（已知限制，spec §4）。
  *    只读查询 session 表至少一行。
@@ -87,28 +91,38 @@ export async function resolveAgentSessionDbPath(
   const readConfigFile = options.readConfigFile ?? ((path) => readFile(path, "utf-8"));
 
   const fromEnv = pickEnvSessionDbPath(env);
-  if (fromEnv) return resolveMirroredSessionDbPath(fromEnv, home);
-
-  // CLI createConfig 的默认 user config 位置在 home（~/.zcode/cli/config.json），
-  // 与 App dataBaseDir 无关（评审三轮 CR-01 第 1 条，zcode-protocol-entrypoint 实证）。
-  const userConfigPath = options.userConfigPath ?? join(home, ".zcode", "cli", "config.json");
-  let raw: string;
-  try {
-    raw = await readConfigFile(userConfigPath);
-  } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === "ENOENT") {
-      return resolveMirroredSessionDbPath(DEFAULT_SESSION_DB_PATH, home);
+  let configured: string;
+  if (fromEnv) {
+    configured = fromEnv;
+  } else {
+    // CLI createConfig 的默认 user config 位置在 home（~/.zcode/cli/config.json），
+    // 与 App dataBaseDir 无关（评审三轮 CR-01 第 1 条，zcode-protocol-entrypoint 实证）。
+    const userConfigPath = options.userConfigPath ?? join(home, ".zcode", "cli", "config.json");
+    let raw: string | null = null;
+    try {
+      raw = await readConfigFile(userConfigPath);
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw cause;
+      }
     }
-    throw cause;
+    const parsed = raw
+      ? (JSON.parse(raw) as { storage?: { sessionDbPath?: string } })
+      : undefined;
+    configured = parsed?.storage?.sessionDbPath?.trim() || DEFAULT_SESSION_DB_PATH;
   }
-  const parsed = JSON.parse(raw) as { storage?: { sessionDbPath?: string } };
-  const configured = parsed.storage?.sessionDbPath?.trim();
-  if (configured) {
-    const mirrored = resolveMirroredSessionDbPath(configured, home);
-    if (mirrored === null) return null;
-    return mirrored;
+
+  // 镜像 CLI bootstrap 的 getSessionDbPath：配置为默认字面量且宿主下发了
+  // ZCODE_DATA_BASE_DIR（桌面便携态由 main 注入，见 session-store.ts 的同一分支）
+  // 时，agent 会话库随数据根走。host 侧不镜像该分支会把安装版的
+  // ~/.zcode/cli/db/db.sqlite 误当本机使用证据，便携首启引导被静默跳过。
+  if (configured === DEFAULT_SESSION_DB_PATH) {
+    const baseDir = env.ZCODE_DATA_BASE_DIR?.trim();
+    if (baseDir && baseDir !== home) {
+      return join(baseDir, ".zcode", "cli", "db", "db.sqlite");
+    }
   }
-  return resolveMirroredSessionDbPath(DEFAULT_SESSION_DB_PATH, home);
+  return resolveMirroredSessionDbPath(configured, home);
 }
 
 /**
