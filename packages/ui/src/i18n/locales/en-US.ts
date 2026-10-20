@@ -3359,6 +3359,7 @@ const enUS: Record<string, string> = {
   "settings.migration.provider.claude": "Claude Code",
   "settings.migration.provider.openCode": "OpenCode",
   "settings.migration.provider.deepseekHarness": "DeepSeek Harness",
+  "settings.migration.provider.zcodeDesktop": "ZCode (installed app)",
   "settings.migration.workspaceFilterLabel": "Workspace filter",
   "settings.migration.workspaceFilter.all": "All workspaces",
   "settings.migration.workspaceFilter.current": "Current workspace only",
@@ -3375,6 +3376,8 @@ const enUS: Record<string, string> = {
   "settings.migration.scanFailedDescription.openCode": "Failed to read OpenCode native history: {error}",
   "settings.migration.scanFailedDescription.deepseekHarness":
     "Failed to read DeepSeek Harness native history: {error}",
+  "settings.migration.scanFailedDescription.zcodeDesktop":
+    "Failed to read conversation history from the installed ZCode app: {error}",
   "settings.migration.candidatesTitle": "Candidates",
   "settings.migration.candidatesDescription":
     "Select one or more sessions to import. Each imported session is written back into the task list for its own workspace.",

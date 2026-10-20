@@ -57,8 +57,12 @@ export interface ZCodeGlmAgentModelStateUpdatePayload {
     tokens: number;
   };
 }
-/** 外部历史迁移来源：Claude Code / OpenCode / DeepSeek Harness 原生历史，后续其它来源继续在这里扩展。 */
-export type ZCodeTaskMigrationSource = "claudeCode" | "openCode" | "deepseekHarness";
+/** 外部历史迁移来源：Claude Code / OpenCode / DeepSeek Harness 原生历史与本机安装版 ZCode，后续其它来源继续在这里扩展。 */
+export type ZCodeTaskMigrationSource =
+  | "claudeCode"
+  | "openCode"
+  | "deepseekHarness"
+  | "zcodeDesktop";
 export type ZCodeTaskGoalStatus = "active" | "paused" | "budget_limited" | "complete";
 export type ZCodeTaskTargetChangedAction =
   | "set"

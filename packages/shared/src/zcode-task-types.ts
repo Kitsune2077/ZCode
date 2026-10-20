@@ -118,8 +118,8 @@ export interface ZCodeSwitchAgentResult {
   reusedBinding: boolean;
 }
 
-/** 外部原生 session 导入的来源 provider；与 agent runtime 的 ZCodeProvider 解耦，当前为 Claude Code、OpenCode 与 DeepSeek Harness。 */
-export type ZCodeImportSessionSourceProvider = "claude" | "openCode" | "deepseekHarness";
+/** 外部原生 session 导入的来源 provider；与 agent runtime 的 ZCodeProvider 解耦，当前为 Claude Code、OpenCode、DeepSeek Harness 与本机安装版 ZCode。 */
+export type ZCodeImportSessionSourceProvider = "claude" | "openCode" | "deepseekHarness" | "zcodeDesktop";
 
 /** 外部原生 session 的导入候选。 */
 export interface ZCodeImportableSessionCandidate {

@@ -3148,6 +3148,7 @@ const zhCN: Record<string, string> = {
   "settings.migration.provider.claude": "Claude Code",
   "settings.migration.provider.openCode": "OpenCode",
   "settings.migration.provider.deepseekHarness": "DeepSeek Harness",
+  "settings.migration.provider.zcodeDesktop": "ZCode（本机安装版）",
   "settings.migration.workspaceFilterLabel": "workspace 筛选",
   "settings.migration.workspaceFilter.all": "全部 workspace",
   "settings.migration.workspaceFilter.current": "仅当前 workspace",
@@ -3164,6 +3165,8 @@ const zhCN: Record<string, string> = {
   "settings.migration.scanFailedDescription.openCode": "读取 OpenCode 原生历史失败：{error}",
   "settings.migration.scanFailedDescription.deepseekHarness":
     "读取 DeepSeek Harness 原生历史失败：{error}",
+  "settings.migration.scanFailedDescription.zcodeDesktop":
+    "读取本机安装版对话记录失败：{error}",
   "settings.migration.candidatesTitle": "候选会话",
   "settings.migration.candidatesDescription":
     "选择一个或多个会话后执行导入；每条记录会写入它自己的目标 workspace 任务列表。",

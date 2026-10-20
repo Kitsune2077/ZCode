@@ -613,6 +613,27 @@ export interface IZCodeTaskService {
     sessionIds: string[];
   }): Promise<ZCodeImportSessionsResult>;
 
+  /**
+   * 扫描本机安装版 ZCode 的可导入对话（~/.zcode/cli/db/db.sqlite，源端只读）；
+   * 便携数据根下才有可导入来源，开发态/安装版内返回空列表。
+   */
+  scanImportableZcodeDesktopSessions(params: {
+    workspacePath?: string;
+    workspaceIdentity?: string;
+    modifiedSince?: number;
+    limit?: number;
+  }): Promise<ZCodeImportableSessionCandidate[]>;
+
+  /**
+   * 导入选中的安装版对话为可续聊任务：taskId 即源 session id（原生合并，不做 id 映射）；
+   * 冲突按目标状态优先跳过（幂等）。
+   */
+  importZcodeDesktopSessions(params: {
+    workspacePath?: string;
+    workspaceIdentity?: string;
+    sessionIds: string[];
+  }): Promise<ZCodeImportSessionsResult>;
+
   /** 切换 task 模式 */
   setMode(params: { taskId: string; mode: ZCodeTaskMode }): Promise<void>;
 

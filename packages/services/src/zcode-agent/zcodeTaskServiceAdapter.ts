@@ -170,6 +170,11 @@ import { importOpenCodeNativeSessions } from "#src/session/opencode-native/openc
 import { dshNativeSessionImportRepo } from "#src/session/dsh-native/dshNativeSessionImportRepo.js";
 import { importDshNativeSessions } from "#src/session/dsh-native/dshNativeSessionImportService.js";
 import {
+  resolveInstalledConversationSource,
+  scanImportableZcodeDesktopSessions as scanZcodeDesktopSourceSessions,
+} from "#src/session/zcode-native/zcodeNativeConversationSource.js";
+import { importZcodeNativeSessions } from "#src/session/zcode-native/zcodeNativeConversationImportService.js";
+import {
   MODEL_CONFIG_ID,
   MODE_CONFIG_ID,
   THOUGHT_LEVEL_CONFIG_ID,
@@ -2925,6 +2930,70 @@ export function createZCodeTaskServiceAdapter(
           // migrationSource=deepseekHarness 供任务列表稳定识别 DSH 迁移来源。
           return updateIndexedPresentation({ ...meta, migrationSource: "deepseekHarness" });
         },
+        onTaskImported: (meta) => {
+          rememberIndexedTaskMeta(meta);
+          emitWorkspaceTaskListChanged(
+            {
+              workspacePath: meta.workspacePath,
+              workspaceIdentity: meta.workspaceIdentity,
+              taskId: meta.taskId,
+            },
+            meta,
+            "task_meta_changed",
+          );
+        },
+      });
+    },
+
+    async scanImportableZcodeDesktopSessions(params: {
+      workspacePath?: string;
+      workspaceIdentity?: string;
+      modifiedSince?: number;
+      limit?: number;
+    }): Promise<ZCodeImportableSessionCandidate[]> {
+      // 与其它原生扫描同因：workspaceIdentity 只影响导入落盘，安装版扫描按 session.directory 过滤。
+      void params.workspaceIdentity;
+      // 源端解析内部已排除"当前数据根即安装版数据根"（开发态/安装版内），此时返回空列表。
+      const source = await resolveInstalledConversationSource();
+      if (!source) {
+        return [];
+      }
+      return scanZcodeDesktopSourceSessions({
+        source,
+        workspacePath: params.workspacePath,
+        modifiedSince: params.modifiedSince,
+        limit: params.limit,
+      });
+    },
+
+    async importZcodeDesktopSessions(params: {
+      workspacePath?: string;
+      workspaceIdentity?: string;
+      sessionIds: string[];
+    }): Promise<ZCodeImportSessionsResult> {
+      // 安装版导入是原生合并：taskId 即源 session id，不需要 createImportedSession 回调；
+      // CLI 会话行由 host 短事务直写（spec 第 3 节写入边界），运行期唯一写者仍是 agent CLI。
+      void params.workspaceIdentity;
+      const source = await resolveInstalledConversationSource();
+      if (!source) {
+        return {
+          imported: [],
+          skipped: [],
+          failed: params.sessionIds
+            .map((sessionId) => sessionId.trim())
+            .filter(Boolean)
+            .map((sessionId) => ({
+              provider: "zcodeDesktop" as const,
+              sessionId,
+              reason: "installed_data_not_found",
+            })),
+        };
+      }
+      return importZcodeNativeSessions({
+        taskIndexRepo,
+        source,
+        workspacePath: params.workspacePath,
+        sessionIds: params.sessionIds,
         onTaskImported: (meta) => {
           rememberIndexedTaskMeta(meta);
           emitWorkspaceTaskListChanged(
