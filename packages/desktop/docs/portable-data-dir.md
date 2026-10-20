@@ -50,7 +50,10 @@ Windows 便携包是 `win-unpacked` 的 zip（`electron-builder.config.js` 中 `
 ### 写保护兜底
 
 便携介质只读（写保护 U 盘、无权限目录）时，启动早期做一次可写探测；失败则回退用户主目录并
-打印 warn 日志，避免启动即崩。
+打印 warn 日志，避免启动即崩。探测针对**实际生效锚点**（data 目录约定存在时是 `data`，
+否则 exe 目录）：探测会在锚点下创建 `.zcode`，若先探测 exe 目录再解析 data 约定，
+data 模式会在 exe 同目录留下一个永远不用的空 `.zcode` 目录；data 目录本身不可写时同样
+整体回退主目录。
 
 ## 状态所有权与实现锚点
 
@@ -61,6 +64,7 @@ Windows 便携包是 `win-unpacked` 的 zip（`electron-builder.config.js` 中 `
 | settings 锚点（setting.json 位置） | `ZCODE_DESKTOP_HOME_DIR` 环境变量，`settingService.resolveUserHomeDir` 消费（既有机制） |
 | 数据根（sessions/凭据/技能/库） | `setDataBaseDir()` / `getDataBaseDir()`（services/paths.ts，既有机制） |
 | 子进程传播 | `buildHostProcessEnv` 既有逻辑：`ZCODE_DATA_BASE_DIR`（dataBaseDir ≠ homedir 时下发）+ env 继承 `ZCODE_DESKTOP_HOME_DIR`（不在 sanitize 剔除清单） |
+| agent CLI 存储根（插件缓存/技能/MCP/执行产物） | CLI 侧 `resolveStorageRootDir`（apps/zcode-cli/packages/adapters/src/storage/session-store/paths.ts）：`storage.dir` 为默认字面量 `~/.zcode` 且宿主下发 `ZCODE_DATA_BASE_DIR` 时随数据根走（`{dataBaseDir}/.zcode`）；显式配置不受影响。此前裸 `resolvePath`，便携版安装的插件落在安装版主目录 `~/.zcode`，违反隔离 |
 | Electron home | `runtimeHomePath` 读取 `ZCODE_DESKTOP_HOME_DIR` 后 `app.setPath("home", ...)`（既有 e2e 多实例机制，便携复用） |
 
 bootstrap 顺序依赖：`desktopEarlyDataBaseDirBootstrap` 必须先于
@@ -73,6 +77,14 @@ bootstrap 顺序依赖：`desktopEarlyDataBaseDirBootstrap` 必须先于
 理由是安装版目录由安装器/自动更新管理，升级可能覆盖数据。便携目录不属于更新器管理范围
 （zip 便携包不走原地自动更新），且便携落点由启动判定而非用户选择产生，不经过该守卫；
 设置页手动改目录的校验行为保持不变。
+
+## 设置页"数据存储路径"的显示
+
+便携数据根只做进程内 `setDataBaseDir()` + env 注入，**不写回 setting.json 的
+`dataBaseDir` 字段**（写回会把 exe 绝对路径固化，便携目录整体搬迁后失效）。因此
+设置页的显示回退链是：`setting.json dataBaseDir` → `systemService.info().dataBaseDir`
+（host 上报的 `getDataBaseDir()` 生效值）→ `homedir`；保存时"等于安装态默认
+（homedir）写空串"的归一化不变，不会把便携锚点固化成绝对路径。
 
 ## 边界与后续
 

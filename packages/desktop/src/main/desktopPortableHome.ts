@@ -183,6 +183,50 @@ export function ensurePortableHomeWritable(portableHomeDir: string): boolean {
   }
 }
 
+export interface PortableAnchorProbeOptions {
+  /** 目录存在性判断（resolvePortableDataDir 的注入点）；默认真实 statSync。 */
+  directoryExists?: (path: string) => boolean;
+  /** 可写探测；默认 ensurePortableHomeWritable（会在锚点下创建 .zcode）。 */
+  probeWritable?: (dir: string) => boolean;
+  /** 探测失败的告警出口；默认 console.warn。 */
+  warn?: (message: string) => void;
+}
+
+export interface PortableAnchorProbeResult {
+  /** 探测通过的便携判定目录；探测失败回退主目录时为 null。 */
+  portableHomeDir: string | null;
+  /** data 目录约定锚点；portableHomeDir 为 null 时同步为 null。 */
+  portableDataDir: string | null;
+}
+
+/**
+ * 解析便携锚点并对**实际生效锚点**做可写探测（data 目录存在时是 data，否则 exe 目录）。
+ *
+ * 探测会在锚点下创建 `.zcode`（写探测文件），必须探测生效锚点而不是先探测 exe 目录：
+ * 否则 data 模式下会在 exe 同目录留下一个永远不会使用的空 `.zcode` 目录。
+ * 生效锚点不可写（含 data 目录被写保护）时整体回退主目录，与只读便携介质同一兜底语义。
+ */
+export function resolvePortableAnchorWithWritableProbe(
+  portableHomeDir: string | null,
+  options: PortableAnchorProbeOptions = {},
+): PortableAnchorProbeResult {
+  if (!portableHomeDir) {
+    return { portableHomeDir: null, portableDataDir: null };
+  }
+  const directoryExists = options.directoryExists ?? isExistingDirectory;
+  const probeWritable = options.probeWritable ?? ensurePortableHomeWritable;
+  const warn = options.warn ?? console.warn;
+  const portableDataDir = resolvePortableDataDir(portableHomeDir, directoryExists);
+  const effectiveAnchor = portableDataDir ?? portableHomeDir;
+  if (!probeWritable(effectiveAnchor)) {
+    warn(
+      `[data-base-dir] portable app directory is not writable, falling back to the user home: ${effectiveAnchor}`,
+    );
+    return { portableHomeDir: null, portableDataDir: null };
+  }
+  return { portableHomeDir, portableDataDir };
+}
+
 /** 供早期 bootstrap 复用的 setting.json 路径（锚点由 resolveSettingsHomeAnchor 决定）。 */
 export function portableAwareSettingsFile(settingsHome: string): string {
   return join(settingsHome, ".zcode", "v2", "setting.json");

@@ -3,11 +3,10 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { setDataBaseDir } from "@zcode/services/node";
 import {
-  ensurePortableHomeWritable,
   planEarlyDataBaseDir,
   portableAwareSettingsFile,
   resolvePortableAppHomeDir,
-  resolvePortableDataDir,
+  resolvePortableAnchorWithWritableProbe,
   resolveSettingsHomeAnchor,
 } from "./desktopPortableHome.js";
 
@@ -47,18 +46,11 @@ function readBootstrapDataBaseDirFromDisk(settingsFile: string): string | null {
 export function applyEarlyDataBaseDirBootstrap(): string | null {
   // 便携版（zip 解包直跑）默认把数据目录放在 exe 同目录；安装版（带 NSIS 卸载器）
   // 判定结果为 null，走原有主目录链路。规则见 packages/desktop/docs/portable-data-dir.md。
-  let portableHomeDir = resolvePortableAppHomeDir();
-  if (portableHomeDir && !ensurePortableHomeWritable(portableHomeDir)) {
-    // 只读便携介质：回退主目录，避免启动即崩；留下可检索的 warn 便于定位。
-    console.warn(
-      `[data-base-dir] portable app directory is not writable, falling back to the user home: ${portableHomeDir}`,
-    );
-    portableHomeDir = null;
-  }
-
-  // data 目录约定：便携判定生效且用户手动创建了 <exe>/data 目录时，锚点整体切到该目录
-  // （规则与切换语义见 docs/portable-data-dir.md；不可写回退已将 portableHomeDir 置 null）。
-  const portableDataDir = resolvePortableDataDir(portableHomeDir);
+  // 锚点解析 + 可写探测收口在 resolvePortableAnchorWithWritableProbe：探测针对实际
+  // 生效锚点（data 目录约定优先），避免 data 模式在 exe 同目录留下空的 .zcode 目录。
+  const { portableHomeDir, portableDataDir } = resolvePortableAnchorWithWritableProbe(
+    resolvePortableAppHomeDir(),
+  );
 
   const plan = planEarlyDataBaseDir({
     env: process.env,

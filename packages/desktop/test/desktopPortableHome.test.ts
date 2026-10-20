@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 // 官方 v3.15.1 已把单测迁移到 vitest：root vitest 会收集所有 *.test.ts，
 // node:test 风格的文件因为没有 vitest 套件而整体报 No test suite found。
-import { test } from "vitest";
+import { describe, test } from "vitest";
 import {
   ensurePortableHomeWritable,
   planEarlyDataBaseDir,
   portableAwareSettingsFile,
+  resolvePortableAnchorWithWritableProbe,
   resolvePortableAppHomeDir,
   resolvePortableDataDir,
   type EarlyDataBaseDirPlanInput,
@@ -241,4 +242,56 @@ test("ensurePortableHomeWritable works when .zcode already exists", () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+describe("resolvePortableAnchorWithWritableProbe", () => {
+  test("data 目录约定生效时探测 data 锚点，不在 exe 同目录创建 .zcode（空目录残留回归）", () => {
+    const root = mkdtempSync(join(tmpdir(), "zcode-portable-anchor-data-"));
+    try {
+      mkdirSync(join(root, "data"), { recursive: true });
+      const result = resolvePortableAnchorWithWritableProbe(root);
+      assert.equal(result.portableHomeDir, root);
+      assert.equal(result.portableDataDir, join(root, "data"));
+      // 探测只允许触碰 data 锚点：exe 同目录不得出现 .zcode（问题现场即该空目录）。
+      assert.equal(existsSync(join(root, ".zcode")), false);
+      assert.equal(existsSync(join(root, "data", ".zcode")), true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("无 data 目录时探测 exe 锚点", () => {
+    const root = mkdtempSync(join(tmpdir(), "zcode-portable-anchor-exe-"));
+    try {
+      const result = resolvePortableAnchorWithWritableProbe(root);
+      assert.equal(result.portableHomeDir, root);
+      assert.equal(result.portableDataDir, null);
+      assert.equal(existsSync(join(root, ".zcode")), true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("生效锚点不可写时整体回退主目录（portableHomeDir 置 null）", () => {
+    const warnings: string[] = [];
+    const result = resolvePortableAnchorWithWritableProbe("E:\\ZCodePortable", {
+      directoryExists: () => true,
+      probeWritable: () => false,
+      warn: (message) => warnings.push(message),
+    });
+    assert.equal(result.portableHomeDir, null);
+    assert.equal(result.portableDataDir, null);
+    assert.equal(warnings.length, 1);
+    assert.ok(warnings[0]!.includes("not writable"));
+  });
+
+  test("非便携（null）直接返回空锚点，不做探测", () => {
+    const result = resolvePortableAnchorWithWritableProbe(null, {
+      probeWritable: () => {
+        throw new Error("probe must not run");
+      },
+    });
+    assert.equal(result.portableHomeDir, null);
+    assert.equal(result.portableDataDir, null);
+  });
 });
