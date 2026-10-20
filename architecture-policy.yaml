@@ -899,3 +899,11 @@ exceptions:
     paths:
       - apps/zcode-cli/packages/core/src/tool/handlers/guarded/command.ts
     reason: 上游 guarded 引擎文件被本地 PowerShell 7 方言判定的危险命令识别扩展修改；guard 目录 adopt 时收编。
+
+  # 外部 Agent（OpenCode/DeepSeek Harness）原生会话导入：fork 专属纵切，与 claude-native 同构。
+  - id: external-session-import-unmanaged-files
+    rule: unmanaged-new-file
+    paths:
+      - packages/services/src/session/opencode-native/
+      - packages/services/src/session/dsh-native/
+    reason: 外部 Agent 原生会话导入（repo/parser/service/task file 构造）是 fork 专属纵切，只消费既有 session 端口、对来源库只读；待 session 域边界重构时与 claude-native 一并 adopt。
