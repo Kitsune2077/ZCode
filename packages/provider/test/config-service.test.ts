@@ -253,6 +253,51 @@ describe("ProviderConfigService", () => {
       service.dispose();
     }
   });
+  it("replacePersonalModelIds：单事务收敛成员，保留已保存顺序，内置成员不参与", async () => {
+    const builtin = new MutableSource(
+      layerSnapshot("builtin-1", new ProviderConfigMap([["p", localProvider(["NEW"])]])),
+    );
+    const personal = new MemoryPersonalRepository(
+      layerSnapshot(
+        "personal-1",
+        new ProviderConfigMap([
+          [
+            "p",
+            new ProviderConfig({
+              personalModelIds: ["A", "B", "C"],
+              modelOrder: ["NEW", "C", "A", "B"],
+            }),
+          ],
+        ]),
+        ModelConfigRules.empty().setExact("p", "B", new ModelConfig({ enabled: true })),
+      ),
+    );
+    const service = new ProviderConfigService({
+      zcodeBuiltinSource: builtin,
+      personalRepository: personal,
+    });
+    try {
+      await service.replacePersonalModelIds("p", ["C", "D", "A"]);
+      // 单次事务：revision 只前进一格；保留成员维持已保存顺序，新增 D 按传入顺序追加。
+      expect(personal.revision).toBe(2);
+      expect(personal.current.providers.get("p")?.personalModelIds).toEqual(["C", "D", "A"]);
+      expect(personal.current.providers.get("p")?.modelOrder).toEqual(["NEW", "C", "A", "D"]);
+      // 新成员补默认启用配置；服务端消失的成员连同个人配置一并移除。
+      expect(personal.current.models.getExact("p", "D")?.enabled).toBe(true);
+      expect(personal.current.models.getExact("p", "B")).toBeUndefined();
+      // 请求里的内置 id 被剔除：NEW 仍由 Built-in 层继承，个人成员收敛为空。
+      await service.replacePersonalModelIds("p", ["NEW", "NEW"]);
+      expect(personal.revision).toBe(3);
+      expect(personal.current.providers.get("p")?.personalModelIds).toEqual([]);
+      expect(personal.current.providers.get("p")?.modelOrder).toEqual(["NEW"]);
+      // 已删除的 Provider 不能被收敛操作复活。
+      await expect(service.replacePersonalModelIds("deleted", ["A"])).rejects.toThrow(
+        "Provider 不存在",
+      );
+    } finally {
+      service.dispose();
+    }
+  });
   it("Todo89：首次添加无需 Personal 根记录，保留排序且不复制继承成员", async () => {
     const builtin = new MutableSource(
       layerSnapshot("builtin-1", new ProviderConfigMap([["account", localProvider(["A", "B"])]])),

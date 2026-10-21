@@ -849,7 +849,9 @@ export function InlineEditableProviderCard({
           providerEnabled={provider.enabled}
           providerAccess={provider.config.access}
           models={models}
-          canFetchModels={!readOnlyEndpoints}
+          // 只有连接信息可编辑的个人供应商才提供「自动获取模型」；账号型（Coding Plan）
+          // 的 Base URL 与 API Key 由 ZCode 自动维护，模型来自套餐权益，获取无从谈起。
+          canFetchModels={!readOnlyEndpoints && !isAccountProvider}
           onPrepareFetchModels={() => commitPendingDraft("fetch-models")}
           onTestModel={onTestModel ? handleTestModel : undefined}
           onModelCommit={handleModelCommit}

@@ -249,6 +249,7 @@ describe("Provider Facades", () => {
       addPersonalModel: vi.fn(async () => undefined),
       renamePersonalModel: vi.fn(async () => undefined),
       deletePersonalModel: vi.fn(async () => undefined),
+      replacePersonalModelIds: vi.fn(async () => undefined),
       setPersonalModelEnabled: vi.fn(async () => undefined),
       savePersonalModelDraft,
       refresh: vi.fn(async () => service.getSnapshot()!),
@@ -342,6 +343,7 @@ describe("Provider Facades", () => {
       addPersonalModel: vi.fn(async () => undefined),
       renamePersonalModel: vi.fn(async () => undefined),
       deletePersonalModel: vi.fn(async () => undefined),
+      replacePersonalModelIds: vi.fn(async () => undefined),
       setPersonalModelEnabled: vi.fn(async () => undefined),
       savePersonalModelDraft: vi.fn(async () => undefined),
       refresh: vi.fn(async () => service.getSnapshot()!),
@@ -364,6 +366,7 @@ describe("Provider Facades", () => {
     });
     await facade.renamePersonalModel("personal", "custom", "model.2");
     await facade.deletePersonalModel("personal", "model.2");
+    await facade.replacePersonalModelIds("personal", ["custom", "model.2"]);
     await facade.deletePersonalProvider("new-provider");
 
     expect(mutations.savePersonalProviderOverlay).toHaveBeenCalledWith(
@@ -399,7 +402,12 @@ describe("Provider Facades", () => {
       "model.2",
       expect.objectContaining({ providerId: "personal" }),
     );
-    expect(mutations.refresh).toHaveBeenCalledTimes(8);
+    expect(mutations.replacePersonalModelIds).toHaveBeenCalledWith(
+      "personal",
+      ["custom", "model.2"],
+      expect.objectContaining({ providerId: "personal" }),
+    );
+    expect(mutations.refresh).toHaveBeenCalledTimes(9);
     expect(view).toEqual(new ProviderSettingsFacade(service).getView());
     await expect(
       facade.savePersonalProviderOverlay("bad", {
@@ -426,6 +434,7 @@ describe("Provider Facades", () => {
       addPersonalModel: vi.fn(async () => undefined),
       renamePersonalModel: vi.fn(async () => undefined),
       deletePersonalModel: vi.fn(async () => undefined),
+      replacePersonalModelIds: vi.fn(async () => undefined),
       setPersonalModelEnabled: vi.fn(async () => undefined),
       savePersonalModelDraft: vi.fn(async () => calls.push("model")),
       refresh: vi.fn(async () => service.getSnapshot()!),
@@ -459,6 +468,7 @@ describe("Provider Facades", () => {
       addPersonalModel: vi.fn(async () => undefined),
       renamePersonalModel: vi.fn(async () => undefined),
       deletePersonalModel: vi.fn(async () => undefined),
+      replacePersonalModelIds: vi.fn(async () => undefined),
       setPersonalModelEnabled: vi.fn(async () => undefined),
       savePersonalModelDraft: vi.fn(async () => undefined),
       refresh: vi.fn(async () => service.getSnapshot()!),
@@ -488,6 +498,7 @@ describe("Provider Facades", () => {
       addPersonalModel: vi.fn(async () => undefined),
       renamePersonalModel: vi.fn(async () => undefined),
       deletePersonalModel: vi.fn(async () => undefined),
+      replacePersonalModelIds: vi.fn(async () => undefined),
       setPersonalModelEnabled: vi.fn(async () => undefined),
       savePersonalModelDraft: vi.fn(async () => undefined),
       refresh: vi.fn(async () => service.getSnapshot()!),

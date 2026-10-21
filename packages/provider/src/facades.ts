@@ -83,6 +83,11 @@ export interface ProviderSettingsMutationTarget {
     modelId: ModelId,
     membership?: ProviderModelMembership,
   ): Promise<unknown>;
+  replacePersonalModelIds(
+    providerId: ProviderId,
+    modelIds: readonly ModelId[],
+    membership?: ProviderModelMembership,
+  ): Promise<unknown>;
   savePersonalModelDraft(
     providerId: ProviderId,
     originalModelId: ModelId,
@@ -390,6 +395,16 @@ export class ProviderSettingsFacade {
   deletePersonalModel(providerId: ProviderId, modelId: ModelId): Promise<ProviderSettingsView> {
     return this.#mutateProvider(providerId, "delete-personal-model", (target) =>
       target.deletePersonalModel(providerId, modelId, this.#modelMembership(providerId)),
+    );
+  }
+
+  /** 一次性收敛 Personal 模型成员（增删同事务），设置页只收到一次变更回流。 */
+  replacePersonalModelIds(
+    providerId: ProviderId,
+    modelIds: readonly ModelId[],
+  ): Promise<ProviderSettingsView> {
+    return this.#mutateProvider(providerId, "replace-model-ids", (target) =>
+      target.replacePersonalModelIds(providerId, modelIds, this.#modelMembership(providerId)),
     );
   }
 

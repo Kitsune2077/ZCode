@@ -518,6 +518,60 @@ export class ProviderConfigService implements ProviderSource<ProviderConfigSnaps
     });
   }
 
+  /**
+   * 一次性收敛 Personal 模型成员：新增补默认配置、消失的删除配置，单事务一次发布。
+   *
+   * 与逐个 add/delete 的差异：设置页只收到一次 onDidChange 回流，不逐条刷新；
+   * 收敛语义与 NewAPI 冷启动同步一致——保留用户已保存的相对顺序（modelOrder 中仍
+   * 存在的成员），新增成员按传入顺序追加。内置成员归 Built-in 层所有，不参与收敛。
+   */
+  async replacePersonalModelIds(
+    providerId: ProviderId,
+    modelIds: readonly ModelId[],
+    membership?: ProviderModelMembership,
+  ): Promise<ProviderConfigLayerSnapshot> {
+    const normalizedProviderId = normalizeId("providerId", providerId);
+    const requestedIds = modelIds.map((id) => normalizeId("modelId", id));
+    const zcodeBuiltin = await this.#zcodeBuiltinSource.read();
+    return this.#updatePersonal((current) => {
+      assertMembershipCurrent(membership, normalizedProviderId, current);
+      const provider = writableProviderOverlay(zcodeBuiltin, current, normalizedProviderId);
+      const builtinModelIds =
+        membership?.inheritedModelIds ??
+        resolveProviderBuiltinModelIds(zcodeBuiltin, current.providers, normalizedProviderId);
+      const builtinSet = new Set(builtinModelIds);
+      const nextModelIds = [...new Set(requestedIds)].filter((id) => !builtinSet.has(id));
+      const currentModelIds = provider.personalModelIds ?? [];
+      const nextSet = new Set(nextModelIds);
+      const addedModelIds = nextModelIds.filter((id) => !currentModelIds.includes(id));
+      const removedModelIds = currentModelIds.filter((id) => !nextSet.has(id));
+      let models = current.models;
+      for (const modelId of removedModelIds) {
+        models = models.deleteExact(normalizedProviderId, modelId);
+      }
+      for (const modelId of addedModelIds) {
+        // 新成员与手动添加同语义：无自定义配置、默认启用。
+        models = models.setExact(
+          normalizedProviderId,
+          modelId,
+          new ModelConfig().overlay(new ModelConfig({ enabled: true })),
+        );
+      }
+      return {
+        providers: current.providers.set(
+          normalizedProviderId,
+          provider
+            .withPersonalModelIds(nextModelIds)
+            .withModelOrder(
+              normalizeModelOrder(builtinModelIds, nextModelIds, provider.modelOrder ?? []),
+            ),
+        ),
+        models,
+        providerOrder: current.providerOrder,
+      };
+    });
+  }
+
   async deletePersonalModel(
     providerId: ProviderId,
     modelId: ModelId,

@@ -506,16 +506,21 @@ export function ProviderModelsSection({
       // 服务端读的是 Personal 层快照，不提交会用旧连接获取。
       await onPrepareFetchModels?.();
       const result = await providerSettingsService.fetchProviderModels({ providerId });
+      // 收敛语义：有增或删都算"已同步"；零差异（重复点击）才提示均已在列表中。
+      const hasChanged = result.addedModelIds.length > 0 || result.removedModelIds.length > 0;
       showFeedback({
         key: feedbackKey,
         message: intl.formatMessage(
           {
-            id:
-              result.addedModelIds.length > 0
-                ? "settings.modelProvider.fetchModelsSuccess"
-                : "settings.modelProvider.fetchModelsNoNew",
+            id: hasChanged
+              ? "settings.modelProvider.fetchModelsSuccess"
+              : "settings.modelProvider.fetchModelsNoNew",
           },
-          { total: String(result.modelIds.length), added: String(result.addedModelIds.length) },
+          {
+            total: String(result.modelIds.length),
+            added: String(result.addedModelIds.length),
+            removed: String(result.removedModelIds.length),
+          },
         ),
         state: "success",
       });

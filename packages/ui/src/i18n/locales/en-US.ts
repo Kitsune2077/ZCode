@@ -4447,7 +4447,7 @@ const enUS: Record<string, string> = {
   "settings.modelProvider.addModel": "Add model",
   "settings.modelProvider.fetchModels": "Fetch models",
   "settings.modelProvider.fetchModelsPending": "Fetching model list…",
-  "settings.modelProvider.fetchModelsSuccess": "Fetched {total} models, added {added} new",
+  "settings.modelProvider.fetchModelsSuccess": "Synced {total} models: {added} added, {removed} removed",
   "settings.modelProvider.fetchModelsNoNew": "{total} models on the server, all already listed",
   "settings.modelProvider.fetchModelsMissingConnection": "Save the base URL and API key before fetching models",
   "settings.modelProvider.fetchModelsFailure": "Failed to fetch models: {error}",

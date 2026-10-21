@@ -108,7 +108,8 @@ export interface IProviderSettingsService {
   syncNewApiModels(input: NewApiModelSyncInput): Promise<NewApiModelSyncResult>;
   /**
    * 「自动获取模型」：用个人 Provider 已保存的 baseUrl + API Key 调 OpenAI 兼容的
-   * `GET /v1/models`，把服务端模型 id 追加进本地列表（只增不删，已存在跳过）。
+   * `GET /v1/models`，把本地模型列表单事务收敛到服务端目录（保留既有顺序、
+   * 新增按服务端顺序追加、失效模型一并移除）。
    * 连接信息未保存或服务端返回空列表时抛带稳定 code 的 NewApiProvisioningError。
    */
   fetchProviderModels(input: ProviderModelFetchInput): Promise<ProviderModelFetchResult>;
@@ -357,10 +358,13 @@ export function createProviderSettingsService(
               personalModelIds: personal?.personalModelIds ?? [],
             };
           },
-          // 与手动添加同语义：无自定义配置、默认启用，addPersonalModel 内部追加
-          // 并保持用户已保存的顺序。
-          addPersonalModel: async (providerId, modelId) => {
-            await facade.addPersonalModel(providerId, modelId, new ModelConfig());
+          // 与手动添加同语义：无自定义配置、默认启用。整份收敛名单在
+          // replacePersonalModelIds 的单事务内写入，设置页只收到一次 onDidChange 回流。
+          replacePersonalModelIds: async (providerId, modelIds) => {
+            await facade.replacePersonalModelIds(
+              providerId,
+              modelIds,
+            );
           },
         },
         { fetch: hostFetch ?? globalThis.fetch },

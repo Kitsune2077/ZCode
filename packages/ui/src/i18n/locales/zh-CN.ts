@@ -4155,7 +4155,7 @@ const zhCN: Record<string, string> = {
   "settings.modelProvider.addModel": "添加模型",
   "settings.modelProvider.fetchModels": "自动获取模型",
   "settings.modelProvider.fetchModelsPending": "正在获取模型列表…",
-  "settings.modelProvider.fetchModelsSuccess": "已获取 {total} 个模型，新增 {added} 个",
+  "settings.modelProvider.fetchModelsSuccess": "已同步服务端 {total} 个模型，新增 {added} 个，移除 {removed} 个",
   "settings.modelProvider.fetchModelsNoNew": "服务端共 {total} 个模型，均已在列表中",
   "settings.modelProvider.fetchModelsMissingConnection": "请先填写并保存 API 地址与 API Key，再自动获取模型",
   "settings.modelProvider.fetchModelsFailure": "获取模型列表失败：{error}",
