@@ -108,9 +108,10 @@ export interface IProviderSettingsService {
   syncNewApiModels(input: NewApiModelSyncInput): Promise<NewApiModelSyncResult>;
   /**
    * 「自动获取模型」：用个人 Provider 已保存的 baseUrl + API Key 调 OpenAI 兼容的
-   * `GET /v1/models`，把本地模型列表单事务收敛到服务端目录（保留既有顺序、
-   * 新增按服务端顺序追加、失效模型一并移除）。
-   * 连接信息未保存或服务端返回空列表时抛带稳定 code 的 NewApiProvisioningError。
+   * `GET /v1/models`，把本地模型列表单事务收敛到服务端**会话模型**目录（与 NewAPI
+   * 登录/冷启动同步同一过滤规则：embedding/rerank/图像/音频/视频等非对话模型被排除；
+   * 保留既有顺序、新增按服务端顺序追加、失效模型一并移除）。
+   * 连接信息未保存或服务端无会话模型时抛带稳定 code 的 NewApiProvisioningError。
    */
   fetchProviderModels(input: ProviderModelFetchInput): Promise<ProviderModelFetchResult>;
   /** 读取 NewAPI 账号信息与近 7 天用量趋势，供左下角身份与用量页展示。 */

@@ -12,6 +12,12 @@ API Key** 调 `GET {apiRoot}/v1/models`，把本地模型列表**一次性收敛
   （否则点击只会得到"先保存连接"的前置条件报错）；
 - **单事务收敛**：新增与移除在**一次**领域写入内完成（`replacePersonalModelIds`），
   设置页只收到一次 `onDidChange` 回流，列表不再逐条刷新；
+- **只导入会话模型**：与 NewAPI 登录导入/冷启动同步同一过滤规则
+  （`filterNewApiChatModels`）——`/api/pricing` 的 `supported_endpoint_types` 是权威
+  信号（best-effort 读取；非 NewAPI 部署没有该接口，读不到时退回按模型名兜底判定
+  embedding/rerank/图像/音频/视频等已知非对话家族）；被过滤的模型不进列表、不计入
+  收敛基准，仅在结果里以 `filteredModelIds` 供观测；全部被过滤或服务端空列表同样
+  视为异常（`no-chat-models`），不清空本地列表；
 - **收敛语义与 NewAPI 冷启动同步一致**：用户已保存的相对顺序保留，新增按服务端返回
   顺序追加；服务端目录里消失的 id **一并移除**（连同其个人模型配置）。
   （2026-10-21 用户确认改为此语义；此前"只增不删"规则废止——失效模型长期残留
@@ -30,8 +36,9 @@ API Key** 调 `GET {apiRoot}/v1/models`，把本地模型列表**一次性收敛
 | 写入 | `facade.replacePersonalModelIds` | 单事务收敛 Personal 成员：新成员补默认配置、消失成员删配置；View 经一次 `onDidChange` 回流设置页 |
 | 网络 | Host 注入的 `hostFetch` | 复用 `newApiHttp` 请求层：30s 超时、代理/CA、NewAPI 信封与裸 OpenAI 响应兼容 |
 
-结果契约：`{ modelIds, addedModelIds, removedModelIds }`，`added` 按服务端顺序、
-`removed` 按本地顺序。
+结果契约：`{ modelIds, addedModelIds, removedModelIds, filteredModelIds }`，
+`added` 按服务端顺序、`removed` 按本地顺序；`modelIds` 与收敛基准均为**会话模型**
+（非会话模型已在 `filteredModelIds` 中排除）。
 
 错误契约：连接未保存（缺 baseUrl 或 API Key）抛
 `NewApiProvisioningError("provider-connection-missing")`（RPC passthrough 保留 `code`），
@@ -56,8 +63,12 @@ baseUrl 归一化复用 `normalizeNewApiApiRoot`（剥尾部 `/v1` 后拼 `/v1/m
 
 ## 4. 验收场景
 
-- 自定义供应商已保存 baseUrl+Key → 点击 → 列表一次回流为服务端目录
-  （新增追加、失效移除），重复点击零写入（零差异提示）；
+- 自定义供应商已保存 baseUrl+Key → 点击 → 列表一次回流为服务端**会话模型**目录
+  （embedding/rerank/图像/音频/视频模型被过滤不入列；新增追加、失效移除），
+  重复点击零写入（零差异提示）；
+- 服务端模型名不认识时默认保留（漏一个非对话模型只多一个选项，
+  误删一个对话模型会直接少能力）；`/api/pricing` 明确标注非对话类型的，
+  无论名字是否命中都过滤；
 - 仅输入未保存（未 blur）→ 点击 → 草稿先自动保存再获取，读到的是最新输入；
 - 缺 baseUrl 或 Key → 提示先保存连接，不发请求；
 - 服务端 401/网络失败/非 JSON → 失败横幅展示原始错误，本地列表不变；
