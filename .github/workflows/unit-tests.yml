@@ -51,6 +51,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Linux system test dependencies
+        # 两类单测对 runner 系统环境有硬性前提，GitHub ubuntu-latest 已预装（apt 命中
+        # 已装包为 no-op），精简自托管镜像（如 Gitea runner 的 Debian 容器）缺了会整批失败：
+        #   1. procps：processTreeTerminator / zcodeStdioTransport 靠 `ps` 发现 detached
+        #      后代进程；缺失时进程树回收单测 5 例全挂（grandchild 无法被回收）。
+        #   2. Electron 运行库：desktopAgentBytecode 直接执行 node_modules 里的 electron
+        #      二进制；缺 libnspr4 等共享库时 7 例全挂（error while loading shared libraries）。
+        # 轻量 t64 改名（Ubuntu noble）分两段尝试：经典包名优先（jammy/focal/debian 及
+        # 提供 Provides 的 noble），失败再试 t64 包名；仍失败退回仅必装集，让缺口在
+        # 具体用例里显式暴露而不是静默跳过。
+        if: runner.os == 'Linux'
+        run: |
+          if ! command -v apt-get >/dev/null 2>&1; then
+            echo "仅支持 apt 系镜像：请先安装 procps 与 Electron 运行库（libnspr4/libnss3 等）"
+            exit 1
+          fi
+          SUDO=""
+          if [ "$(id -u)" != "0" ]; then
+            SUDO="sudo"
+          fi
+          $SUDO apt-get update -qq
+          COMMON_PKGS="procps libnspr4 libnss3 libdrm2 libxkbcommon0 libx11-6 libx11-xcb1 \
+            libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxi6 libxrandr2 \
+            libxtst6 libgbm1"
+          CLASSIC_PKGS="libasound2 libatk1.0-0 libatk-bridge2.0-0 libcups2 libgtk-3-0 \
+            libglib2.0-0 libpango-1.0-0 libcairo2"
+          T64_PKGS="libasound2t64 libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 \
+            libgtk-3-0t64 libglib2.0-0t64 libpango-1.0-0t64 libcairo2t64"
+          $SUDO apt-get install -y --no-install-recommends $COMMON_PKGS $CLASSIC_PKGS ||
+            $SUDO apt-get install -y --no-install-recommends $COMMON_PKGS $T64_PKGS ||
+            $SUDO apt-get install -y --no-install-recommends $COMMON_PKGS
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -83,4 +115,11 @@ jobs:
         run: pnpm lint
 
       - name: Unit tests
+        env:
+          # Bugfix: GitHub runner 上 vitest worker 线程继承 job 级 8GB 堆上限，4 个并发
+          # worker 各自可涨到 8GB，16GB runner 内存互相挤压；实测一次全量跑（20061 用例
+          # 全绿）仍有 worker 触顶被 Node 以 ERR_WORKER_OUT_OF_MEMORY 终止，整场判失败。
+          # 步骤级降到 4GB：V8 在涨穿前提前 GC，物理内存峰值同步减半。typecheck / lint
+          # 仍用 job 级 8GB（tsc -b 全仓构建需要，见上方注释）。
+          NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm test:unit

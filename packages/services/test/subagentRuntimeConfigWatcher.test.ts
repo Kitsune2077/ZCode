@@ -428,7 +428,10 @@ describe("native subagent Host watchers", () => {
     await f.both({ kind: "ready", profiles: [] });
   }, 15000);
 
-  it.skipIf(process.platform === "win32")(
+  // root 下 chmod 0o200/0 对读写的限制不生效，两个「权限拒绝」场景都制造不出来
+  //（Gitea root runner 实测：readRuntimeConfig 返回 ready、updateAgent 正常成功），
+  // 与 Windows 一并跳过，Linux/macOS 非 root 环境继续覆盖真实权限路径。
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
     "publishes initial fallback when state cannot be read, including its migration",
     async () => {
       const homeDir = await mkdtemp(join(tmpdir(), "subagent-initial-state-"));
@@ -446,7 +449,7 @@ describe("native subagent Host watchers", () => {
     },
   );
 
-  it.skipIf(process.platform === "win32")(
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
     "does not publish a write rejected before disk mutation, but consumes a partially failed rename",
     async () => {
       const f = await pair();

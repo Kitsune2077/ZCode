@@ -15,12 +15,15 @@ const fileService = createFileService();
 describe.each([null, 0o000, 0o400, 0o100])(
   "远程工作区目录 admission，权限 %s（null 为删除）",
   (permissions) => {
-    it.each(["manual", "automatic"] as const)(
+    // Bugfix: vitest 4 的 it.each 回调不注入 TestContext（第二参恒为 undefined），
+    // root 下 chmod 写穿透本应跳过，context.skip() 却直接 TypeError（Gitea root runner
+    // 上 6 例全挂，GitHub 非 root 不走该分支未暴露）。改为收集期 skipIf：
+    // Windows 与 root（uid 0）不再执行真实权限用例，permissions=null 的删除场景仍全平台覆盖。
+    it.skipIf(
+      permissions !== null && (process.platform === "win32" || process.getuid?.() === 0),
+    ).each(["manual", "automatic"] as const)(
       "%s：单个目录失效只拒绝该项目，修复后可以重连",
-      async (mode, context) => {
-        if (permissions !== null && (process.platform === "win32" || process.getuid?.() === 0)) {
-          context.skip();
-        }
+      async (mode) => {
         const root = await realpath(await mkdtemp(join(tmpdir(), "zcode-workspace-admission-")));
         const paths = [1, 2, 3].map((n) => join(root, `workspace-${n}`));
         const closedListeners = new Set<

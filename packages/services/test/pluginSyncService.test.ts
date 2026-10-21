@@ -249,7 +249,9 @@ describe("plugin sync service", () => {
   });
 
   it("rolls back an inline plugin directory when config registration fails", async () => {
-    if (process.platform === "win32") {
+    // root 下 chmod 0o555 不限制写入，制造不出「config 注册失败」场景（Gitea root
+    // runner 实测返回 synced 而非 failed），与 Windows 一并跳过。
+    if (process.platform === "win32" || process.getuid?.() === 0) {
       return;
     }
     const localHome = makeHome();

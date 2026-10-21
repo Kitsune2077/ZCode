@@ -288,8 +288,16 @@ describe("Supervisor lifecycle", () => {
     ).rejects.toThrow(/timed out/i);
     await waitForState(supervisor, "ready");
     expect(supervisor.status().pid).toBe(42);
-    await new Promise<void>((resolve) => setTimeout(resolve, 100));
-    await supervisor.stop();
+    // Bugfix: 慢速 runner 上 update 生命周期（120ms ready 超时 + 回滚收尾）可能晚于
+    // 固定等待仍未结束，stop 命中 retryable 的 operation-in-progress gate（Gitea
+    // runner 实测抛 ControlRequestError）。gate 在任何副作用前抛出，轮询重试安全；
+    // update 收尾后 stop 即成功，超时仍按真实失败处理。
+    await vi.waitFor(
+      async () => {
+        await supervisor.stop();
+      },
+      { timeout: 5_000, interval: 20 },
+    );
   });
 
   it("launches the recovered release after claiming a stale startup lock", async () => {

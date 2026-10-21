@@ -203,6 +203,14 @@ describe("desktop Linux deep link registration helpers", () => {
 
     try {
       mkdirSync(badIconSourcePath, { recursive: true });
+      // Bugfix: 坏图标源用「目录」制造 copyFileSync 失败，但 Linux 内核 <5.19 的
+      // copy_file_range 对目录源不返回 EISDIR 而是成功拷 0 字节，安装被误判成功、
+      // 不产生降级告警（Gitea 老 kernel runner 实测）。预写目标文件让 copyFileIfChanged
+      // 走 readFileSync(源) 分支：read(2) 对目录在所有平台/内核都返回 EISDIR，失败确定。
+      const dataDir = join(homeDir, ".local", "share");
+      const iconTargetPath = join(dataDir, "icons", "hicolor", "512x512", "apps", "zcode.png");
+      mkdirSync(dirname(iconTargetPath), { recursive: true });
+      writeFileSync(iconTargetPath, "stale-icon");
       registerLinuxDeepLinkProtocol({
         executablePath: "/tmp/.mount_ZCode/zcode",
         homeDir,
@@ -598,8 +606,9 @@ describe("desktop Linux deep link registration helpers", () => {
 
   // Bugfix：本用例靠 chmod 0o500 去掉目录写权限让 rmSync 抛 EPERM，Windows 的 chmod
   // 对目录是 no-op，删除照样成功，制造不出"删除失败"场景，本地 Windows 上必挂；
-  // 降级路径由 Linux/macOS（含 CI）继续覆盖，Windows 跳过。
-  it.skipIf(process.platform === "win32")(
+  // root（uid 0）不受写权限约束同样制造不出失败场景（Gitea root runner 实测）。
+  // 降级路径由 Linux/macOS 非 root（含 GitHub CI）继续覆盖，其余环境跳过。
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
     "continues protocol registration when removing the stale entry fails",
     async () => {
       const { registerLinuxDeepLinkProtocol } =

@@ -1271,13 +1271,18 @@ describe("SubagentsSection", () => {
     );
 
     await renderInteractiveSubagentsSection();
-    await waitFor(() => {
-      expect(
-        capturedModelConfigSelects.some(
-          (candidate) => candidate.normalizedValue === "custom:custom-openai:glm-5.2",
-        ),
-      ).toBe(true);
-    });
+    // Bugfix: 慢速 CI runner 高负载下 React 重渲染可能超过 waitFor 默认 1s（Gitea
+    // runner 实测乐观渲染断言超时挂掉，GitHub/本地均绿），本用例三处 waitFor 放宽到 5s。
+    await waitFor(
+      () => {
+        expect(
+          capturedModelConfigSelects.some(
+            (candidate) => candidate.normalizedValue === "custom:custom-openai:glm-5.2",
+          ),
+        ).toBe(true);
+      },
+      { timeout: 5_000 },
+    );
 
     const initialPicker = capturedModelConfigSelects.findLast(
       (candidate) => candidate.normalizedValue === "custom:custom-openai:glm-5.2",
@@ -1288,13 +1293,16 @@ describe("SubagentsSection", () => {
     act(() => {
       (onModelValueChange as (value: string) => void)("custom:custom-openai:gpt-5.4");
     });
-    await waitFor(() => {
-      expect(
-        capturedModelConfigSelects
-          .slice(beforeOptimisticRender)
-          .some((candidate) => candidate.normalizedValue === "custom:custom-openai:gpt-5.4"),
-      ).toBe(true);
-    });
+    await waitFor(
+      () => {
+        expect(
+          capturedModelConfigSelects
+            .slice(beforeOptimisticRender)
+            .some((candidate) => candidate.normalizedValue === "custom:custom-openai:gpt-5.4"),
+        ).toBe(true);
+      },
+      { timeout: 5_000 },
+    );
 
     expect(rejectWrite).toBeTypeOf("function");
     const beforeRollbackRender = capturedModelConfigSelects.length;
@@ -1304,18 +1312,21 @@ describe("SubagentsSection", () => {
       await Promise.resolve();
     });
 
-    await waitFor(() => {
-      expect(
-        capturedModelConfigSelects
-          .slice(beforeRollbackRender)
-          .some((candidate) => candidate.normalizedValue === "custom:custom-openai:glm-5.2"),
-      ).toBe(true);
-      expect(
-        capturedThoughtLevelControls
-          .slice(beforeThoughtRollbackRender)
-          .some((candidate) => candidate.option?.currentValue === "high"),
-      ).toBe(true);
-    });
+    await waitFor(
+      () => {
+        expect(
+          capturedModelConfigSelects
+            .slice(beforeRollbackRender)
+            .some((candidate) => candidate.normalizedValue === "custom:custom-openai:glm-5.2"),
+        ).toBe(true);
+        expect(
+          capturedThoughtLevelControls
+            .slice(beforeThoughtRollbackRender)
+            .some((candidate) => candidate.option?.currentValue === "high"),
+        ).toBe(true);
+      },
+      { timeout: 5_000 },
+    );
   });
 
   it("keeps the committed built-in config when the follow-up refresh fails", async () => {
