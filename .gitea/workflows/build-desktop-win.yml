@@ -1,0 +1,264 @@
+# 在 Linux runner 上交叉构建 Windows 桌面包（NSIS 安装包 + zip 便携包）。
+#
+# 为什么能交叉构建：
+#   - 仓库打包链本身就是 electron-builder（pnpm bundle:desktop -- --os win --arch x64），
+#     target 由 ZCODE_TARGET_OS/ZCODE_TARGET_ARCH 贯穿到资产准备与 builder，
+#     与宿主平台无关；非 Windows 宿主上签名链路自动关闭（无证书也不需要 signtool）。
+#   - 唯一的宿主依赖是 Wine：electron-builder 在 Linux 上用 wine 运行 rcedit 给
+#     ZCode.exe 写入图标/版本资源（app-builder 二进制内置 wine/wine64 编排）。
+#     NSIS 与 zip 目标用的是 Linux 原生工具链，不需要 Wine。
+#   - 平台二进制资产的准备全部可离线/走镜像：
+#     native-search（ugrep/ripgrep）解包仓库内置归档；lark-cli 优先 npmmirror
+#     binary 镜像（GitHub 仅兜底）；node-pty 的 win32 预编译随 npm 主包分发。
+#
+# 网络约束（自托管 runner 直连 GitHub 不稳）：Electron runtime、electron-builder
+# 构建期工具（winCodeSign/rcedit、NSIS、nsis-resources）、npm registry 全部指到
+# npmmirror，与 unit-tests.yml 的 ELECTRON_MIRROR 修复同一思路。
+#
+# 触发：推 v* tag，或手动 workflow_dispatch（可指定已有 tag 发布 Release）。
+# 不发布时产物以 workflow artifacts 形式保留，可在 Gitea 的 Actions 运行页下载。
+#
+# 资源要求：磁盘 ≥20GB（node_modules + win-unpacked + 缓存）、内存 ≥8GB。
+name: Build desktop (Windows x64)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 发布到该 tag 的 Release（留空则只产出 workflow artifacts，不建 Release）
+        required: false
+        type: string
+      lark_cli_version:
+        description: 钉死内置飞书 CLI 版本（留空跟随 npm latest）
+        required: false
+        type: string
+  push:
+    tags:
+      - "v*"
+
+# Release 需要写权限；其余步骤只要读。
+permissions:
+  contents: read
+
+# 同一 ref 同时只跑一条流水线，避免两个 Release 互相覆盖附件。
+concurrency:
+  group: build-desktop-win-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Windows x64 (cross-build on Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    env:
+      # 与 mise.toml / unit-tests.yml 一致：Electron runtime 与 headers 走镜像源。
+      ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+      # electron-builder 构建期工具（winCodeSign 的 rcedit、NSIS、nsis-resources）
+      # 官方源在 GitHub Releases，自托管 runner 直连经常 socket hang up；
+      # registry.npmmirror 的 binary 镜像同名同内容（bundle 脚本的回退目标也是它）。
+      ELECTRON_BUILDER_BINARIES_MIRROR: https://registry.npmmirror.com/-/binary/electron-builder-binaries/
+      # 仅提速依赖安装；unit-tests.yml 未设置也能跑通，镜像异常时可删除。
+      NPM_CONFIG_REGISTRY: https://registry.npmmirror.com
+      HUSKY: "0"
+      ZCODE_ENV: production
+      # 与 GitHub build-desktop.yml 的 Windows 腿一致：Windows 产物默认不带
+      # mock-cdn 远端工作区预编译资源。
+      ZCODE_SKIP_REMOTE_ASSETS: "1"
+      # pnpm build 的 tsup/tsc 环节在默认 2GB 堆下会 OOM（与 unit-tests.yml 同因）。
+      NODE_OPTIONS: --max-old-space-size=8192
+      ZCODE_LARK_CLI_VERSION: ${{ inputs.lark_cli_version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          # 与 mise.toml / package.json 的 packageManager 保持一致。
+          version: 10.33.2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # 与 mise.toml 的 node 版本保持一致；npm 缓存交给 pnpm store。
+          node-version: 24.14.0
+          cache: pnpm
+
+      - name: Cache Electron and electron-builder binaries
+        uses: actions/cache@v4
+        with:
+          # Linux 宿主的两份大头缓存：Electron runtime（win32-x64）与
+          # builder 工具（NSIS/winCodeSign）。交叉构建用的也是这两个目录。
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: electron-win-cross-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            electron-win-cross-
+
+      - name: Install Wine (Windows exe resource editor)
+        # Linux 上 electron-builder 经 app-builder 以 wine 运行 rcedit，给
+        # ZCode.exe 写入图标/版本信息；不出签名包，因此不需要 signtool/证书。
+        # 镜像里可能预装 wine；app-builder 会依次找 `wine`/`wine64`，
+        # 只有 wine64 时补一个软链兜底。
+        run: |
+          set -euo pipefail
+          if ! command -v wine >/dev/null 2>&1 && ! command -v wine64 >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends wine wine64
+          fi
+          if ! command -v wine >/dev/null 2>&1; then
+            sudo ln -sf "$(command -v wine64)" /usr/local/bin/wine
+          fi
+          wine64 --version 2>/dev/null || wine --version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Windows installer and portable zip
+        # 产物：ZCode-<version>-win-x64.exe（NSIS 安装包）与
+        # ZCode-<version>-win-x64.zip（便携包，解压即用，数据落 exe 旁 .zcode）。
+        # 脚本内部已带 electron-builder 下载失败重试与镜像回退。
+        run: pnpm bundle:desktop -- --os win --arch x64
+
+      - name: Collect release info
+        # 与 build-desktop.yml 同一份脚本；写进 dist 让 artifact 内路径保持扁平。
+        run: >-
+          node scripts/ci/desktop-release-info.mjs collect
+          --dist-dir packages/desktop/dist
+          --os win
+          --arch x64
+          --out packages/desktop/dist/build-info-win-x64.json
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: zcode-win-x64
+          # 只挑主产物、blockmap 与 build-info；win-unpacked 中间目录体积巨大且无需分发。
+          path: |
+            packages/desktop/dist/*.exe
+            packages/desktop/dist/*.zip
+            packages/desktop/dist/*.blockmap
+            packages/desktop/dist/build-info-*.json
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    name: Publish release (Gitea API)
+    needs: build
+    # tag 推送，或手动指定 release_tag 时才发布；否则只留 workflow artifacts。
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+
+      - name: Download installers
+        uses: actions/download-artifact@v4
+        with:
+          # 合并到一个目录，render 一次读取 build-info。
+          merge-multiple: true
+          path: release-assets
+
+      - name: Flatten artifacts
+        # upload-artifact 会保留「本次所有上传路径的公共祖先」之下的目录结构，
+        # 安装包会落在 release-assets/packages/desktop/dist/；先摊平再发布。
+        run: |
+          set -euo pipefail
+          mkdir -p release-flat
+
+          duplicates=$(find release-assets -type f -printf '%f\n' | sort | uniq -d)
+          if [ -n "$duplicates" ]; then
+            echo "::error::资产文件名重复，摊平会互相覆盖：$duplicates"
+            exit 1
+          fi
+
+          find release-assets -type f -print0 | xargs -0 -I{} mv {} release-flat/
+          echo "摊平后的资产："
+          find release-flat -maxdepth 1 -type f -printf '  %f\n' | sort
+
+      - name: Render release notes
+        run: |
+          node scripts/ci/desktop-release-info.mjs render \
+            --info-dir release-flat \
+            --out release-notes.md
+          cat release-notes.md
+
+      - name: Publish to Gitea Release
+        # Gitea 没有 gh CLI：走 Gitea 原生 API（创建/复用 Release + 传附件 + 更新说明）。
+        # 默认用 runner 自动注入的 GITHUB_TOKEN；若仓库配置了更强权限的
+        # RELEASE_TOKEN secret 则优先使用。
+        env:
+          GITEA_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          api="${GITHUB_API_URL:-${GITHUB_SERVER_URL%/}/api/v1}"
+          repo="$GITHUB_REPOSITORY"
+          tag="${{ inputs.release_tag || github.ref_name }}"
+          auth="Authorization: token $GITEA_TOKEN"
+
+          # 按 tag 查 Release：已存在则复用，否则创建（body 用 node 做 JSON 转义）。
+          http=$(curl -s -o release.json -w '%{http_code}' -H "$auth" \
+            "$api/repos/$repo/releases/tags/$tag" || true)
+          if [ "$http" = "200" ]; then
+            release_id=$(node -p "JSON.parse(require('fs').readFileSync('release.json','utf8')).id")
+            echo "复用已有 Release #$release_id"
+          else
+            payload=$(node -e '
+              const fs = require("node:fs");
+              const pkg = require("./package.json");
+              process.stdout.write(JSON.stringify({
+                tag_name: process.argv[1],
+                name: `ZCode ${pkg.version}`,
+                body: fs.readFileSync("release-notes.md", "utf8"),
+              }));
+            ' "$tag")
+            release_id=$(printf '%s' "$payload" \
+              | curl -sf -X POST -H "$auth" -H "Content-Type: application/json" -d @- \
+                  "$api/repos/$repo/releases" \
+              | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>process.stdout.write(String(JSON.parse(d).id)))')
+            echo "创建 Release #$release_id"
+          fi
+
+          # 逐个上传安装包/blockmap；同名附件先删后传，保证重复构建可覆盖。
+          find release-flat -maxdepth 1 -type f ! -name '*.json' ! -name 'release-notes.md' | sort | while read -r file; do
+            name=$(basename "$file")
+            assets=$(curl -sf -H "$auth" "$api/repos/$repo/releases/$release_id/assets")
+            asset_id=$(printf '%s' "$assets" | node -e '
+              let d = "";
+              process.stdin.on("data", (c) => (d += c)).on("end", () => {
+                const wanted = process.argv[1];
+                const hit = JSON.parse(d).find((asset) => asset.name === wanted);
+                process.stdout.write(hit ? String(hit.id) : "");
+              });
+            ' "$name")
+            if [ -n "$asset_id" ]; then
+              curl -sf -X DELETE -H "$auth" \
+                "$api/repos/$repo/releases/$release_id/assets/$asset_id" >/dev/null
+              echo "删除旧附件 $name"
+            fi
+            curl -sf -X POST -H "$auth" -F "attachment=@$file" \
+              "$api/repos/$repo/releases/$release_id/assets?name=$name" >/dev/null
+            echo "已上传 $name"
+          done
+
+          # 说明文件随每次构建刷新。
+          notes=$(node -e '
+            const fs = require("node:fs");
+            process.stdout.write(JSON.stringify({
+              body: fs.readFileSync("release-notes.md", "utf8"),
+            }));
+          ')
+          printf '%s' "$notes" \
+            | curl -sf -X PATCH -H "$auth" -H "Content-Type: application/json" -d @- \
+                "$api/repos/$repo/releases/$release_id" >/dev/null
+          echo "Release $tag 发布完成：$GITHUB_SERVER_URL/$repo/releases/tag/$tag"
