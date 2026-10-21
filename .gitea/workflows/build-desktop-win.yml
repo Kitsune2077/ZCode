@@ -100,18 +100,35 @@ jobs:
       - name: Install Wine (Windows exe resource editor)
         # Linux 上 electron-builder 经 app-builder 以 wine 运行 rcedit，给
         # ZCode.exe 写入图标/版本信息；不出签名包，因此不需要 signtool/证书。
-        # 镜像里可能预装 wine；app-builder 会依次找 `wine`/`wine64`，
+        # 首跑实测的两个坑：
+        #   1) app-builder 固定用 32 位的 rcedit-ia32.exe——纯 64 位 wine 跑不了
+        #      32 位 PE（报 "wine32 is missing"），必须启用 i386 multiarch 并安装
+        #      wine32，这也是 wine 报错信息给出的官方指引；
+        #   2) runner 可能以 root 运行且 sudo 不一定存在，命令按需加 sudo。
+        # 镜像里可能已预装 wine；app-builder 会依次找 `wine`/`wine64`，
         # 只有 wine64 时补一个软链兜底。
         run: |
           set -euo pipefail
+          SUDO=""
+          if [ "$(id -u)" != "0" ]; then
+            SUDO="sudo"
+          fi
           if ! command -v wine >/dev/null 2>&1 && ! command -v wine64 >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends wine wine64
+            $SUDO apt-get update
+            $SUDO apt-get install -y --no-install-recommends wine wine64
+          fi
+          if ! dpkg --print-foreign-architectures 2>/dev/null | grep -qx i386; then
+            $SUDO dpkg --add-architecture i386
+            $SUDO apt-get update
+          fi
+          if ! dpkg-query -W -f='${Status}' 'wine32:i386' 2>/dev/null | grep -q 'install ok installed'; then
+            $SUDO apt-get install -y --no-install-recommends wine32:i386 \
+              || $SUDO apt-get install -y --no-install-recommends wine32
           fi
           if ! command -v wine >/dev/null 2>&1; then
-            sudo ln -sf "$(command -v wine64)" /usr/local/bin/wine
+            $SUDO ln -sf "$(command -v wine64)" /usr/local/bin/wine
           fi
-          wine64 --version 2>/dev/null || wine --version
+          wine --version || wine64 --version
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
