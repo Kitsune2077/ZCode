@@ -24,6 +24,7 @@ import { dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { downloadWithRetry } from "./download-file.mjs";
+import { extractPrebuiltArchive } from "./prebuilt-binary-extract.mjs";
 import { runCommand } from "./spawn-command.mjs";
 import { getTargetPlatform } from "../packages/desktop/scripts/target-platform.mjs";
 
@@ -133,7 +134,18 @@ function sha256File(path) {
 function extractBinary(archiveName, workDir, outputDir, binaryFileName) {
   const extractDir = join(workDir, "extract");
   mkdirSync(extractDir, { recursive: true });
-  runCommand("tar", ["-xf", archiveName, "-C", extractDir.replaceAll("\\", "/")], { cwd: workDir });
+  // Bugfix：解压此前统一走 `tar -xf`。Windows/macOS 的 bsdtar 能按内容识别 zip，
+  // Linux 的 GNU tar 不支持 zip，Linux runner 交叉构建 Windows 包时解压
+  // lark-cli-*.zip 直接失败（Gitea 首跑实测：tar 报 "This does not look like a
+  // tar archive"）。改走与 native-search 准备相同的平台分发解压 extractPrebuiltArchive：
+  // zip 在 POSIX 宿主用 unzip、win32 宿主用 Expand-Archive；tar.gz 仍走 tar，
+  // 并保留其对 Windows 盘符冒号 / MSYS 路径转换的兼容处理。
+  extractPrebuiltArchive({
+    archiveExt: archiveName.endsWith(".zip") ? "zip" : "tar.gz",
+    archivePath: join(workDir, archiveName),
+    extractDir,
+    cwd: workDir,
+  });
 
   const binaryPath = join(extractDir, binaryFileName);
   if (!existsSync(binaryPath)) {
