@@ -102,6 +102,7 @@ import {
   initAutoUpdater,
   isAutoUpdateDisabledByRuntimeSwitch,
   onAutoUpdaterStateChanged,
+  refreshAutoUpdaterFeedSettings,
   refreshAutoUpdaterReleaseChannel,
   resolveUpdateFeedSourceFromStartupConfig,
   syncAutoUpdaterStateToWindow,
@@ -1140,6 +1141,13 @@ function syncImmediateAppSettings(patch: ReturnType<typeof appSettingsPatchSchem
       patch.receivePreviewUpdates,
       "settings receivePreviewUpdates changed",
     );
+  }
+
+  if (patch.customUpdateSource !== undefined) {
+    // 自定义更新源：renderer 写入后借同一即时通道热切换 feed provider 并立即复查。
+    // normalizeSettingsPatch 已把空串归一成 undefined（= 回到官方源），因此能区分
+    // "未动该字段"（undefined 且 key 不在 patch）与"清空"（key 在 patch 且为 undefined）。
+    void refreshAutoUpdaterFeedSettings("settings customUpdateSource changed");
   }
 
   if (patch.shortcutBindings !== undefined) {
@@ -2236,6 +2244,9 @@ app.whenReady().then(async () => {
   if (isPortableWindowsRuntime) {
     logger.info("[auto-update] disabled for windows portable runtime");
   }
+  // 启动期源快照：provider 装配保持同步语义；之后的变更走 syncImmediateAppSettings 热切换。
+  const startupCustomUpdateSource =
+    (await mainSettingService.get().catch(() => undefined))?.customUpdateSource?.trim() || undefined;
   void initAutoUpdater({
     enabled:
       ZCODE_PRODUCT_FLAVOR === "production" &&
@@ -2250,6 +2261,7 @@ app.whenReady().then(async () => {
       }
     },
     settingService: mainSettingService,
+    customUpdateSource: startupCustomUpdateSource,
     locale: currentApplicationLocale,
     deviceMid,
     resolveEndpointOrigin: resolveCurrentZCodeEndpointOrigin,

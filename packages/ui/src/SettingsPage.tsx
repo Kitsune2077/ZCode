@@ -828,6 +828,7 @@ export function SettingsPage({
   ] = useState(true);
   const [receivePreviewUpdates, setReceivePreviewUpdates] = useState(false);
   const [autoDownloadAndInstallUpdates, setAutoDownloadAndInstallUpdates] = useState(false);
+  const [customUpdateSource, setCustomUpdateSource] = useState("");
   const [messageStreamShowReasoning, setMessageStreamShowReasoning] = useState(true);
   const [messageStreamShowTodos, setMessageStreamShowTodos] = useState(false);
   const [toolGroupingExploreEnabled, setToolGroupingExploreEnabled] = useState(true);
@@ -978,6 +979,7 @@ export function SettingsPage({
     setZCodeInteractionBehavior(sharedSettings.zcodeInteractionBehavior ?? "queue");
     setReceivePreviewUpdates(sharedSettings.receivePreviewUpdates ?? false);
     setAutoDownloadAndInstallUpdates(sharedSettings.autoDownloadAndInstallUpdates ?? false);
+    setCustomUpdateSource(sharedSettings.customUpdateSource ?? "");
   }, [sharedSettings]);
   const handleTerminalInheritSystemProfileChange = useCallback(
     async (enabled: boolean) => {
@@ -1333,6 +1335,25 @@ export function SettingsPage({
         },
       });
       setAutoDownloadAndInstallUpdates(enabled);
+    },
+    [updateSharedSettings],
+  );
+  const handleCustomUpdateSourceChange = useCallback(
+    async (source: string) => {
+      // 清空必须传空串：normalizeSettingsPatch 把空串归一成删除（= 回到官方源），
+      // 且 useSettingService.update 会把原始 patch 经 syncAppSettings 送到 main 触发热切换。
+      const normalizedSource = source.trim();
+      await runSettingsActionAsync({
+        featureId: "settings.update",
+        action: "save_custom_update_source",
+        trigger: "button",
+        operation: () => updateSharedSettings({ customUpdateSource: normalizedSource }),
+        completed: {
+          resultSource: "shared_settings",
+          configured: normalizedSource.length > 0,
+        },
+      });
+      setCustomUpdateSource(normalizedSource);
     },
     [updateSharedSettings],
   );
@@ -1863,6 +1884,8 @@ export function SettingsPage({
                               }
                               receivePreviewUpdates={receivePreviewUpdates}
                               autoDownloadAndInstallUpdates={autoDownloadAndInstallUpdates}
+                              customUpdateSource={customUpdateSource}
+                              onCustomUpdateSourceChange={handleCustomUpdateSourceChange}
                               dataBaseDir={dataBaseDir}
                               terminalInheritSystemProfile={terminalInheritSystemProfile}
                               terminalFontFamily={terminalFontFamily}

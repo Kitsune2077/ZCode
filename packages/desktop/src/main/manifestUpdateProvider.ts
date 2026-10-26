@@ -33,7 +33,9 @@ export interface ManifestUpdateProviderOptions extends CustomPublishOptions {
   resolveReleaseChannel?: () => ElectronReleaseChannel | Promise<ElectronReleaseChannel>;
 }
 
-function normalizeReleaseChannel(channel: string | null | undefined): ElectronReleaseChannel {
+export function normalizeReleaseChannel(
+  channel: string | null | undefined,
+): ElectronReleaseChannel {
   return channel === "preview" ? "preview" : "stable";
 }
 
@@ -123,7 +125,7 @@ function resolveManifestUrl(pathname: string, baseUrl: URL): URL {
   return new URL(pathname, baseUrl);
 }
 
-function getLinuxUpdateExtensions(updater: AppUpdater): readonly string[] | null {
+export function getLinuxUpdateExtensions(updater: AppUpdater): readonly string[] | null {
   // Linux 的实际更新器由安装包类型决定，不能把 deb/rpm/pacman 统一当作
   // 不支持更新的产物删除；复用已有 updater 实例，避免再次读取安装类型产生分歧。
   if (updater instanceof AppImageUpdater) return [".appimage"];
@@ -133,7 +135,12 @@ function getLinuxUpdateExtensions(updater: AppUpdater): readonly string[] | null
   return null;
 }
 
-function resolveManifestFiles(
+/**
+ * 把更新清单的 files[]（或旧 path 字段）按 baseUrl 解析为可下载文件。
+ * 官方 manifest 与自定义 Release 源（GitHub/Gitea 附件目录）共用：
+ * 相对 URL 一律按 `new URL(url, baseUrl)` 解析，缺校验和直接失败。
+ */
+export function resolveUpdateFilesAgainstBaseUrl(
   updateInfo: UpdateInfo,
   baseUrl: URL,
   linuxExtensions: readonly string[] | null,
@@ -240,7 +247,7 @@ export class ManifestUpdateProvider extends Provider<UpdateInfo> {
   }
 
   override resolveFiles(updateInfo: UpdateInfo): ResolvedUpdateFileInfo[] {
-    return resolveManifestFiles(updateInfo, this.resolveBaseUrl, this.linuxExtensions);
+    return resolveUpdateFilesAgainstBaseUrl(updateInfo, this.resolveBaseUrl, this.linuxExtensions);
   }
 
   private async resolveEndpointOrigin(): Promise<string> {

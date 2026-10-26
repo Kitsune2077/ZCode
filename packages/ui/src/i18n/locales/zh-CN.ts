@@ -3040,6 +3040,10 @@ const zhCN: Record<string, string> = {
   "settings.autoDownloadAndInstallUpdates": "自动下载并安装更新",
   "settings.autoDownloadAndInstallUpdatesDescription":
     "开启后检测到更新会自动开始下载；下载完成后，如有任务正在运行，重启更新前仍会要求确认。",
+  "settings.customUpdateSource": "自定义更新源",
+  "settings.customUpdateSourceDescription":
+    "填写 GitHub 或 Gitea 仓库地址（如 github.com/owner/repo 或 gitea.example.com/owner/repo），从其 Release 检查更新；留空使用官方更新源。Release 需附带 electron-builder 更新清单（latest.yml）。",
+  "settings.customUpdateSourcePlaceholder": "默认使用官方更新源",
   "settings.notification": "任务通知",
   "settings.notificationDescription": "任务完成、失败或需要确认时发送桌面通知。",
   "settings.notificationSound": "通知声音",

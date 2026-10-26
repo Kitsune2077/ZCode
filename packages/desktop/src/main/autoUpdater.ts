@@ -21,6 +21,11 @@ import {
 } from "@zcode/shared";
 import { logger } from "./logger.js";
 import { ManifestUpdateProvider, getElectronReleasePlatform } from "./manifestUpdateProvider.js";
+import {
+  parseReleaseFeedSource,
+  ReleaseFeedUpdateProvider,
+  type ReleaseFeedSource,
+} from "./releaseFeedUpdateProvider.js";
 
 export const CHECK_FOR_UPDATE_MENU_ID = "check-for-update";
 const AUTO_UPDATE_POLL_INTERVAL_MS = 15 * 60 * 1000;
@@ -64,6 +69,14 @@ let autoUpdaterSettingService: SettingServiceLike | undefined;
 // （占位 feed、autoDownload 默认值）。任何漏改成按身份判断的入口若仍调用手动检查，
 // 都会对占位 feed 发真实请求。这里记住“本 flavor 已禁用”，让手动检查在模块内部 fail-closed。
 let autoUpdaterDisabledForProductFlavor = false;
+// 当前生效的自定义更新源（settings.customUpdateSource 解析结果）；null = 官方 manifest 源。
+// provider 在每次 check 时经 resolveReleaseChannel 等回调动态读取通道，源本身在
+// applyConfiguredUpdateFeedProvider 时装载；热切换走 refreshAutoUpdaterFeedSettings。
+let appliedCustomUpdateSource: ReleaseFeedSource | null = null;
+let pendingFeedSourceRefresh: string | null = null;
+// init 时的装配参数（deviceMid/endpoint 解析/dev feed），热切换重放时必须带上同一组，
+// 否则官方 manifest 源会在切换后丢 deviceMid 等参数。
+let activeFeedInitOptions: InitAutoUpdaterOptions | null = null;
 
 type SettingServiceLike = Pick<ISettingService, "get" | "update">;
 
@@ -120,6 +133,8 @@ interface InitAutoUpdaterOptions {
   updateFeedSource?: RuntimeUpdateFeedSource;
   deviceMid?: string;
   resolveEndpointOrigin?: () => string | Promise<string>;
+  /** 启动时 settings.customUpdateSource 的快照（调用方读取）；空 = 官方 manifest 源。 */
+  customUpdateSource?: string;
 }
 
 let quitAndInstallState: "idle" | "preparing" | "installing" | "recovering" = "idle";
@@ -333,11 +348,17 @@ function completeAutoUpdateCheck(reason: string, checkId: number | null): void {
   settlingAutoUpdateCheckId = null;
 
   const pendingChannel = pendingManifestReleaseChannelRefresh;
+  const pendingFeedRefresh = pendingFeedSourceRefresh;
   const shouldRecheckFailedDownload = pendingFailedDownloadRecheck;
   pendingFailedDownloadRecheck = false;
-  if (shouldRecheckFailedDownload && !pendingChannel && !activeForceAutoUpdateListener) {
+  if (shouldRecheckFailedDownload && !pendingChannel && !pendingFeedRefresh && !activeForceAutoUpdateListener) {
     // 下载失败发生在本次检查收口前。等标记清掉后再查一次，避免复查被进行中的检查直接丢掉。
     queueMicrotask(() => recheckAfterDownload?.("download-failed"));
+  }
+  if (pendingFeedRefresh) {
+    pendingFeedSourceRefresh = null;
+    void refreshAutoUpdaterFeedSettings(`${pendingFeedRefresh} pending feed source refresh`);
+    return;
   }
   if (!pendingChannel) {
     return;
@@ -846,8 +867,54 @@ async function syncAutoUpdateCheckChannelFromSettings(
   activeAutoUpdateCheckChannel = nextChannel;
 }
 
-function applyManifestUpdateProvider(options: InitAutoUpdaterOptions): void {
+async function readConfiguredCustomUpdateSource(
+  settingService: SettingServiceLike | undefined,
+): Promise<string | undefined> {
+  if (!settingService) return undefined;
+  try {
+    return (await settingService.get()).customUpdateSource?.trim() || undefined;
+  } catch (error) {
+    logger.warn("[auto-update] read custom update source failed:", error);
+    return undefined;
+  }
+}
+
+function applyUpdateFeedProvider(options: InitAutoUpdaterOptions): void {
   const manifestUrl = options.updateFeedSource?.url.trim();
+  const customInput = options.customUpdateSource?.trim() || undefined;
+  const customSource = customInput ? parseReleaseFeedSource(customInput) : null;
+  if (customInput && !customSource) {
+    logger.warn(
+      `[auto-update] ignore invalid custom update source input; falling back to the official feed`,
+    );
+  }
+  const resolveReleaseChannel = async (): Promise<ElectronReleaseChannel> => {
+    const channel = await resolveUpdateReleaseChannel(options.settingService);
+    if (!isUpdateTargetLocked()) availableUpdateChannel = channel;
+    return channel;
+  };
+
+  if (customSource) {
+    if (manifestUrl) {
+      // 开发覆盖（env/switch）与用户设置并存时用户设置优先；dev feed 只服务官方 manifest 端点。
+      logger.info(
+        `[auto-update] custom update source overrides the dev manifest feed url (${redactUpdateFeedUrlForLog(manifestUrl)})`,
+      );
+    }
+    autoUpdater.setFeedURL({
+      provider: "custom",
+      updateProvider: ReleaseFeedUpdateProvider,
+      releaseFeed: customSource,
+      releasePlatform: getElectronReleasePlatform(),
+      resolveReleaseChannel,
+    });
+    appliedCustomUpdateSource = customSource;
+    logger.info(
+      `[auto-update] release feed provider applied platform=${getElectronReleasePlatform()} source=${customSource.kind}/${customSource.owner}/${customSource.repo}`,
+    );
+    return;
+  }
+
   autoUpdater.setFeedURL({
     provider: "custom",
     updateProvider: ManifestUpdateProvider,
@@ -857,17 +924,71 @@ function applyManifestUpdateProvider(options: InitAutoUpdaterOptions): void {
     deviceMid: options.deviceMid,
     resolveEndpointOrigin:
       options.resolveEndpointOrigin ?? (() => resolveRuntimeZCodeEndpointOrigin(process.env)),
-    resolveReleaseChannel: async () => {
-      const channel = await resolveUpdateReleaseChannel(options.settingService);
-      if (!isUpdateTargetLocked()) availableUpdateChannel = channel;
-      return channel;
-    },
+    resolveReleaseChannel,
   });
+  appliedCustomUpdateSource = null;
   logger.info(
     manifestUrl
       ? `[auto-update] service manifest provider applied platform=${getElectronReleasePlatform()} manifestUrl=${redactUpdateFeedUrlForLog(manifestUrl)}`
       : `[auto-update] service manifest provider applied platform=${getElectronReleasePlatform()}`,
   );
+}
+
+/**
+ * 设置页保存 customUpdateSource 后的热切换：源变化时重新装载 provider 并立即复查。
+ * 检查进行中/下载安装中不切换，分别由 pendingFeedSourceRefresh 与调用方 guard 重放。
+ */
+export async function refreshAutoUpdaterFeedSettings(reason: string): Promise<void> {
+  if (autoUpdaterDisabledForProductFlavor) return;
+  if (!canUseAutoUpdaterInCurrentRuntime()) return;
+  if (quitAndInstallState !== "idle" || isUpdateTargetLocked()) return;
+  if (
+    menuState.kind === "download-progress" ||
+    menuState.kind === "update-downloaded" ||
+    readyUpdateVersion
+  ) {
+    // 已下载的目标包来自旧源；安装/跳过前不换源，避免状态机里出现"来源不明"的可用更新。
+    logger.info(`[auto-update] skip ${reason}: update target present`);
+    return;
+  }
+
+  const customInput = await readConfiguredCustomUpdateSource(autoUpdaterSettingService);
+  const nextSource = customInput ? parseReleaseFeedSource(customInput) : null;
+  const sameSource =
+    appliedCustomUpdateSource === null && nextSource === null
+      ? true
+      : appliedCustomUpdateSource !== null &&
+        nextSource !== null &&
+        appliedCustomUpdateSource.releasesApiUrl === nextSource.releasesApiUrl;
+  if (sameSource) {
+    // 源未变（含同样为空）：不打断当前状态，也避免同值保存反复触发检查。
+    logger.info(`[auto-update] skip ${reason}: update source unchanged`);
+    return;
+  }
+  if (checkForUpdatesInFlight) {
+    pendingFeedSourceRefresh = reason;
+    logger.info(`[auto-update] defer ${reason}: check already in flight`);
+    return;
+  }
+
+  logger.info(`[auto-update] ${reason}: reload update feed provider`);
+  availableUpdateChannel = await resolveUpdateReleaseChannel(autoUpdaterSettingService);
+  clearAvailableUpdateState();
+  setAutoUpdaterMenuState({ kind: "checking", enabled: false });
+  applyUpdateFeedProvider({
+    ...(activeFeedInitOptions ?? { settingService: autoUpdaterSettingService }),
+    customUpdateSource: nextSource ? customInput : undefined,
+  });
+  const checkId = beginAutoUpdateCheck();
+  autoUpdater
+    .checkForUpdates()
+    .catch((err) => {
+      logger.error(`[auto-update] ${reason} check failed:`, err);
+      setAutoUpdaterMenuState({ kind: "idle", enabled: true });
+    })
+    .finally(() => {
+      finishAutoUpdateCheck(reason, checkId);
+    });
 }
 
 function pickFallbackReleaseNotesMarkdown(
@@ -1680,6 +1801,7 @@ export async function initAutoUpdater(options: InitAutoUpdaterOptions = {}): Pro
   activeAutoUpdateCheckChannel = null;
   settlingAutoUpdateCheckId = null;
   pendingManifestReleaseChannelRefresh = null;
+  pendingFeedSourceRefresh = null;
   devAutoUpdateVersionOverride = null;
   availableUpdateChannel = "stable";
   clearAvailableUpdateState();
@@ -1697,7 +1819,8 @@ export async function initAutoUpdater(options: InitAutoUpdaterOptions = {}): Pro
   // 由 before-quit 主动安装，避免目标已经升高后退出装上旧包。
   autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.logger = logger;
-  applyManifestUpdateProvider(options);
+  activeFeedInitOptions = options;
+  applyUpdateFeedProvider(options);
 
   const triggerCheckForUpdates = (reason: string) => {
     if (quitAndInstallState !== "idle") return;

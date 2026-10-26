@@ -579,6 +579,9 @@ const appSettingsObjectSchema = z.object({
   pendingPostUpdateReleaseNotes: postUpdateReleaseNotesPayloadSchema.optional(),
   receivePreviewUpdates: z.boolean().default(false),
   autoDownloadAndInstallUpdates: z.boolean().default(false),
+  // 自定义更新源：GitHub/Gitea 仓库地址；空（含未设置）= 官方更新源。
+  // 语义见 packages/desktop/docs/auto-update.md「自定义更新源」。
+  customUpdateSource: z.string().trim().max(500).optional(),
   skippedElectronUpdateVersions: skippedElectronUpdateVersionsSchema,
   settingsSyncFirstRunPromptHandled: z.boolean().optional(),
   webRemoteControlRelayV2Device: webRemoteControlRelayV2DeviceSchema.optional(),
@@ -689,6 +692,7 @@ export const appSettingsPatchSchema = z.object({
   pendingPostUpdateReleaseNotes: postUpdateReleaseNotesPayloadSchema.optional(),
   receivePreviewUpdates: z.boolean().optional(),
   autoDownloadAndInstallUpdates: z.boolean().optional(),
+  customUpdateSource: z.string().trim().max(500).optional(),
   skippedElectronUpdateVersions: z
     .partialRecord(electronReleaseChannelSchema, nonEmptyStringSchema)
     .optional(),

@@ -305,6 +305,37 @@ describe("autoUpdater ready state sync", () => {
     expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1);
   });
 
+  it("启动快照含自定义更新源时使用 Release feed provider", async () => {
+    mockProcessPlatform("linux");
+
+    const { initAutoUpdater } = await import("../src/main/autoUpdater.js");
+    await initAutoUpdater({ customUpdateSource: "https://gitea.example.com/owner/repo" });
+
+    expect(autoUpdaterMock.setFeedURL).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "custom",
+        releaseFeed: expect.objectContaining({ kind: "gitea", owner: "owner", repo: "repo" }),
+      }),
+    );
+  });
+
+  it("启动快照的无效自定义更新源回退官方 manifest provider", async () => {
+    mockProcessPlatform("linux");
+
+    const { initAutoUpdater } = await import("../src/main/autoUpdater.js");
+    await initAutoUpdater({ customUpdateSource: "not a repo path" });
+
+    expect(autoUpdaterMock.setFeedURL).toHaveBeenCalledTimes(1);
+    expect(autoUpdaterMock.setFeedURL).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "custom",
+        releasePlatform: expect.stringContaining("linux"),
+      }),
+    );
+    const options = autoUpdaterMock.setFeedURL.mock.calls[0]?.[0] as { releaseFeed?: unknown };
+    expect(options.releaseFeed).toBeUndefined();
+  });
+
   it("开发态默认不初始化自动更新", async () => {
     appMock.isPackaged = false;
 

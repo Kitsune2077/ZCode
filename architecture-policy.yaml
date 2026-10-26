@@ -747,6 +747,10 @@ global:
   acceptedUpstreamSnapshot: scripts/architecture/upstream-snapshot.json
 
 exceptions:
+  - id: desktop-release-feed-update-provider
+    rule: unmanaged-new-file
+    paths: [packages/desktop/src/main/releaseFeedUpdateProvider.ts]
+    reason: 桌面自动更新的自定义更新源 provider（GitHub/Gitea Release，docs/auto-update.md「自定义更新源」）；与同目录 manifestUpdateProvider.ts 同构共存，desktop main 目录尚未模块化，按 fork 专属功能路径精确豁免。
   - id: side-pane-full-view-shortcut-command-edit
     rule: unmanaged-new-file
     paths: [packages/shared/src/shortcutCommands.ts]

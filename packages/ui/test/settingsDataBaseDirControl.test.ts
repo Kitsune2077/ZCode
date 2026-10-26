@@ -227,6 +227,19 @@ describe("GeneralSectionContent data directory control", () => {
     expect(capturedInputs.some((input) => input.readOnly === true)).toBe(true);
   });
 
+  it("桌面端渲染自定义更新源输入框并回显当前值", async () => {
+    await renderGeneralSection({
+      customUpdateSource: "github.com/owner/repo",
+    });
+
+    const customSourceInput = capturedInputs.find(
+      (input) =>
+        input["aria-label"] === "settings.customUpdateSource" &&
+        input.value === "github.com/owner/repo",
+    );
+    expect(customSourceInput).toBeDefined();
+  });
+
   it("便携态未显式配置 dataBaseDir 时显示 host 上报的生效数据根而非主目录", async () => {
     // 便携版数据根只做进程内注入、不落 setting.json：settings.dataBaseDir 为空、
     // homedir 仍是真实主目录。显示回退必须优先 host 上报的 effectiveBaseDir，

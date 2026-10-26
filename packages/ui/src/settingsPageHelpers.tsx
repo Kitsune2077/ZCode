@@ -138,6 +138,7 @@ export function GeneralSectionContent({
   desktopChromiumHardwareAccelerationEnabled = true,
   receivePreviewUpdates,
   autoDownloadAndInstallUpdates,
+  customUpdateSource = "",
   dataBaseDir,
   terminalInheritSystemProfile = true,
   terminalFontFamily = "",
@@ -181,6 +182,7 @@ export function GeneralSectionContent({
   onDesktopChromiumHardwareAccelerationChange = async () => {},
   onReceivePreviewUpdatesChange,
   onAutoDownloadAndInstallUpdatesChange,
+  onCustomUpdateSourceChange = async () => {},
   onMessageStreamShowReasoningChange,
   onMessageStreamShowTodosChange,
   onToolGroupingExploreEnabledChange,
@@ -201,6 +203,9 @@ export function GeneralSectionContent({
   desktopChromiumHardwareAccelerationEnabled?: boolean;
   receivePreviewUpdates: boolean;
   autoDownloadAndInstallUpdates: boolean;
+  /** GitHub/Gitea 仓库形式的自定义更新源；空 = 官方更新源。 */
+  customUpdateSource?: string;
+  onCustomUpdateSourceChange?: (source: string) => Promise<void>;
   dataBaseDir: string;
   terminalInheritSystemProfile: boolean;
   terminalFontFamily: string;
@@ -369,6 +374,19 @@ export function GeneralSectionContent({
   const handleHttpProxyCaCertPathSave = useCallback(async () => {
     await onHttpProxyCaCertPathChange(normalizedHttpProxyCaCertPath);
   }, [normalizedHttpProxyCaCertPath, onHttpProxyCaCertPathChange]);
+
+  const [localCustomUpdateSource, setLocalCustomUpdateSource] = useState(customUpdateSource);
+
+  useEffect(() => {
+    setLocalCustomUpdateSource(customUpdateSource);
+  }, [customUpdateSource]);
+
+  const normalizedCustomUpdateSource = localCustomUpdateSource.trim();
+  const isCustomUpdateSourceDirty = normalizedCustomUpdateSource !== customUpdateSource;
+
+  const handleCustomUpdateSourceSave = useCallback(async () => {
+    await onCustomUpdateSourceChange(normalizedCustomUpdateSource);
+  }, [normalizedCustomUpdateSource, onCustomUpdateSourceChange]);
 
   return (
     <div className="space-y-4">
@@ -739,6 +757,40 @@ export function GeneralSectionContent({
                     void onAutoDownloadAndInstallUpdatesChange(checked);
                   }}
                 />
+              }
+            />
+            <SettingsRow
+              label={intl.formatMessage({ id: "settings.customUpdateSource" })}
+              description={intl.formatMessage({
+                id: "settings.customUpdateSourceDescription",
+              })}
+              control={
+                <div className="flex w-full max-w-[520px] items-center gap-2">
+                  <Input
+                    size="lg"
+                    value={localCustomUpdateSource}
+                    aria-label={intl.formatMessage({ id: "settings.customUpdateSource" })}
+                    placeholder={intl.formatMessage({
+                      id: "settings.customUpdateSourcePlaceholder",
+                    })}
+                    onChange={(event) => {
+                      setLocalCustomUpdateSource(event.currentTarget.value);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && isCustomUpdateSourceDirty) {
+                        void handleCustomUpdateSourceSave();
+                      }
+                    }}
+                    className="flex-1 font-mono"
+                  />
+                  <Button
+                    size="lg"
+                    disabled={!isCustomUpdateSourceDirty}
+                    onClick={() => void handleCustomUpdateSourceSave()}
+                  >
+                    {intl.formatMessage({ id: "settings.dataBaseDirSave" })}
+                  </Button>
+                </div>
               }
             />
           </>

@@ -3244,6 +3244,10 @@ const enUS: Record<string, string> = {
   "settings.autoDownloadAndInstallUpdates": "Automatically download and install updates",
   "settings.autoDownloadAndInstallUpdatesDescription":
     "When enabled, updates start downloading as soon as they are found. Restart still requires confirmation when tasks are running.",
+  "settings.customUpdateSource": "Custom update source",
+  "settings.customUpdateSourceDescription":
+    "Enter a GitHub or Gitea repository (e.g. github.com/owner/repo or gitea.example.com/owner/repo) to check updates from its releases. Leave empty for the official source. The release must include an electron-builder update info file (latest.yml).",
+  "settings.customUpdateSourcePlaceholder": "Use the official update source by default",
   "settings.notification": "Task notifications",
   "settings.notificationDescription":
     "Send desktop notifications when a task completes, fails, or needs approval.",

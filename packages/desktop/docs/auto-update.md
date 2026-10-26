@@ -51,6 +51,33 @@ resolveRuntimeZCodeEndpointOrigin(process.env)
 该 gate 是有意的安全边界：它拦的是"打包发布客户端跑在最低版本以下"。因此默认不因
 任何环境变量而放宽；只有下面的显式开关会跳过它。
 
+## 自定义更新源（GitHub / Gitea Release）
+
+设置 → 常规 → "自定义更新源"（`AppSettings.customUpdateSource`，桌面端可见）：
+**默认为空 = 官方更新源**；填写 GitHub 或 Gitea 仓库地址后，自动更新改为消费该仓库的
+Release。发布到自定义源的 Release 需要附带 electron-builder 通用格式的更新清单
+（stable 通道 `latest.yml`，preview 通道 `beta.yml`，缺 `beta.yml` 时回退 `latest.yml`）
+与对应安装包（Windows 增量更新还需同目录 `.blockmap`）。
+
+- 输入格式：`owner/repo`（视为 GitHub）、`github.com/owner/repo`、
+  `https://github.com/owner/repo`（GitHub API `api.github.com`）；
+  任何其它 http(s) 主机的 `host/owner/repo` 按 Gitea 处理（API `{origin}/api/v1`）。
+  尾部 `/releases` 后缀允许（仓库首页粘贴容错）。
+- Release 选择：取 releases 列表（新→旧）第一个非 draft；stable 还要求非 prerelease，
+  preview 允许 prerelease。GitHub/Gitea 的 releases API 响应结构按兼容字段消费
+  （`tag_name` / `draft` / `prerelease` / `body` / `assets[].browser_download_url`）。
+- 清单下载自所选 Release 的附件；`files[].url` 按 `new URL(url, 附件所在目录)` 解析
+  （GitHub/Gitea 的附件 URL 同为 `.../releases/download/{tag}/{file}` 形态）；
+  每个文件必须带 `sha512`（或旧字段 `sha2`），校验语义与官方 manifest 一致；
+  Release 正文（`body`）在清单缺 `releaseNotes` 时作为更新说明回退。
+- 生效时机：每次检查更新时读取最新设置（provider 内部分发，官方清单 provider 与
+  Release feed provider 复用同一 `setFeedURL` 装载点）；保存设置后 main 立即触发
+  一次重新检查，无"重启生效"要求。下载/安装中（download-progress / update-downloaded /
+  quitAndInstall 锁定）不切换，检查收口后再重放。
+- 边界与安全模型：允许改道是本功能的用途，完整性仍由清单内 `sha512` 校验兜底；
+  自定义源的 Release 由源仓库控制方发布。`ZCODE_UPDATE_FEED_URL`（打包态被忽略的
+  开发覆盖）语义不变。Windows 便携版更新整体禁用，该设置对其无效果。
+
 ## 关闭开关
 
 ```

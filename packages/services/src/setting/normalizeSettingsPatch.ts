@@ -78,6 +78,13 @@ export function normalizeSettingsPatch(patch: Partial<AppSettings>): Partial<App
       trimmedZCodeEndpointOrigin.length > 0 ? trimmedZCodeEndpointOrigin : undefined;
   }
 
+  if ("customUpdateSource" in normalizedPatch && typeof normalizedPatch.customUpdateSource === "string") {
+    // 自定义更新源清空 = 回到官方更新源；RPC 会吞掉 undefined，这里把空串归一成删除。
+    const trimmedCustomUpdateSource = normalizedPatch.customUpdateSource.trim();
+    normalizedPatch.customUpdateSource =
+      trimmedCustomUpdateSource.length > 0 ? trimmedCustomUpdateSource : undefined;
+  }
+
   if (
     "providerFamilyDomain" in normalizedPatch &&
     typeof normalizedPatch.providerFamilyDomain === "string"
