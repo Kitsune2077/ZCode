@@ -302,6 +302,11 @@ function createWindowsCmdProvider(shellPath: string): BashShellProvider {
 function createPowerShellProvider(shellPath: string): BashShellProvider {
   return {
     dialect: "powershell",
+    // PowerShell 7.6.x 启动更新通知在控制台宽度不可用（管道 stdio / 无控制台）时
+    // PadRight 收到负数直接 FailFast（上游 #28131/#28235，弹「Unknown hard error」
+    // 并终止进程），7.6.8 起官方整个移除该通知；受影响版本的官方规避开关就是
+    // POWERSHELL_UPDATECHECK=Off。工具执行是纯管道 spawn，通知毫无价值，恒定关闭。
+    envOverlay: { POWERSHELL_UPDATECHECK: "Off" },
     file: shellPath,
     shell: false,
   };

@@ -212,6 +212,21 @@ describe("terminalService", () => {
     ]);
   });
 
+  it("disables the pwsh startup update notification on Windows unless the user set it", () => {
+    // PowerShell 7.6.x 更新通知在窄控制台 PadRight 负数 FailFast（上游 #28131/#28235），
+    // 终端面板宽度可被压缩到远小于横幅宽度，默认必须携带禁用开关。
+    if (process.platform === "win32") {
+      const defaulted = resolveTerminalEnv({ PATH: "/bin" });
+      expect(defaulted.POWERSHELL_UPDATECHECK).toBe("Off");
+
+      const userOverride = resolveTerminalEnv({ PATH: "/bin", POWERSHELL_UPDATECHECK: "Default" });
+      expect(userOverride.POWERSHELL_UPDATECHECK).toBe("Default");
+    } else {
+      const env = resolveTerminalEnv({ PATH: "/bin" });
+      expect(env.POWERSHELL_UPDATECHECK).toBeUndefined();
+    }
+  });
+
   it("should keep interactive terminal capabilities when spawning the terminal", async () => {
     const home = makeTempDir("zcode-terminal-home-");
     process.env.HOME = home;

@@ -2910,6 +2910,9 @@ describe("NodeExecutionAdapter", () => {
     expect(resolved).toMatchObject({
       args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "Get-Location"],
       cwdDialect: "powershell",
+      // PowerShell 7.6.x 启动更新通知在管道 stdio（无控制台宽度）下 PadRight 负数
+      // FailFast（上游 #28131/#28235）；spawn 环境必须携带官方禁用开关。
+      envOverlay: { POWERSHELL_UPDATECHECK: "Off" },
       file: "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
       shell: false,
     });

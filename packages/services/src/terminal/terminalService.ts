@@ -228,6 +228,19 @@ export function resolveTerminalEnv(env: NodeJS.ProcessEnv = process.env): NodeJS
     nextEnv.LC_ALL = fallbackLocale;
   }
 
+  // PowerShell 7.6.x 启动更新通知在控制台宽度不够容纳横幅时 PadRight 收到负数直接
+  // FailFast（上游 #28131/#28235，弹「Unknown hard error」并终止 pwsh）；终端面板是
+  // 侧栏可压缩视图，宽度很容易小于横幅所需。用户未显式配置该变量时默认关闭更新通知，
+  // 显式配置则保留用户选择。
+  if (process.platform === "win32") {
+    const hasUserUpdateCheckSetting = Object.keys(nextEnv).some(
+      (key) => key.toUpperCase() === "POWERSHELL_UPDATECHECK",
+    );
+    if (!hasUserUpdateCheckSetting) {
+      nextEnv.POWERSHELL_UPDATECHECK = "Off";
+    }
+  }
+
   return nextEnv;
 }
 
