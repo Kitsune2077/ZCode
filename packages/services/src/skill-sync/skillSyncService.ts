@@ -14,6 +14,7 @@ import type {
 } from "@zcode/shared";
 import type { ISkillSyncService } from "./skillSync.js";
 import { createSkillSyncArchive, extractSkillSyncArchive } from "./skillSyncArchive.js";
+import { extractSkillZipArchive } from "./skillZipArchive.js";
 import { normalizeSkillSyncRelativePath, resolveSkillSyncPathWithin } from "./skillSyncPath.js";
 import { createSkillSyncSizeLimitError } from "./skillSyncErrors.js";
 import {
@@ -121,7 +122,35 @@ export function createSkillSyncService(options?: { maxArchiveBytes?: number }): 
           phase: "archive",
         });
       }
-      return await importArchive(params.archive, maxArchiveBytes);
+      return await importArchiveBundle(
+        params.archive,
+        maxArchiveBytes,
+        extractSkillSyncArchive,
+      );
+    },
+    async importSkillsZipArchive(params): Promise<SkillSyncImportResult> {
+      const filePath = params.filePath.trim();
+      if (!/\.zip$/iu.test(filePath)) {
+        throw new Error(`skill zip import requires a .zip file: ${filePath}`);
+      }
+      const fileStat = await stat(filePath);
+      if (!fileStat.isFile()) {
+        throw new Error(`skill zip import path is not a regular file: ${filePath}`);
+      }
+      if (fileStat.size > maxArchiveBytes) {
+        throw createSkillSyncSizeLimitError({
+          actualBytes: fileStat.size,
+          maxBytes: maxArchiveBytes,
+          phase: "archive",
+        });
+      }
+      // renderer 只有本地路径没有通用文件读取能力，ZIP 字节由 host 读盘后再解压。
+      const archive = await readFile(filePath);
+      return await importArchiveBundle(
+        archive,
+        maxArchiveBytes,
+        extractSkillZipArchive,
+      );
     },
   };
 }
@@ -388,89 +417,107 @@ async function collectUserSkillDirectoryPathByName(): Promise<Map<string, string
   return result;
 }
 
-async function importArchive(
+interface SkillSyncArchiveExtractor {
+  (
+    archive: Uint8Array,
+    targetDir: string,
+    options: { maxExtractedBytes?: number },
+  ): Promise<void>;
+}
+
+// tar.gz（远端同步）与 ZIP（本地技能包）共用同一条
+// “临时目录解压 → SKILL.md 校验 → 判重 → 逐个复制”管线，只有解压器不同。
+async function importArchiveBundle(
   archive: Uint8Array,
   maxArchiveBytes: number,
+  extract: SkillSyncArchiveExtractor,
 ): Promise<SkillSyncImportResult> {
   const targetRoot = getUserZcodeSkillRoot();
   await mkdir(targetRoot, { recursive: true });
   const tempRoot = join(targetRoot, `.sync-tmp-${randomUUID()}`);
   await mkdir(tempRoot, { recursive: true });
   try {
-    // 远端同步接收的是本机传来的归档，必须先解到临时目录并校验 SKILL.md，
-    // 再逐个复制到用户级 skills 根，避免路径穿越或半成品目录污染远端配置。
-    await extractSkillSyncArchive(archive, tempRoot, {
+    // 接收的是不可信归档，必须先解到临时目录并校验 SKILL.md，
+    // 再逐个复制到用户级 skills 根，避免路径穿越或半成品目录污染用户配置。
+    await extract(archive, tempRoot, {
       maxExtractedBytes: maxArchiveBytes,
     });
-    const extractedSkillDirectories = await collectExtractedSkillDirectories(tempRoot);
-    // 远端 SkillsService 会同时读取用户级 .zcode/skills 和 .agents/skills。
-    // 同名 skill 已在兼容目录存在时也必须跳过，避免同步后在 .zcode 下生成重复来源。
-    const existingSkillPathByName = await collectUserSkillDirectoryPathByName();
-    const results: SkillSyncImportResult["results"] = [];
-    for (const extracted of extractedSkillDirectories) {
-      const { directoryName, sourcePath } = extracted;
-      const targetPath = resolveSkillSyncPathWithin(targetRoot, directoryName);
-      const skillContent = await readSkillFileOrNull(join(sourcePath, SKILL_FILE_NAME));
-      if (skillContent === null) {
-        results.push({
-          name: basename(directoryName),
-          directoryName,
-          status: "failed",
-          error: "SKILL.md is missing",
-        });
-        continue;
-      }
-
-      const metadata = parseSkillMetadata(skillContent, directoryName);
-      const nameKey = normalizeSkillNameKey(metadata.name);
-      if (existsSync(targetPath)) {
-        results.push({
-          name: metadata.name,
-          directoryName,
-          status: "skipped",
-          path: targetPath,
-        });
-        continue;
-      }
-      const existingPathForName = existingSkillPathByName.get(nameKey);
-      if (existingPathForName) {
-        results.push({
-          name: metadata.name,
-          directoryName,
-          status: "skipped",
-          path: existingPathForName,
-        });
-        continue;
-      }
-
-      try {
-        await mkdir(dirname(targetPath), { recursive: true });
-        await cp(sourcePath, targetPath, {
-          recursive: true,
-          errorOnExist: true,
-          force: false,
-        });
-        results.push({
-          name: metadata.name,
-          directoryName,
-          status: "synced",
-          path: targetPath,
-        });
-        existingSkillPathByName.set(nameKey, targetPath);
-      } catch (error) {
-        results.push({
-          name: metadata.name,
-          directoryName,
-          status: "failed",
-          path: targetPath,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-    return { results };
+    return await importExtractedSkillDirectories(tempRoot);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
+}
+
+async function importExtractedSkillDirectories(
+  tempRoot: string,
+): Promise<SkillSyncImportResult> {
+  const targetRoot = getUserZcodeSkillRoot();
+  const extractedSkillDirectories = await collectExtractedSkillDirectories(tempRoot);
+  // 远端 SkillsService 会同时读取用户级 .zcode/skills 和 .agents/skills。
+  // 同名 skill 已在兼容目录存在时也必须跳过，避免同步后在 .zcode 下生成重复来源。
+  const existingSkillPathByName = await collectUserSkillDirectoryPathByName();
+  const results: SkillSyncImportResult["results"] = [];
+  for (const extracted of extractedSkillDirectories) {
+    const { directoryName, sourcePath } = extracted;
+    const targetPath = resolveSkillSyncPathWithin(targetRoot, directoryName);
+    const skillContent = await readSkillFileOrNull(join(sourcePath, SKILL_FILE_NAME));
+    if (skillContent === null) {
+      results.push({
+        name: basename(directoryName),
+        directoryName,
+        status: "failed",
+        error: "SKILL.md is missing",
+      });
+      continue;
+    }
+
+    const metadata = parseSkillMetadata(skillContent, directoryName);
+    const nameKey = normalizeSkillNameKey(metadata.name);
+    if (existsSync(targetPath)) {
+      results.push({
+        name: metadata.name,
+        directoryName,
+        status: "skipped",
+        path: targetPath,
+      });
+      continue;
+    }
+    const existingPathForName = existingSkillPathByName.get(nameKey);
+    if (existingPathForName) {
+      results.push({
+        name: metadata.name,
+        directoryName,
+        status: "skipped",
+        path: existingPathForName,
+      });
+      continue;
+    }
+
+    try {
+      await mkdir(dirname(targetPath), { recursive: true });
+      await cp(sourcePath, targetPath, {
+        recursive: true,
+        errorOnExist: true,
+        force: false,
+      });
+      results.push({
+        name: metadata.name,
+        directoryName,
+        status: "synced",
+        path: targetPath,
+      });
+      existingSkillPathByName.set(nameKey, targetPath);
+    } catch (error) {
+      results.push({
+        name: metadata.name,
+        directoryName,
+        status: "failed",
+        path: targetPath,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return { results };
 }
 
 async function collectExtractedSkillDirectories(root: string): Promise<

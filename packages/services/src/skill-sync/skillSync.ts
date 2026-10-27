@@ -23,6 +23,8 @@ export interface ISkillSyncService {
     archive: Uint8Array;
     overwrite?: false;
   }): Promise<SkillSyncImportResult>;
+  /** 导入用户提供的本地 ZIP 技能包；host 侧读盘，避免大文件进入 RPC payload。 */
+  importSkillsZipArchive(params: { filePath: string }): Promise<SkillSyncImportResult>;
 }
 
 export const ISkillSyncService = createServiceDescriptor<ISkillSyncService>(

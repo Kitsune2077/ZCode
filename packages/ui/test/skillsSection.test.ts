@@ -67,6 +67,7 @@ vi.mock("lucide-react", () => ({
   CheckIcon: (props: Record<string, unknown>) => createElement("svg", props),
   Download: (props: Record<string, unknown>) => createElement("svg", props),
   ExternalLink: (props: Record<string, unknown>) => createElement("svg", props),
+  FileArchive: (props: Record<string, unknown>) => createElement("svg", props),
   Folder: (props: Record<string, unknown>) => createElement("svg", props),
   Import: (props: Record<string, unknown>) => createElement("svg", props),
   SquareArrowRightEnter: (props: Record<string, unknown>) => createElement("svg", props),
@@ -140,6 +141,7 @@ vi.mock("@/i18n/IntlProvider.js", () => ({
           "settings.skills.import.open": "Import skills from external agents",
           "settings.skills.remoteContext": `Current remote workspace: ${values?.target ?? ""}`,
           "settings.skills.remoteSync.open": "Sync Skill",
+          "settings.skills.zipImport.open": "Import from ZIP",
           "settings.skills.import.title": "Import external agent skills",
           "settings.skills.import.description": "Scan reusable skills.",
           "settings.skills.import.scanning": "Scanning importable skills...",
@@ -497,6 +499,32 @@ describe("SkillsSection", () => {
     expect(html).toContain("WSL");
     expect(html).toContain("Ubuntu");
     expect(findButton("Sync Skill")).toBeTruthy();
+  });
+
+  it("本地上下文在具备用户级技能能力时展示从 ZIP 导入入口", async () => {
+    mockCapabilityState = { userScopeAvailable: true };
+
+    await renderSkillsSection();
+
+    expect(findButton("Import from ZIP")).toBeTruthy();
+  });
+
+  it("已连接远端同步目标时隐藏从 ZIP 导入入口，避免导入目标歧义", async () => {
+    mockCapabilityState = { userScopeAvailable: true };
+    activeWorkspacePath = "/home/alice/project";
+    activeWorkspaceIdentity = "ssh://alice@dev.example.com/home/alice/project";
+    activeRemoteSessionId = "remote-session-1";
+    activeRemoteTarget = {
+      kind: "ssh",
+      host: "dev.example.com",
+      username: "alice",
+      port: 22,
+    };
+
+    await renderSkillsSection();
+
+    expect(findButton("Sync Skill")).toBeTruthy();
+    expect(findButton("Import from ZIP")).toBeUndefined();
   });
 
   it("技能详情弹窗会展示完整长描述和路径", async () => {

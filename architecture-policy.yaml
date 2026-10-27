@@ -939,3 +939,11 @@ exceptions:
       - packages/ui/src/settings/DynamicWorkflowModeSetting.tsx
       - packages/ui/src/store/dynamicWorkflowAvailabilityStore.ts
     reason: Admitted upstream files edited only to let the user's dynamic workflow mode choice always win and keep the settings row visible; adopting packages/shared/src and packages/ui/src needs a separate module boundary refactor.
+
+  # 本地 ZIP 技能包导入：复用 skill-sync 既有导入管线，仅新增 ZIP 解压器与设置页弹窗。
+  - id: skill-zip-import-unmanaged-files
+    rule: unmanaged-new-file
+    paths:
+      - packages/services/src/skill-sync/skillZipArchive.ts
+      - packages/ui/src/settings/SkillZipImportDialog.tsx
+    reason: 本地 ZIP 技能包导入（spec：docs/superpowers/specs/2026-10-27-local-skill-zip-import-design.md）落在既有 skill-sync 与 settings 未受管目录；两个目录 adopt 时一并收编。

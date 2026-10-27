@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronRight,
   ExternalLink,
+  FileArchive,
   Import,
   Plus,
   Trash2,
@@ -53,6 +54,7 @@ import {
 } from "@/settings/pluginStoreListing.js";
 import { groupSkillsByPlugin } from "@/settings/pluginManagedResourceGroups.js";
 import { SkillsImportDialog } from "@/settings/ExternalAgentImportDialog.js";
+import { SkillZipImportDialog } from "@/settings/SkillZipImportDialog.js";
 import { formatRemoteSkillSyncTarget } from "@/settings/RemoteSkillSyncDialog.js";
 import { RemoteSyncDialogs, shouldShowRemoteSyncActions } from "@/settings/RemoteSyncActions.js";
 import { refreshSharedSkillStoreForWorkspace } from "@/lib/skillStoreRefresh.js";
@@ -220,6 +222,8 @@ export function SkillsSection({
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [remoteSkillSyncOpen, setRemoteSkillSyncOpen] = useState(false);
+  // 新增 state 必须排在既有声明之后：skillsSection.test.ts 按调用次序桩掉前面的 useState。
+  const [zipImportOpen, setZipImportOpen] = useState(false);
   const latestRequestIdRef = useRef(0);
   const activeSkillTargetKey = buildSourceSettingsProjectionKey(
     activeWorkspacePath,
@@ -263,6 +267,13 @@ export function SkillsSection({
   const remoteSkillSyncTargetLabel = connectedRemoteSyncTarget
     ? formatRemoteSkillSyncTarget(connectedRemoteSyncTarget, activeWorkspacePath ?? "")
     : "";
+  // ZIP 导入只写本机用户级技能目录：Web/手机端没有本机路径选择能力，
+  // 已连接远端同步目标时列表展示的是远端技能，为避免“看到远端列表、导入却写本机”
+  // 的目标歧义，该上下文下隐藏入口。
+  const canImportZip =
+    capability?.userScopeAvailable === true &&
+    platform.canSelectFilePath !== false &&
+    !connectedRemoteSyncTarget;
 
   const renderScopeLabel = useCallback(
     (skill: SkillSummary): string => {
@@ -360,6 +371,7 @@ export function SkillsSection({
       setError(null);
       setImportDialogOpen(false);
       setRemoteSkillSyncOpen(false);
+      setZipImportOpen(false);
       return;
     }
     // 首屏或切换 Scope target 时必须显示阻塞 loading；手动刷新仍走后台刷新，
@@ -676,6 +688,21 @@ export function SkillsSection({
       newActionId="settings.skills.create.open"
     />
   );
+  const zipImportAction = canImportZip ? (
+    <ControlHintTooltip title={intl.formatMessage({ id: "settings.skills.zipImport.open" })}>
+      <Button
+        type="button"
+        variant="outline"
+        size="icon-lg"
+        aria-label={intl.formatMessage({
+          id: "settings.skills.zipImport.open",
+        })}
+        onClick={() => setZipImportOpen(true)}
+      >
+        <FileArchive className="size-3.5" aria-hidden="true" />
+      </Button>
+    </ControlHintTooltip>
+  ) : null;
   const remoteSyncAction = connectedRemoteSyncTarget ? (
     <ControlHintTooltip title={intl.formatMessage({ id: "settings.skills.remoteSync.open" })}>
       <Button
@@ -715,7 +742,12 @@ export function SkillsSection({
           }
         />
       ) : null}
-      {remoteSyncAction ? <div className="flex justify-end">{remoteSyncAction}</div> : null}
+      {zipImportAction || remoteSyncAction ? (
+        <div className="flex justify-end gap-2">
+          {zipImportAction}
+          {remoteSyncAction}
+        </div>
+      ) : null}
 
       {connectedRemoteSyncTarget ? (
         <div className="rounded-lg border border-border bg-card px-3 py-2 text-ui-base text-foreground-subtle">
@@ -854,6 +886,18 @@ export function SkillsSection({
                         id: "settings.skills.import.action",
                       })}
                     </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="lg"
+                      disabled={!canImportZip}
+                      onClick={() => setZipImportOpen(true)}
+                    >
+                      <FileArchive data-icon="inline-start" aria-hidden="true" />
+                      {intl.formatMessage({
+                        id: "settings.skills.zipImport.open",
+                      })}
+                    </Button>
                   </>
                 }
               />
@@ -987,6 +1031,21 @@ export function SkillsSection({
             reason: "settings-skill-import",
           });
           await refresh();
+        }}
+      />
+      {/* ZIP 导入固定写本机用户级技能目录，必须用本机 base services，
+          不能走 targetServiceResolution 的远端 skillSyncService。 */}
+      <SkillZipImportDialog
+        open={zipImportOpen && targetServiceResolution.rpcReady}
+        skillSyncService={baseServices.skillSyncService}
+        onOpenChange={setZipImportOpen}
+        onImported={async () => {
+          await invalidateDeferredDraftSessionForSkillChange({
+            workspacePath: activeWorkspacePath,
+            workspaceIdentity: activeWorkspaceIdentity,
+            reason: "settings-skill-zip-import",
+          });
+          await Promise.all([refresh(), refreshSharedSkillStoreForCurrentWorkspace()]);
         }}
       />
       <RemoteSyncDialogs

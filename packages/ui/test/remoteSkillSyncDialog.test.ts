@@ -156,6 +156,7 @@ function createSkillSyncServiceStub(): ISkillSyncService {
       path: "/home/dev/.zcode/skills",
     })),
     importSkillsArchive: vi.fn(async () => ({ results: [] })),
+    importSkillsZipArchive: vi.fn(async () => ({ results: [] })),
   };
 }
 

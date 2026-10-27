@@ -1,7 +1,18 @@
 import type { SkillSyncImportResult } from "@zcode/shared";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
-export function RemoteSkillSyncResultList({ result }: { result: SkillSyncImportResult | null }) {
+interface RemoteSkillSyncResultListProps {
+  result: SkillSyncImportResult | null;
+  /** 完成/状态文案可通过可选前缀换成导入等其他动作语义，默认保持远端同步文案。 */
+  completeMessageId?: string;
+  statusMessageIdPrefix?: string;
+}
+
+export function RemoteSkillSyncResultList({
+  result,
+  completeMessageId = "settings.skills.remoteSync.complete",
+  statusMessageIdPrefix = "settings.skills.remoteSync",
+}: RemoteSkillSyncResultListProps) {
   const { intl } = useZCodeIntl();
   if (!result) {
     return null;
@@ -10,7 +21,7 @@ export function RemoteSkillSyncResultList({ result }: { result: SkillSyncImportR
   return (
     <div className="grid gap-2">
       <div className="rounded-lg border border-border bg-surface px-3 py-2 text-ui-base text-foreground">
-        {intl.formatMessage({ id: "settings.skills.remoteSync.complete" })}
+        {intl.formatMessage({ id: completeMessageId })}
       </div>
       {result.results.map((item) => (
         <div
@@ -20,7 +31,7 @@ export function RemoteSkillSyncResultList({ result }: { result: SkillSyncImportR
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <span className="font-medium text-foreground">{item.name}</span>
             <span className="text-foreground-subtle">
-              {intl.formatMessage({ id: `settings.skills.remoteSync.${item.status}` })}
+              {intl.formatMessage({ id: `${statusMessageIdPrefix}.${item.status}` })}
             </span>
           </div>
           {item.error ? (

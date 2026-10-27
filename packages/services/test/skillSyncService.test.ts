@@ -1,9 +1,11 @@
 import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { mkdtempSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MAX_SKILL_SCAN_DEPTH, SKILL_SYNC_SIZE_LIMIT_ERROR_CODE } from "@zcode/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import yazl from "yazl";
 import { createSkillSyncService } from "../src/skill-sync/skillSyncService.js";
 
 async function symlinkSkillDirectory(target: string, linkPath: string) {
@@ -441,6 +443,146 @@ describe("skill sync service", () => {
     });
     await expect(
       readFile(join(remoteHome, ".zcode", "skills", "large-skill", "large.txt"), "utf-8"),
+    ).rejects.toThrow();
+  });
+});
+
+describe("skill sync service zip import", () => {
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+  });
+
+  afterEach(() => {
+    process.env.HOME = originalHome;
+  });
+
+  async function writeZipFixture(
+    entries: Record<string, string>,
+    fileName = "skills.zip",
+  ): Promise<string> {
+    const fixtureRoot = mkdtempSync(join(tmpdir(), "zcode-skill-zip-fixture-"));
+    const zipPath = join(fixtureRoot, fileName);
+    const zip = new yazl.ZipFile();
+    for (const [entryPath, text] of Object.entries(entries)) {
+      zip.addBuffer(Buffer.from(text, "utf8"), entryPath);
+    }
+    zip.end();
+    const chunks: Buffer[] = [];
+    for await (const chunk of zip.outputStream) {
+      chunks.push(chunk as Buffer);
+    }
+    await writeFile(zipPath, Buffer.concat(chunks));
+    return zipPath;
+  }
+
+  it("imports skills from a local zip file and skips duplicates on re-import", async () => {
+    const zipPath = await writeZipFixture({
+      "review/SKILL.md": "---\nname: review\ndescription: review desc\n---\nBody",
+      "group/nested/SKILL.md": "---\nname: nested\n---\nBody",
+    });
+    const home = makeHome();
+    process.env.HOME = home;
+    const service = createSkillSyncService({ maxArchiveBytes: 1024 * 1024 });
+
+    const first = await service.importSkillsZipArchive({ filePath: zipPath });
+    const second = await service.importSkillsZipArchive({ filePath: zipPath });
+
+    expect(first.results.map((item) => [item.directoryName, item.status])).toEqual([
+      ["group/nested", "synced"],
+      ["review", "synced"],
+    ]);
+    expect(second.results.map((item) => [item.directoryName, item.status])).toEqual([
+      ["group/nested", "skipped"],
+      ["review", "skipped"],
+    ]);
+    await expect(
+      readFile(join(home, ".zcode", "skills", "review", "SKILL.md"), "utf-8"),
+    ).resolves.toContain("name: review");
+    await expect(
+      readFile(join(home, ".zcode", "skills", "group", "nested", "SKILL.md"), "utf-8"),
+    ).resolves.toContain("name: nested");
+    // 临时解压目录必须清理，不能在技能根下留下 .sync-tmp-* 残留。
+    const { readdir } = await import("node:fs/promises");
+    await expect(readdir(join(home, ".zcode", "skills"))).resolves.toEqual([
+      "group",
+      "review",
+    ]);
+  });
+
+  it("skips zip skills whose name already exists in another directory", async () => {
+    const zipPath = await writeZipFixture({
+      "zip-review/SKILL.md": "---\nname: review\n---\nBody",
+    });
+    const home = makeHome();
+    process.env.HOME = home;
+    await writeSkill(home, "existing-review", "review");
+    const service = createSkillSyncService({ maxArchiveBytes: 1024 * 1024 });
+
+    const result = await service.importSkillsZipArchive({ filePath: zipPath });
+
+    expect(result.results[0]).toMatchObject({
+      directoryName: "zip-review",
+      status: "skipped",
+      path: join(home, ".zcode", "skills", "existing-review"),
+    });
+    await expect(
+      readFile(join(home, ".zcode", "skills", "zip-review", "SKILL.md"), "utf-8"),
+    ).rejects.toThrow();
+  });
+
+  it("rejects file paths without the .zip extension", async () => {
+    const zipPath = await writeZipFixture({ "readme.txt": "hello" }, "skills.tar.gz");
+    const home = makeHome();
+    process.env.HOME = home;
+    const service = createSkillSyncService({ maxArchiveBytes: 1024 * 1024 });
+
+    await expect(service.importSkillsZipArchive({ filePath: zipPath })).rejects.toThrow(
+      /requires a \.zip file/u,
+    );
+  });
+
+  it("rejects zip files that do not exist", async () => {
+    const home = makeHome();
+    process.env.HOME = home;
+    const service = createSkillSyncService({ maxArchiveBytes: 1024 * 1024 });
+
+    await expect(
+      service.importSkillsZipArchive({ filePath: join(home, "missing.zip") }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects zip files larger than the archive size limit", async () => {
+    // 随机字节几乎不可压缩，确保压缩包本身（而非解压内容）超过 maxArchiveBytes。
+    const zipPath = await writeZipFixture({
+      "large.bin": Buffer.from(randomBytes(4096)).toString("latin1"),
+    });
+    const home = makeHome();
+    process.env.HOME = home;
+    const service = createSkillSyncService({ maxArchiveBytes: 1024 });
+
+    await expect(service.importSkillsZipArchive({ filePath: zipPath })).rejects.toMatchObject({
+      code: SKILL_SYNC_SIZE_LIMIT_ERROR_CODE,
+      data: {
+        actualBytes: expect.any(Number),
+        maxBytes: 1024,
+        phase: "archive",
+      },
+    });
+  });
+
+  it("returns empty results when the zip contains no skill directories", async () => {
+    const zipPath = await writeZipFixture({ "docs/readme.txt": "not a skill" });
+    const home = makeHome();
+    process.env.HOME = home;
+    const service = createSkillSyncService({ maxArchiveBytes: 1024 * 1024 });
+
+    const result = await service.importSkillsZipArchive({ filePath: zipPath });
+
+    expect(result.results).toEqual([]);
+    await expect(
+      readFile(join(home, ".zcode", "skills", "docs", "readme.txt"), "utf-8"),
     ).rejects.toThrow();
   });
 });

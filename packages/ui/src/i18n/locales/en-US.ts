@@ -4946,6 +4946,19 @@ const enUS: Record<string, string> = {
     "Sync failed: the generated sync archive is about {actualSize}, exceeding the {maxSize} per-sync limit. Deselect some Skills and try again. Nothing was written to the remote host.",
   "settings.skills.remoteSync.sizeLimit.extractedContent":
     "Sync failed: the extracted Skill content is about {actualSize}, exceeding the {maxSize} remote limit. Deselect some Skills and try again.",
+  "settings.skills.zipImport.open": "Import from ZIP",
+  "settings.skills.zipImport.title": "Import skills from a ZIP file",
+  "settings.skills.zipImport.description":
+    "Choose a .zip archive. Each directory containing a SKILL.md is imported as a skill into the local user skills directory (~/.zcode/skills). Skills with the same name are skipped and never overwritten.",
+  "settings.skills.zipImport.select": "Choose ZIP file",
+  "settings.skills.zipImport.importing": "Importing skills...",
+  "settings.skills.zipImport.notZipFile": "Please choose a .zip archive.",
+  "settings.skills.zipImport.complete": "Skill import complete.",
+  "settings.skills.zipImport.emptyArchive":
+    "No skill directories with a SKILL.md were found in the archive.",
+  "settings.skills.zipImport.synced": "Imported",
+  "settings.skills.zipImport.skipped": "Skipped",
+  "settings.skills.zipImport.failed": "Failed",
   "settings.skills.userScopeDesktopOnly":
     "User-level skills are available on desktop only in this phase.",
   "settings.skills.detail.description": "Description",

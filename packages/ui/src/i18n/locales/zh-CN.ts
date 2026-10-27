@@ -4630,6 +4630,18 @@ const zhCN: Record<string, string> = {
     "同步失败：生成的同步包约为 {actualSize}，超过单次同步上限 {maxSize}。请减少选择后重试；远端未写入任何内容。",
   "settings.skills.remoteSync.sizeLimit.extractedContent":
     "同步失败：远端解包后的 Skills 内容约为 {actualSize}，超过允许上限 {maxSize}。请减少选择后重试。",
+  "settings.skills.zipImport.open": "从 ZIP 导入",
+  "settings.skills.zipImport.title": "从 ZIP 文件导入技能",
+  "settings.skills.zipImport.description":
+    "选择一个 .zip 压缩包，其中每个包含 SKILL.md 的目录都会作为一个技能导入到本机用户级技能目录（~/.zcode/skills）。同名技能会被跳过，不会覆盖。",
+  "settings.skills.zipImport.select": "选择 ZIP 文件",
+  "settings.skills.zipImport.importing": "正在导入技能...",
+  "settings.skills.zipImport.notZipFile": "请选择 .zip 格式的压缩包。",
+  "settings.skills.zipImport.complete": "技能导入完成。",
+  "settings.skills.zipImport.emptyArchive": "压缩包中没有找到包含 SKILL.md 的技能目录。",
+  "settings.skills.zipImport.synced": "已导入",
+  "settings.skills.zipImport.skipped": "已跳过",
+  "settings.skills.zipImport.failed": "失败",
   "settings.skills.userScopeDesktopOnly": "当前阶段用户级技能仅支持桌面端。",
   "settings.skills.detail.description": "描述",
   "settings.skills.detail.path": "文件路径",
