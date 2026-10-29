@@ -1,0 +1,191 @@
+# 定时把上游 zai-org/ZCode 的更新合进本 fork，能干净合并时自动开 PR。
+#
+# 为什么需要它：
+#   - 上游约每周推一次快照。攒着合并会让冲突规模放大：实测攒两版是 13~14 处冲突，
+#     每周合一次只有 1 处（且是纯追加的清单文件）；
+#   - 定时任务负责「早发现 + 试合并」，人只需要处理真正冲突的那部分。
+#
+# 行为：
+#   1. 把 machine-owned 分支 upstream-mirror 同步到上游 HEAD（用于随时查看本 fork 的
+#      定制差异，见 docs/fork-maintenance.md）；
+#   2. 尝试把 upstream/main 合并进当前 main：
+#      - 干净合并 → 推送 upstream/sync 分支并创建/更新 PR；
+#      - 有冲突   → 不开 PR，改开（或追加评论到）一个 issue，列出冲突文件与手工处理命令。
+#
+# 已知限制：用 GITHUB_TOKEN 推送创建的分支/PR 不会再触发其它 workflow（GitHub 的平台限制），
+# 所以 PR 上不会自动出现 unit-tests 结果。合并前请按 docs/fork-maintenance.md 的验证清单在
+# 本地过一遍，或对该分支手动触发：gh workflow run "Unit tests" --ref upstream/sync
+name: Upstream sync
+
+on:
+  schedule:
+    # 每周一 06:00 UTC（北京时间 14:00）。与上游快照的发布节奏对齐。
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+# 上游同步是串行的：两个并发任务同时推 upstream/sync 会互相覆盖。
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_URL: https://github.com/zai-org/ZCode.git
+  SYNC_BRANCH: upstream/sync
+  MIRROR_BRANCH: upstream-mirror
+  ISSUE_TITLE: 上游同步需要手工解决冲突
+
+jobs:
+  sync:
+    name: Detect and stage upstream updates
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 需要完整历史计算 merge-base 与差异统计。
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream
+        run: |
+          set -euo pipefail
+          git remote add upstream "$UPSTREAM_URL" 2>/dev/null || git remote set-url upstream "$UPSTREAM_URL"
+          git fetch upstream main --tags --prune
+
+      - name: Update upstream-mirror branch
+        # machine-owned 分支：只镜像上游 HEAD，不要在其上提交（下次同步会被强制覆盖）。
+        run: |
+          set -euo pipefail
+          git push --force origin "refs/remotes/upstream/main:refs/heads/$MIRROR_BRANCH"
+          echo "已同步 $MIRROR_BRANCH -> $(git rev-parse --short upstream/main)"
+
+      - name: Detect new upstream commits
+        id: detect
+        run: |
+          set -euo pipefail
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "has_updates=false" >> "$GITHUB_OUTPUT"
+            echo "main 已包含上游全部提交，跳过。"
+            exit 0
+          fi
+          echo "has_updates=true" >> "$GITHUB_OUTPUT"
+          echo "count=$(git rev-list --count HEAD..upstream/main)" >> "$GITHUB_OUTPUT"
+          git log --oneline HEAD..upstream/main | head -20 > /tmp/upstream-commits.txt
+          echo "" >> /tmp/upstream-commits.txt
+          git diff --stat HEAD...upstream/main | tail -1 >> /tmp/upstream-commits.txt
+          cat /tmp/upstream-commits.txt
+
+      - name: Attempt merge
+        if: steps.detect.outputs.has_updates == 'true'
+        id: merge
+        run: |
+          set -euo pipefail
+          git checkout -B "$SYNC_BRANCH"
+          if git merge --no-edit upstream/main; then
+            echo "clean=true" >> "$GITHUB_OUTPUT"
+            echo "试合并干净无冲突。"
+          else
+            echo "clean=false" >> "$GITHUB_OUTPUT"
+            git diff --name-only --diff-filter=U > /tmp/upstream-conflicts.txt
+            echo "冲突文件："
+            cat /tmp/upstream-conflicts.txt
+            # 不在分支里留下冲突标记：回滚到 main 状态，由 issue 指引人工处理。
+            git merge --abort
+            git checkout -B "$SYNC_BRANCH" HEAD
+          fi
+
+      - name: Open or update sync pull request
+        if: steps.detect.outputs.has_updates == 'true' && steps.merge.outputs.clean == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git push --force origin "refs/heads/$SYNC_BRANCH:refs/heads/$SYNC_BRANCH"
+
+          upstream_head=$(git rev-parse --short upstream/main)
+          {
+            echo "定时同步把上游 \`upstream/main\`（\`$upstream_head\`）合并进 \`main\`。"
+            echo
+            echo "试合并**无冲突**，但请人工过一遍再合并："
+            echo
+            echo "- [ ] 按 [docs/fork-maintenance.md](../blob/main/docs/fork-maintenance.md) 的验证清单在本地跑 typecheck / lint / 架构检查 / 单测"
+            echo "- [ ] 确认定制域未受影响（NewAPI、便携数据目录、Lark CLI、PowerShell 7、composer 速率指标）"
+            echo
+            echo "本次带入的上游提交（最多 20 条）："
+            echo
+            echo '```'
+            cat /tmp/upstream-commits.txt
+            echo '```'
+            echo
+            echo "> 本 PR 由 \`upstream-sync\` workflow 创建，分支会被后续同步强制更新。"
+            echo "> 用 GITHUB_TOKEN 推送不会触发其它 workflow，因此这里没有 CI 结果；"
+            echo "> 可在本地验证，或手动执行 \`gh workflow run \"Unit tests\" --ref $SYNC_BRANCH\`。"
+          } > /tmp/pr-body.md
+
+          existing=$(gh pr list --head "$SYNC_BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --body-file /tmp/pr-body.md
+            echo "已更新 PR #$existing"
+          else
+            gh pr create \
+              --base main \
+              --head "$SYNC_BRANCH" \
+              --title "chore(upstream): sync upstream $upstream_head" \
+              --body-file /tmp/pr-body.md
+          fi
+
+      - name: Report conflicts as an issue
+        if: steps.detect.outputs.has_updates == 'true' && steps.merge.outputs.clean == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          upstream_head=$(git rev-parse --short upstream/main)
+          {
+            echo "上游 \`upstream/main\`（\`$upstream_head\`）有 $(git rev-list --count HEAD..upstream/main) 个新提交，"
+            echo "但试合并存在冲突，未创建 PR。"
+            echo
+            echo "冲突文件："
+            echo
+            echo '```'
+            cat /tmp/upstream-conflicts.txt
+            echo '```'
+            echo
+            echo "本次带入的上游提交（最多 20 条）："
+            echo
+            echo '```'
+            cat /tmp/upstream-commits.txt
+            echo '```'
+            echo
+            echo "手工处理："
+            echo
+            echo '```bash'
+            echo 'git fetch origin && git merge origin/main          # 先确保本地 main 最新'
+            echo 'git remote add upstream https://github.com/zai-org/ZCode.git  # 若尚未添加'
+            echo 'git fetch upstream main'
+            echo 'git merge upstream/main                            # 逐个解决冲突'
+            echo '```'
+            echo
+            echo "合并要点见 [docs/fork-maintenance.md](../blob/main/docs/fork-maintenance.md)："
+            echo "追加型清单（test-ids、architecture-policy、package.json 脚本）两侧都保留；"
+            echo "上游重构过的区域（侧栏、SettingsPage、index.ts）取上游结构再把本 fork 的插入点加回。"
+          } > /tmp/issue-body.md
+
+          existing=$(gh issue list --search "$ISSUE_TITLE in:title" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file /tmp/issue-body.md
+            echo "已在 issue #$existing 追加评论"
+          else
+            gh issue create --title "$ISSUE_TITLE" --body-file /tmp/issue-body.md
+          fi
