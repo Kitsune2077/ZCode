@@ -31,6 +31,27 @@ git fetch origin && git diff --name-status origin/main main   # 完整定制差�
 
 ## 上游同步的四条机制
 
+### 0. Gitea 侧同步（`.gitea/workflows/upstream-sync.yml`）
+
+Gitea 与 GitHub 是两个远端，**不能让两边各自合并上游**——那会产生两个内容相同但提交不同的
+`main`，之后互相推送必然非快进。因此 Gitea 侧默认是「只检测」模式：
+
+- 每周一 06:00 检查 `zai-org/ZCode`，维护 `upstream-mirror`，在临时分支上演练合并；
+- 无新提交 → 跳过；可干净合并 → 只报告（不改 `main`）；有冲突 → 开/追加 issue 并让运行变红。
+
+需要一次性配置：仓库 Secrets 增加 `GITEA_TOKEN`（scope：`write:repository` + `write:issue`）。
+
+**自主合并开关**：设置仓库变量 `UPSTREAM_SYNC_AUTOMERGE=1` 并添加 `GITHUB_PUSH_TOKEN`
+（GitHub PAT，repo 写权限；合并若改动 `.github/workflows/` 还需 workflow scope）后，干净合并会：
+
+1. 在 Gitea 上生成一个合并提交；
+2. 把**同一个 SHA** 同时推到 Gitea 与 GitHub 的 `main`（两端历史完全一致，不会分叉）；
+3. 在 issue 里记录合并提交与上游提交清单，GitHub 侧 CI 随推送自动运行。
+
+冲突场景在两种模式下都仍然只开 issue，不会动 `main`。
+
+与 GitHub 侧 workflow 互不依赖且幂等：任一侧合并完成后，另一侧下一轮会检测到「已包含上游」直接跳过。
+
 ### 1. 定时同步 workflow（`.github/workflows/upstream-sync.yml`）
 
 每周一 06:00 UTC 自动运行，也可手动触发（Actions → Upstream sync → Run workflow）：
