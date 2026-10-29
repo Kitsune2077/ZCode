@@ -61,7 +61,10 @@ jobs:
         run: |
           set -euo pipefail
           git remote add upstream "$UPSTREAM_URL" 2>/dev/null || git remote set-url upstream "$UPSTREAM_URL"
-          git fetch upstream main --tags --prune
+          # 不要加 --tags：本 fork 存在与上游同名但指向不同提交的本地 tag（如 v3.15.1），
+          # git 会以 "would clobber existing tag" 拒绝更新并让整个 fetch 以非零码退出。
+          # 同步只需要 upstream/main。
+          git fetch upstream main --prune
 
       - name: Update upstream-mirror branch
         # machine-owned 分支：只镜像上游 HEAD，不要在其上提交（下次同步会被强制覆盖）。
