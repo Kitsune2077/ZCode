@@ -1,22 +1,28 @@
 # Gitea 追随 GitHub fork（方案 A）：本仓库把 Kitsune2077/ZCode 的 main 快进过来。
 #
 # 为什么用「快进」而不是合并/镜像：
-#   - Gitea 的 pull mirror 只在创建仓库时可选、且仓库只读（push 会被拒），无法套在
-#     现有仓库上；这里用 Actions 定时 `git fetch` + `merge --ff-only` 达到同样效果，
+#   - Gitea 的 pull mirror 只在创建仓库时可选、且仓库只读（push 会被拒），无法套在现有
+#     仓库上；这里用 Actions 定时 `git fetch` + `merge --ff-only` 达到同样效果，
 #     同时保留仓库可写。
-#   - 只做快进，不做合并：一旦 Gitea 的 main 有了 GitHub 没有的提交（分叉），
-#     脚本不会强推覆盖，而是开 issue 让人判断，避免把私有仓库的提交悄悄丢掉。
+#   - 只做快进，不做合并：一旦 Gitea 的 main 有了 GitHub 没有的提交（分叉），脚本不会
+#     强推覆盖，而是开 issue 让人判断，避免悄悄丢掉私有仓库上的提交。
 #
 # 与上游同步的分工：
 #   上游 zai-org/ZCode →(合并，GitHub Actions 提醒/开 PR)→ GitHub fork main →(本工作流)→ Gitea。
-#   Gitea 侧不再独立合并上游，避免出现两个内容相同但提交不同的 main。
+#   Gitea 侧不独立合并上游，避免出现两个内容相同但提交不同的 main。
 #
-# 前置配置（Gitea 仓库设置里一次）：
-#   Settings → Secrets：GITEA_TOKEN（scope：write:repository + write:issue）
-#   仅需这一个凭据：读 GitHub 是匿名（仓库 public），写 Gitea 用该 token。
+# 凭据：默认**不需要手动建密钥**。
+#   Gitea 会为每个 job 自动注入任务令牌（`${{ secrets.GITEA_TOKEN }}`），其权限由本文件的
+#   `permissions:` 决定（这里要 contents: write 才能 push、issues: write 才能开 issue）。
+#   注意：Gitea 的密钥命名禁止以 GITEA_ / GITHUB_ 开头（这两个前缀是保留的），所以想建
+#   「自定义」令牌时只能换个名字——本工作流留了 REPO_SYNC_TOKEN 作为可选的覆盖：
+#   在 工作流 → 密钥 里新建 REPO_SYNC_TOKEN（PAT，需仓库写权限 + issue 写权限），
+#   仅当实例把内置令牌权限裁剪成只读、导致 push 被拒时才需要。
 #
-# 只同步 main，不动其它分支（如 main-sicc）与 tag：那些是本地/私有分支，
-# 跟随式同步不应擅自改动。需要时手动 push 即可。
+# 若 push 报 403/权限不足，先检查：仓库 Settings → Actions → General 的最大令牌权限
+#   是否允许 contents: write；被裁剪时改用上面的 REPO_SYNC_TOKEN。
+#
+# 只同步 main，不动其它分支（如 main-sicc）与 tag。
 name: Mirror GitHub fork main
 
 on:
@@ -41,7 +47,6 @@ env:
   TARGET_BRANCH: main
   ISSUE_TITLE: Gitea 与 GitHub main 已分叉
   GITEA_API: ${{ github.server_url }}/api/v1/repos/${{ github.repository }}
-  GITEA_ACTOR: ${{ github.repository_owner }}
 
 jobs:
   mirror:
@@ -55,25 +60,28 @@ jobs:
           # 需要完整历史判断祖先关系（快进 vs 分叉）。
           fetch-depth: 0
 
-      - name: Prepare credentials
-        env:
-          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "${GITEA_TOKEN:-}" ]; then
-            echo "::error::缺少 GITEA_TOKEN secret（需要 write:repository + write:issue）"
-            exit 1
-          fi
-          git config user.name "gitea-actions[bot]"
-          git config user.email "gitea-actions@noreply.local"
-          # 用凭据助手代替把 token 拼进 remote URL，避免它出现在 git 错误输出里。
-          git config credential.helper "!f() { echo username=${GITEA_ACTOR}; echo password=${GITEA_TOKEN}; }; f"
-
       - name: Fast-forward from GitHub
         env:
-          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          # 内置任务令牌；REPO_SYNC_TOKEN 可选覆盖（实例裁剪内置令牌权限时用）。
+          JOB_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          REPO_SYNC_TOKEN: ${{ secrets.REPO_SYNC_TOKEN }}
         run: |
           set -uo pipefail
+
+          token="${REPO_SYNC_TOKEN:-$JOB_TOKEN}"
+          if [ -z "${token:-}" ]; then
+            echo "::error::没有可用的任务令牌（内置 GITEA_TOKEN 为空且未配置 REPO_SYNC_TOKEN）"
+            exit 1
+          fi
+
+          # 显式给本仓库 origin 配 HTTP 基本认证：Gitea 约定用户名用 x-access-token，
+          # 令牌放在密码位。认证头只作用于 Gitea 源，取 GitHub 仍是匿名。
+          server_origin=$(printf '%s' "${GITHUB_SERVER_URL}" | sed -E 's#(https?://[^/]+).*#\1#')
+          basic=$(printf 'x-access-token:%s' "$token" | base64 | tr -d '\n')
+          git config --local "http.${server_origin}/.extraheader" "AUTHORIZATION: basic ${basic}"
+
+          git config user.name "gitea-actions[bot]"
+          git config user.email "gitea-actions@noreply.local"
 
           report_issue() {
             local file="$1" body payload payload_comment existing
@@ -81,13 +89,13 @@ jobs:
             if command -v jq >/dev/null 2>&1; then
               payload=$(jq -n --arg t "$ISSUE_TITLE" --arg b "$body" '{title:$t, body:$b}')
               payload_comment=$(jq -n --arg b "$body" '{body:$b}')
-              existing=$(curl -sS -H "Authorization: token ${GITEA_TOKEN}" \
+              existing=$(curl -sS -H "Authorization: token ${token}" \
                 "${GITEA_API}/issues?state=open&type=issues&limit=50" \
                 | jq -r --arg t "$ISSUE_TITLE" '[.[] | select(.title == $t) | .number] | first // empty' 2>/dev/null || true)
             elif command -v python3 >/dev/null 2>&1; then
               payload=$(printf '%s' "$body" | python3 -c 'import json,sys; print(json.dumps({"title": sys.argv[1], "body": sys.stdin.read()}))' "$ISSUE_TITLE")
               payload_comment=$(printf '%s' "$body" | python3 -c 'import json,sys; print(json.dumps({"body": sys.stdin.read()}))')
-              existing=$(curl -sS -H "Authorization: token ${GITEA_TOKEN}" \
+              existing=$(curl -sS -H "Authorization: token ${token}" \
                 "${GITEA_API}/issues?state=open&type=issues&limit=50" \
                 | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next((i["number"] for i in d if i["title"]==sys.argv[1]), ""))' "$ISSUE_TITLE" 2>/dev/null || true)
             else
@@ -95,12 +103,12 @@ jobs:
               return 0
             fi
             if [ -n "${existing:-}" ]; then
-              curl -sS -o /dev/null -X POST -H "Authorization: token ${GITEA_TOKEN}" \
+              curl -sS -o /dev/null -X POST -H "Authorization: token ${token}" \
                 -H "Content-Type: application/json" -d "$payload_comment" \
                 "${GITEA_API}/issues/${existing}/comments" \
                 || echo "::warning::追加 issue 评论失败"
             else
-              curl -sS -o /dev/null -X POST -H "Authorization: token ${GITEA_TOKEN}" \
+              curl -sS -o /dev/null -X POST -H "Authorization: token ${token}" \
                 -H "Content-Type: application/json" -d "$payload" \
                 "${GITEA_API}/issues" \
                 || echo "::warning::创建 issue 失败"
@@ -114,7 +122,7 @@ jobs:
           fi
           remote_sha=$(git rev-parse FETCH_HEAD)
 
-          # ---------- 2. 分三种情况：已最新 / 可快进 / 已分叉 ----------
+          # ---------- 2. 三种情况：已最新 / 可快进 / 已分叉 ----------
           if git merge-base --is-ancestor "$remote_sha" HEAD; then
             echo "Gitea main 已包含 GitHub main（或领先），无需操作。"
             exit 0
@@ -137,8 +145,7 @@ jobs:
               git log --oneline "HEAD..${remote_sha}"
               echo '```'
               echo
-              echo "处理方式：确认以哪一侧为准后手动处理，例如在本地 \`git fetch\` 后"
-              echo "\`git merge github/main\` 解决后再推送到两端。"
+              echo "处理方式：确认以哪一侧为准后手动处理，例如本地 \`git fetch\` 后合并再推两端。"
             } > /tmp/report.md
             report_issue /tmp/report.md
             echo "::error::Gitea 与 GitHub main 已分叉，需要人工处理（详见 issue「${ISSUE_TITLE}」）"
@@ -147,12 +154,12 @@ jobs:
 
           # ---------- 3. 快进并推送 ----------
           if ! git merge --ff-only "$remote_sha"; then
-            echo "::error::快进失败（本地有未预期的工作区状态）"
+            echo "::error::快进失败（工作区状态异常）"
             exit 1
           fi
           new_sha=$(git rev-parse --short HEAD)
           if ! git push origin "HEAD:${TARGET_BRANCH}"; then
-            echo "::error::推送 ${TARGET_BRANCH} 到 Gitea 失败（检查分支保护/权限）"
+            echo "::error::推送 ${TARGET_BRANCH} 失败：检查 Actions 最大令牌权限（需 contents: write）或分支保护；必要时配置 REPO_SYNC_TOKEN"
             exit 1
           fi
           echo "已快进 ${TARGET_BRANCH} -> ${new_sha}"

@@ -43,8 +43,13 @@ Gitea 不做上游合并——两个远端各自合并会产生两个内容相�
   - Gitea 是 GitHub 的祖先 → `merge --ff-only` 后推送，完成跟随；
   - 两边各有对方没有的提交（分叉）→ **不强推**，开/追加 issue 列出两侧独有提交，运行变红。
 - 只同步 `main`，不碰其它分支（如 `main-sicc`）与 tag。
-- 需要一个凭据：Gitea 仓库 Secrets 的 `GITEA_TOKEN`（`write:repository` + `write:issue`）。
-  读 GitHub 是匿名（仓库 public），写 Gitea 用该 token。
+- **凭据默认零配置**：Gitea 为每个 job 自动注入任务令牌（`secrets.GITEA_TOKEN`），权限由
+  workflow 的 `permissions:` 决定（本文件已声明 `contents: write` + `issues: write`）。
+  注意 Gitea 的**密钥命名禁止以 `GITEA_` / `GITHUB_` 开头**（这两个前缀保留给内置令牌），
+  所以"自定义密钥"必须换个名字——本工作流留了 `REPO_SYNC_TOKEN` 作为可选覆盖，只有在实例把
+  内置令牌权限裁剪成只读、push 被拒时才需要在 **工作流 → 密钥** 里新建它（PAT：仓库写 + issue 写）。
+- push 报 403 时先看仓库 `Settings → Actions → General` 的最大令牌权限是否允许
+  `contents: write`。
 
 为什么不直接用 Gitea 的 pull mirror：镜像只能在**创建仓库时**设定、且镜像仓库**只读**
 （push 会被拒 `mirror repository is read-only`），无法套在现有仓库上。这个 workflow 用
