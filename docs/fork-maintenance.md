@@ -31,26 +31,29 @@ git fetch origin && git diff --name-status origin/main main   # 完整定制差�
 
 ## 上游同步的四条机制
 
-### 0. Gitea 侧同步（`.gitea/workflows/upstream-sync.yml`）
+### 0. Gitea 追随 GitHub fork（`.gitea/workflows/mirror-from-github.yml`）
 
-Gitea 与 GitHub 是两个远端，**不能让两边各自合并上游**——那会产生两个内容相同但提交不同的
-`main`，之后互相推送必然非快进。因此 Gitea 侧默认是「只检测」模式：
+分工是单向的：**上游 → GitHub fork（合并）→ Gitea（快进跟随）**。
 
-- 每周一 06:00 检查 `zai-org/ZCode`，维护 `upstream-mirror`，在临时分支上演练合并；
-- 无新提交 → 跳过；可干净合并 → 只报告（不改 `main`）；有冲突 → 开/追加 issue 并让运行变红。
+Gitea 不做上游合并——两个远端各自合并会产生两个内容相同但提交不同的 `main`，之后互相推送
+必然非快进，等于自己制造冲突。所以 Gitea 只做一件事：把 GitHub fork 的 `main` **快进**过来。
 
-需要一次性配置：仓库 Secrets 增加 `GITEA_TOKEN`（scope：`write:repository` + `write:issue`）。
+- 每 15 分钟一次（也可手动 triggers），`git fetch` GitHub 的 `main` 后按三种情况处理：
+  - Gitea 已包含 GitHub（或领先）→ 跳过；
+  - Gitea 是 GitHub 的祖先 → `merge --ff-only` 后推送，完成跟随；
+  - 两边各有对方没有的提交（分叉）→ **不强推**，开/追加 issue 列出两侧独有提交，运行变红。
+- 只同步 `main`，不碰其它分支（如 `main-sicc`）与 tag。
+- 需要一个凭据：Gitea 仓库 Secrets 的 `GITEA_TOKEN`（`write:repository` + `write:issue`）。
+  读 GitHub 是匿名（仓库 public），写 Gitea 用该 token。
 
-**自主合并开关**：设置仓库变量 `UPSTREAM_SYNC_AUTOMERGE=1` 并添加 `GITHUB_PUSH_TOKEN`
-（GitHub PAT，repo 写权限；合并若改动 `.github/workflows/` 还需 workflow scope）后，干净合并会：
+为什么不直接用 Gitea 的 pull mirror：镜像只能在**创建仓库时**设定、且镜像仓库**只读**
+（push 会被拒 `mirror repository is read-only`），无法套在现有仓库上。这个 workflow 用
+`fetch + ff-only` 达到同样效果，同时保留仓库可写。
 
-1. 在 Gitea 上生成一个合并提交；
-2. 把**同一个 SHA** 同时推到 Gitea 与 GitHub 的 `main`（两端历史完全一致，不会分叉）；
-3. 在 issue 里记录合并提交与上游提交清单，GitHub 侧 CI 随推送自动运行。
+> 若仓库开了"main 需 PR 才能推送"的分支保护，Actions 的推送会被拒；此时需要给
+> `gitea-actions[bot]` 加白名单，或改用 PR 方式合并。
 
-冲突场景在两种模式下都仍然只开 issue，不会动 `main`。
-
-与 GitHub 侧 workflow 互不依赖且幂等：任一侧合并完成后，另一侧下一轮会检测到「已包含上游」直接跳过。
+### 1. 定时同步 workflow（`.github/workflows/upstream-sync.yml`）
 
 ### 1. 定时同步 workflow（`.github/workflows/upstream-sync.yml`）
 
