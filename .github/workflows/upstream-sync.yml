@@ -10,7 +10,7 @@
 #      定制差异，见 docs/fork-maintenance.md）；
 #   2. 尝试把 upstream/main 合并进当前 main：
 #      - 干净合并 → 推送 upstream/sync 分支并创建/更新 PR；
-#      - 有冲突   → 不开 PR，改开（或追加评论到）一个 issue，列出冲突文件与手工处理命令。
+#      - 有冲突   → 不开 PR：把冲突清单写进运行摘要并让本次运行变红（Issues 可用时同时开/追加 issue）。
 #
 # 已知限制：用 GITHUB_TOKEN 推送创建的分支/PR 不会再触发其它 workflow（GitHub 的平台限制），
 # 所以 PR 上不会自动出现 unit-tests 结果。合并前请按 docs/fork-maintenance.md 的验证清单在
@@ -148,16 +148,39 @@ jobs:
               --body-file /tmp/pr-body.md
           fi
 
-      - name: Report conflicts as an issue
+      - name: Report conflicts
         if: steps.detect.outputs.has_updates == 'true' && steps.merge.outputs.clean == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           upstream_head=$(git rev-parse --short upstream/main)
+          upstream_count=$(git rev-list --count HEAD..upstream/main)
+
+          # 运行摘要始终可写：即使仓库关闭了 Issues，冲突也会出现在 Actions 的运行摘要里。
           {
-            echo "上游 \`upstream/main\`（\`$upstream_head\`）有 $(git rev-list --count HEAD..upstream/main) 个新提交，"
-            echo "但试合并存在冲突，未创建 PR。"
+            echo "## 上游同步需要手工解决冲突"
+            echo
+            echo "上游 \`upstream/main\`（\`$upstream_head\`）有 $upstream_count 个新提交，试合并存在冲突，未创建 PR。"
+            echo
+            echo "**冲突文件**"
+            echo
+            echo '```'
+            cat /tmp/upstream-conflicts.txt
+            echo '```'
+            echo
+            echo "**本次带入的上游提交（最多 20 条）**"
+            echo
+            echo '```'
+            cat /tmp/upstream-commits.txt
+            echo '```'
+            echo
+            echo '手工处理：`git fetch upstream main && git merge upstream/main`，'
+            echo '合并要点见 docs/fork-maintenance.md。'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          {
+            echo "上游 \`upstream/main\`（\`$upstream_head\`）有 $upstream_count 个新提交，但试合并存在冲突，未创建 PR。"
             echo
             echo "冲突文件："
             echo
@@ -180,15 +203,19 @@ jobs:
             echo 'git merge upstream/main                            # 逐个解决冲突'
             echo '```'
             echo
-            echo "合并要点见 [docs/fork-maintenance.md](../blob/main/docs/fork-maintenance.md)："
-            echo "追加型清单（test-ids、architecture-policy、package.json 脚本）两侧都保留；"
-            echo "上游重构过的区域（侧栏、SettingsPage、index.ts）取上游结构再把本 fork 的插入点加回。"
+            echo "合并要点见 docs/fork-maintenance.md：追加型清单（test-ids、architecture-policy、"
+            echo "package.json 脚本）两侧都保留；上游重构过的区域（侧栏、SettingsPage、index.ts）"
+            echo "取上游结构再把本 fork 的插入点加回。"
           } > /tmp/issue-body.md
 
-          existing=$(gh issue list --search "$ISSUE_TITLE in:title" --state open --json number --jq '.[0].number // empty')
-          if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body-file /tmp/issue-body.md
-            echo "已在 issue #$existing 追加评论"
+          # Issues 可能被仓库关闭（本 fork 当前就是关闭状态），失败不影响摘要，只记一条 warning。
+          existing=$(gh issue list --search "$ISSUE_TITLE in:title" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)
+          if [ -n "${existing:-}" ]; then
+            gh issue comment "$existing" --body-file /tmp/issue-body.md || echo "::warning::issue 评论失败（可能已关闭 Issues）"
           else
-            gh issue create --title "$ISSUE_TITLE" --body-file /tmp/issue-body.md
+            gh issue create --title "$ISSUE_TITLE" --body-file /tmp/issue-body.md || echo "::warning::issue 创建失败（可能已关闭 Issues）"
           fi
+
+          # 让这次运行变红：有冲突却绿着，等于没人会注意到。
+          echo "::error::上游同步存在冲突，需要手工合并（详见运行摘要）"
+          exit 1
