@@ -38,9 +38,8 @@ git fetch origin && git diff --name-status origin/main main   # 完整定制差�
 - 把 `upstream-mirror` 分支同步到上游 HEAD；
 - 试合并 `upstream/main` 进 `main`：
   - **干净合并** → 推 `upstream/sync` 分支并创建/更新 PR（带上游提交清单）；
-  - **有冲突** → 不开 PR：把冲突文件与手工命令写进**运行摘要**，并让这次运行**变红**（红运行才算
-    提醒；仓库若开启 Issues，还会同时创建/追加 issue「上游同步需要手工解决冲突」）。
-    当前 fork 关闭了 Issues，因此以「红色运行 + 运行摘要」为准。
+  - **有冲突** → 不开 PR：把冲突文件与手工命令写进**运行摘要**，让这次运行**变红**，并创建或追加
+    issue「上游同步需要手工解决冲突」（Issues 已开启，issue 是主要通知渠道；摘要与红运行是兜底）。
 - 用 `GITHUB_TOKEN` 推送的分支/PR 不会触发其它 workflow，PR 上没有 CI 结果；合并前按下方
   验证清单本地验证，或手动 `gh workflow run "Unit tests" --ref upstream/sync`。
 
