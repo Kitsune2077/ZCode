@@ -688,6 +688,7 @@ export function SkillsSection({
       newActionId="settings.skills.create.open"
     />
   );
+  // ZIP 导入固定写本机用户级技能目录（用户要求放在导入/刷新按钮左侧，而非顶部独立行）。
   const zipImportAction = canImportZip ? (
     <ControlHintTooltip title={intl.formatMessage({ id: "settings.skills.zipImport.open" })}>
       <Button
@@ -742,12 +743,7 @@ export function SkillsSection({
           }
         />
       ) : null}
-      {zipImportAction || remoteSyncAction ? (
-        <div className="flex justify-end gap-2">
-          {zipImportAction}
-          {remoteSyncAction}
-        </div>
-      ) : null}
+      {remoteSyncAction ? <div className="flex justify-end">{remoteSyncAction}</div> : null}
 
       {connectedRemoteSyncTarget ? (
         <div className="rounded-lg border border-border bg-card px-3 py-2 text-ui-base text-foreground-subtle">
@@ -849,7 +845,12 @@ export function SkillsSection({
           <section className={hideInstalledGroup ? "hidden" : "space-y-4"}>
             <div data-skills-plugin-direct-actions="true">
               <SettingsResourceGroupHeader
-                actions={skillHeaderActions}
+                actions={
+                  <div className="flex items-center gap-2">
+                    {zipImportAction}
+                    {skillHeaderActions}
+                  </div>
+                }
                 count={groupedSkills.local.length}
                 title={intl.formatMessage({
                   id: "settings.plugin.skills.installed",

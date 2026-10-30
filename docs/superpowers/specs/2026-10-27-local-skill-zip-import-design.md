@@ -45,7 +45,7 @@ ZIP 解压实现放在 `packages/services/src/skill-sync/skillZipArchive.ts`，�
 
 ## UI 设计
 
-- `SkillsSection` 头部新增"从 ZIP 导入"图标按钮（与远端同步按钮同一行，位于其左侧）；空技能态的操作区追加同款文字按钮。
+- `SkillsSection` 头部操作簇新增"从 ZIP 导入"图标按钮，位于既有"导入 / 刷新"按钮左侧（组头 `actions` 插槽内、`SettingsResourceHeaderActions` 之前）；空技能态的操作区追加同款文字按钮。
 - 入口仅在同时满足 `capability.userScopeAvailable`（桌面端用户级技能可用）与 `platform.canSelectFilePath !== false` 时展示；已连接远端同步目标的上下文中隐藏，避免"列表显示远端技能、导入却写本机"的目标歧义。
 - 新增弹窗 `SkillZipImportDialog`：
   1. pick：展示说明（导入目标为本机 `~/.zcode/skills`，同名跳过）与"选择 ZIP 文件"按钮。

@@ -504,9 +504,15 @@ describe("SkillsSection", () => {
   it("本地上下文在具备用户级技能能力时展示从 ZIP 导入入口", async () => {
     mockCapabilityState = { userScopeAvailable: true };
 
-    await renderSkillsSection();
+    const html = await renderSkillsSection();
 
     expect(findButton("Import from ZIP")).toBeTruthy();
+    // 用户要求 ZIP 导入按钮位于头部既有导入/刷新按钮左侧，而不是顶部独立行。
+    const zipIndex = html.indexOf('aria-label="Import from ZIP"');
+    const refreshIndex = html.indexOf('aria-label="Refresh"');
+    expect(zipIndex).toBeGreaterThan(-1);
+    expect(refreshIndex).toBeGreaterThan(-1);
+    expect(zipIndex).toBeLessThan(refreshIndex);
   });
 
   it("已连接远端同步目标时隐藏从 ZIP 导入入口，避免导入目标歧义", async () => {
