@@ -33,7 +33,6 @@
     "test:docker:web-app-gateway": "node scripts/test-web-app-gateway-reset.mjs",
     "test": "pnpm run test:unit",
     "test:unit": "vitest run --config vitest.fork.config.ts",
-    "test:engineering": "vitest run --project engineering",
     "verify:pre-push": "pnpm run lint && pnpm run db:schema:check && pnpm run test:architecture && pnpm run architecture:check -- --changed",
     "build": "pnpm -r build",
     "build:desktop-agent:bytecode": "node scripts/build-desktop-agent-bytecode.mjs",
