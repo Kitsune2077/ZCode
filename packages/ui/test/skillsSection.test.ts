@@ -85,6 +85,9 @@ vi.mock("lucide-react", () => ({
   UploadCloud: (props: Record<string, unknown>) => createElement("svg", props),
   UserRound: (props: Record<string, unknown>) => createElement("svg", props),
   WandSparkles: (props: Record<string, unknown>) => createElement("svg", props),
+  // 上游 3.17 的 SkillsSection 新增了 data-sync 入口与刷新图标；mock 需同步补上。
+  LayoutDashboard: (props: Record<string, unknown>) => createElement("svg", props),
+  RefreshCw: (props: Record<string, unknown>) => createElement("svg", props),
 }));
 
 vi.mock("@/components/ui/button.js", () => ({

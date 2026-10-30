@@ -1,10 +1,10 @@
 #!/usr/bin/env sh
 
-# 推送前只跑 lint 与架构检查（秒级静态门禁）；单测已移至 GitHub Actions 的
-# unit-tests workflow（.github/workflows/unit-tests.yml），避免本地全量单测
-# 长时间占用 CPU。需要本地跑受影响单测时手动执行 pnpm run test:unit:affected。
+# 推送前只跑 lint、schema 与架构检查（秒级静态门禁）；单测已移至 GitHub Actions 的
+# unit-tests workflow（.github/workflows/unit-tests.yml），避免本地全量单测长时间占用 CPU。
+# 上游 3.17 退役了 App 单测执行链，本 fork 自己维护 test:unit 入口并在 CI 运行。
 # Git 会通过 stdin 传入本次 push 的 local/remote ref 与 sha；先缓存下来，手动
-# 运行 affected-test 脚本时才能用远端当前 sha 作为 base，而不是误退回到默认分支。
+# 运行 affected-test / 架构检查时才能用远端当前 sha 作为 base，而不是误退回到默认分支。
 # 手工执行 hook 时 stdin 可能是终端，避免直接 cat 卡住调试。
 pre_push_stdin=""
 if [ ! -t 0 ]; then

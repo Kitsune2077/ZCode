@@ -61,8 +61,6 @@ Gitea 不做上游合并——两个远端各自合并会产生两个内容相�
 
 ### 1. 定时同步 workflow（`.github/workflows/upstream-sync.yml`）
 
-### 1. 定时同步 workflow（`.github/workflows/upstream-sync.yml`）
-
 每周一 06:00 UTC 自动运行，也可手动触发（Actions → Upstream sync → Run workflow）：
 
 - 把 `upstream-mirror` 分支同步到上游 HEAD；
@@ -162,11 +160,30 @@ pnpm lint
 pnpm run db:schema:check
 pnpm run test:architecture
 pnpm architecture:check --changed
+pnpm test:unit                                  # fork 自有单测（见下）
 ```
 
 推送后 CI（`unit-tests.yml`）会跑全量单测；绿了才算完成。
 
 有行为改动时按 AGENTS.md 的约定先补测试与 spec。
+
+## fork 单测入口（上游退役 App 单测之后）
+
+上游 3.17 整体退役了 App/UI 单测：`vitest.config.ts` 只保留 engineering 项目与 CUA，
+根 `package.json` 删除 `test:unit`，约 1700 个测试文件被删，也不再提供
+`@testing-library/*` 依赖。fork 自建功能的回归守卫因此单独维护：
+
+- `vitest.fork.config.ts`：**独立的** vitest 配置（不改上游 `vitest.config.ts`，减少后续冲突），
+  显式列出 fork 测试文件；`pnpm test:unit` / `pnpm test` 指向它。
+- 新增 fork 测试时把文件加进该配置的 include 列表。
+
+当前状态（合并 3.17.1 后）：27 个文件 / 349 用例通过、21 个用例 skip。两处待重写：
+
+| 文件 | 原因 |
+| --- | --- |
+| `packages/services/test/skillSyncService.test.ts` | 上游把技能同步重构为 data-sync 的 `IDataSyncCategoryService`，旧的候选/导入/导出 API 断言失效；fork 的 ZIP 导入仍在新服务的 `importSkillsZipArchive` 上，需按新 API 重写用例 |
+| `packages/ui/test/skillsSection.test.ts`、`skillZipImportDialog.test.ts` | 上游用 data-sync 入口替换了远端同步弹窗并移除 `@testing-library/react`，需按 `useSettingsDataSyncEntry` + `dataSync.dialog` 的新结构重写 |
+| `packages/desktop/test/autoUpdaterReadyState.test.ts` | 上游改了更新器装配（provider 选项、NSIS 签名钩子），16 个断言旧装配的用例已 `it.skip` 标注 |
 
 ## 新增定制时的纪律
 

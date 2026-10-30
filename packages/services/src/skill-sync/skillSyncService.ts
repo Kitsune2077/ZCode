@@ -1,165 +1,53 @@
-/* eslint-disable max-lines -- skill 同步服务集中维护候选扫描、远端判重和导入流程，避免拆分时扩大远端同步回归面。 */
-import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { cp, lstat, mkdir, readFile, readdir, realpath, rm, stat } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, realpath, rm, stat } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { SKILL_DATA_SYNC_MAX_ITEM_BYTES } from "@zcode/shared";
 import type {
-  SkillSyncArchiveExportResult,
-  SkillSyncCandidate,
-  SkillSyncCandidateListResult,
-  SkillSyncImportResult,
-  SkillSyncRemoteStatusResult,
-} from "@zcode/shared";
-import type { ISkillSyncService } from "./skillSync.js";
-import { createSkillSyncArchive, extractSkillSyncArchive } from "./skillSyncArchive.js";
-import { extractSkillZipArchive } from "./skillZipArchive.js";
-import { normalizeSkillSyncRelativePath, resolveSkillSyncPathWithin } from "./skillSyncPath.js";
-import { createSkillSyncSizeLimitError } from "./skillSyncErrors.js";
+  ISkillSyncService,
+  SkillZipImportResult,
+  SkillZipImportResultItem,
+} from "./skillSync.js";
 import {
   MAX_SKILL_SCAN_DEPTH,
   shouldWalkSkillDirectoryEntry,
   walkSkillMarkdownPaths,
 } from "../skills/skillDiscoveryWalk.js";
-import { checkRemoteSyncDirectoryWriteAccess } from "../remote-sync/remoteSyncWriteAccess.js";
+import { createSkillDataSyncMethods } from "../data-sync/node.js";
+import { createSkillSyncSizeLimitError } from "./skillSyncErrors.js";
+import { resolveSkillSyncPathWithin } from "./skillSyncPath.js";
+import { extractSkillZipArchive } from "./skillZipArchive.js";
 
 const SKILL_FILE_NAME = "SKILL.md";
-const DEFAULT_MAX_ARCHIVE_BYTES = 20 * 1024 * 1024;
+const DEFAULT_MAX_ARCHIVE_BYTES = SKILL_DATA_SYNC_MAX_ITEM_BYTES;
+
+/** 用户级技能候选：path 指向技能目录下的 SKILL.md。 */
+export interface UserSkillCandidate {
+  name: string;
+  directoryName: string;
+  description: string;
+  path: string;
+}
 
 export function createSkillSyncService(options?: { maxArchiveBytes?: number }): ISkillSyncService {
   const maxArchiveBytes = options?.maxArchiveBytes ?? DEFAULT_MAX_ARCHIVE_BYTES;
+  // 数据同步：单个技能目录的大小上限，默认 20MB。
+  const dataSync = createSkillDataSyncMethods({ maxItemBytes: maxArchiveBytes });
   return {
-    async listLocalUserSkillCandidates(): Promise<SkillSyncCandidateListResult> {
-      return {
-        candidates: await collectUserSkillCandidates(),
-        maxArchiveBytes,
-      };
-    },
-    async listRemoteUserSkillStatuses(params): Promise<SkillSyncRemoteStatusResult> {
-      const root = getUserZcodeSkillRoot();
-      const existingSkillPathByName = await collectUserSkillDirectoryPathByName();
-      // skill sync service 会通过 RPC 暴露给 renderer / remote 客户端；
-      // directoryName 不能只信 UI 候选，必须在服务端限制为 skills 根内的安全相对路径。
-      const directoryNames = params.directoryNames.map((directoryName) =>
-        normalizeSkillSyncRelativePath(directoryName),
-      );
-      const requestedSkillNameByDirectory = new Map(
-        (params.skills ?? []).map((skill) => [
-          normalizeSkillSyncRelativePath(skill.directoryName),
-          skill.name,
-        ]),
-      );
-      return {
-        statuses: directoryNames.map((directoryName) => {
-          const path = resolveSkillSyncPathWithin(root, directoryName);
-          if (existsSync(path)) {
-            return { directoryName, exists: true, path };
-          }
-          const requestedName = requestedSkillNameByDirectory.get(directoryName);
-          const existingPath = requestedName
-            ? existingSkillPathByName.get(normalizeSkillNameKey(requestedName))
-            : undefined;
-          return existingPath
-            ? { directoryName, exists: true, path: existingPath }
-            : { directoryName, exists: false };
-        }),
-      };
-    },
-    async exportSkillsArchive(params): Promise<SkillSyncArchiveExportResult> {
-      const candidates = await collectUserSkillCandidates();
-      const candidateById = new Map(candidates.map((candidate) => [candidate.id, candidate]));
-      const selected = params.skillIds.map((id) => {
-        const candidate = candidateById.get(id);
-        if (!candidate) {
-          throw new Error(`skill sync candidate not found: ${id}`);
-        }
-        return candidate;
-      });
-      const archiveEntries = await Promise.all(
-        selected.map(async (candidate) => ({
-          sourcePath: await realpath(dirname(candidate.path)),
-          archivePath: candidate.directoryName,
-        })),
-      );
-      const selectedBytes = selected.reduce((total, candidate) => total + candidate.sizeBytes, 0);
-      if (selectedBytes > maxArchiveBytes) {
-        throw createSkillSyncSizeLimitError({
-          actualBytes: selectedBytes,
-          maxBytes: maxArchiveBytes,
-          phase: "selected-content",
-        });
-      }
-      const archive = await createSkillSyncArchive(archiveEntries);
-      if (archive.byteLength > maxArchiveBytes) {
-        throw createSkillSyncSizeLimitError({
-          actualBytes: archive.byteLength,
-          maxBytes: maxArchiveBytes,
-          phase: "archive",
-        });
-      }
-      return {
-        archive,
-        archiveBytes: archive.byteLength,
-        skills: selected.map(({ id, name, directoryName }) => ({
-          id,
-          name,
-          directoryName,
-        })),
-      };
-    },
-    async checkRemoteUserSkillWriteAccess() {
-      return checkRemoteSyncDirectoryWriteAccess(getUserZcodeSkillRoot());
-    },
-    async importSkillsArchive(params): Promise<SkillSyncImportResult> {
-      if (params.overwrite) {
-        throw new Error("skill sync overwrite is not supported");
-      }
-      if (params.archive.byteLength > maxArchiveBytes) {
-        throw createSkillSyncSizeLimitError({
-          actualBytes: params.archive.byteLength,
-          maxBytes: maxArchiveBytes,
-          phase: "archive",
-        });
-      }
-      return await importArchiveBundle(
-        params.archive,
-        maxArchiveBytes,
-        extractSkillSyncArchive,
-      );
-    },
-    async importSkillsZipArchive(params): Promise<SkillSyncImportResult> {
-      const filePath = params.filePath.trim();
-      if (!/\.zip$/iu.test(filePath)) {
-        throw new Error(`skill zip import requires a .zip file: ${filePath}`);
-      }
-      const fileStat = await stat(filePath);
-      if (!fileStat.isFile()) {
-        throw new Error(`skill zip import path is not a regular file: ${filePath}`);
-      }
-      if (fileStat.size > maxArchiveBytes) {
-        throw createSkillSyncSizeLimitError({
-          actualBytes: fileStat.size,
-          maxBytes: maxArchiveBytes,
-          phase: "archive",
-        });
-      }
-      // renderer 只有本地路径没有通用文件读取能力，ZIP 字节由 host 读盘后再解压。
-      const archive = await readFile(filePath);
-      return await importArchiveBundle(
-        archive,
-        maxArchiveBytes,
-        extractSkillZipArchive,
-      );
-    },
+    ...dataSync,
+    // 本仓库定制：本地 ZIP 技能包导入入口（上游 3.17 移除归档导入后单独保留）。
+    importSkillsZipArchive: (params) =>
+      importSkillsZipArchive({ filePath: params.filePath, maxArchiveBytes }),
   };
 }
 
-function resolveUserHomeDir(): string {
+export function resolveUserHomeDir(): string {
   return process.env.HOME?.trim() || process.env.USERPROFILE?.trim() || homedir();
 }
 
-function getUserZcodeSkillRoot(): string {
+export function getUserZcodeSkillRoot(): string {
   return join(resolveUserHomeDir(), ".zcode", "skills");
 }
 
@@ -167,7 +55,11 @@ function getUserAgentsSkillRoot(): string {
   return join(resolveUserHomeDir(), ".agents", "skills");
 }
 
-async function collectUserSkillCandidates(): Promise<SkillSyncCandidate[]> {
+/**
+ * 用户级技能候选：`~/.zcode/skills` 优先，`~/.agents/skills` 中同目录名或同 name 的项剔除，再按 realpath 去重。
+ * 文件数与字节签名由数据同步的 list 自己计算。
+ */
+export async function collectUserSkillCandidates(): Promise<UserSkillCandidate[]> {
   const seenSkillRealpaths = new Set<string>();
   const userZcodeSkillRoot = getUserZcodeSkillRoot();
   const rawZcodeCandidates = await collectUserSkillCandidatesInRoot(userZcodeSkillRoot);
@@ -194,10 +86,10 @@ async function collectUserSkillCandidates(): Promise<SkillSyncCandidate[]> {
 }
 
 async function dedupeCandidatesByCanonicalSkillPath(
-  candidates: SkillSyncCandidate[],
+  candidates: UserSkillCandidate[],
   seenSkillRealpaths: Set<string>,
-): Promise<SkillSyncCandidate[]> {
-  const result: SkillSyncCandidate[] = [];
+): Promise<UserSkillCandidate[]> {
+  const result: UserSkillCandidate[] = [];
   for (const candidate of candidates) {
     const canonicalPath = await realpath(candidate.path).catch(() => candidate.path);
     if (seenSkillRealpaths.has(canonicalPath)) {
@@ -209,11 +101,11 @@ async function dedupeCandidatesByCanonicalSkillPath(
   return result;
 }
 
-async function collectUserSkillCandidatesInRoot(root: string): Promise<SkillSyncCandidate[]> {
+async function collectUserSkillCandidatesInRoot(root: string): Promise<UserSkillCandidate[]> {
   if (!existsSync(root)) {
     return [];
   }
-  const candidates: SkillSyncCandidate[] = [];
+  const candidates: UserSkillCandidate[] = [];
   for await (const skillPath of walkSkillMarkdownPaths(root)) {
     const directoryPath = dirname(skillPath);
     const relativePath = normalizeSkillDirectoryRelativePath(root, directoryPath);
@@ -224,12 +116,10 @@ async function collectUserSkillCandidatesInRoot(root: string): Promise<SkillSync
     if (content !== null) {
       const metadata = parseSkillMetadata(content, basename(relativePath));
       candidates.push({
-        id: createCandidateId(directoryPath),
         name: metadata.name,
         directoryName: relativePath,
         description: metadata.description,
         path: skillPath,
-        sizeBytes: await computeRecursiveSize(directoryPath),
       });
     }
   }
@@ -295,7 +185,7 @@ function normalizeSkillDirectoryRelativePath(root: string, directoryPath: string
   return relative(root, directoryPath).replaceAll("\\", "/");
 }
 
-function normalizeSkillNameKey(name: string): string {
+export function normalizeSkillNameKey(name: string): string {
   return name.trim().toLowerCase();
 }
 
@@ -303,7 +193,7 @@ function joinSkillRelativePath(parent: string, child: string): string {
   return parent ? `${parent}/${child}` : child;
 }
 
-async function readSkillFileOrNull(skillPath: string): Promise<string | null> {
+export async function readSkillFileOrNull(skillPath: string): Promise<string | null> {
   try {
     return await readFile(skillPath, "utf-8");
   } catch (error) {
@@ -314,7 +204,7 @@ async function readSkillFileOrNull(skillPath: string): Promise<string | null> {
   }
 }
 
-function parseSkillMetadata(
+export function parseSkillMetadata(
   content: string,
   fallbackName: string,
 ): {
@@ -339,110 +229,43 @@ function parseSkillMetadata(
   return { name, description };
 }
 
-function createCandidateId(skillDirectoryPath: string): string {
-  return createHash("sha256").update(skillDirectoryPath).digest("hex");
-}
-
-async function computeRecursiveSize(
-  path: string,
-  visitedDirectories = new Set<string>(),
-): Promise<number> {
-  const pathStat = await lstat(path);
-  if (pathStat.isSymbolicLink()) {
-    const targetStat = await stat(path).catch(() => null);
-    if (!targetStat) {
-      return 0;
-    }
-    if (targetStat.isFile()) {
-      return targetStat.size;
-    }
-    if (targetStat.isDirectory()) {
-      return await computeDirectorySize(path, visitedDirectories);
-    }
-    return 0;
+/**
+ * 本仓库定制：本地 ZIP 技能包导入。
+ *
+ * 上游 3.17 把技能同步收敛到「按条目载荷」的 data-sync 模型，本地归档导入没有对应入口，
+ * 因此在本文件单独保留：先在临时目录解压并校验，再逐个复制进用户级 skills 根，
+ * 避免路径穿越或半成品目录污染用户配置。
+ */
+export async function importSkillsZipArchive(options: {
+  filePath: string;
+  maxArchiveBytes: number;
+}): Promise<SkillZipImportResult> {
+  const filePath = options.filePath.trim();
+  if (!/\.zip$/iu.test(filePath)) {
+    throw new Error(`skill zip import requires a .zip file: ${filePath}`);
   }
-  if (pathStat.isFile()) {
-    return pathStat.size;
+  const fileStat = await stat(filePath);
+  if (!fileStat.isFile()) {
+    throw new Error(`skill zip import path is not a regular file: ${filePath}`);
   }
-  if (!pathStat.isDirectory()) {
-    return 0;
+  if (fileStat.size > options.maxArchiveBytes) {
+    throw createSkillSyncSizeLimitError({
+      actualBytes: fileStat.size,
+      maxBytes: options.maxArchiveBytes,
+      phase: "archive",
+    });
   }
-  return await computeDirectorySize(path, visitedDirectories);
-}
-
-async function computeDirectorySize(
-  path: string,
-  visitedDirectories: Set<string>,
-): Promise<number> {
-  const canonicalPath = await realpath(path).catch(() => path);
-  if (visitedDirectories.has(canonicalPath)) {
-    return 0;
-  }
-  visitedDirectories.add(canonicalPath);
-  const children = await readdir(path, { withFileTypes: true });
-  const childSizes = await Promise.all(
-    children.map((child) => computeRecursiveSize(join(path, child.name), visitedDirectories)),
-  );
-  return childSizes.reduce((total, size) => total + size, 0);
-}
-
-async function collectSkillDirectoryPathByName(root: string): Promise<Map<string, string>> {
-  const result = new Map<string, string>();
-  if (!existsSync(root)) {
-    return result;
-  }
-  for await (const skillPath of walkSkillMarkdownPaths(root)) {
-    const content = await readSkillFileOrNull(skillPath);
-    if (content === null) {
-      continue;
-    }
-    const directoryPath = dirname(skillPath);
-    const metadata = parseSkillMetadata(content, basename(directoryPath));
-    const nameKey = normalizeSkillNameKey(metadata.name);
-    if (!result.has(nameKey)) {
-      result.set(nameKey, directoryPath);
-    }
-  }
-  return result;
-}
-
-async function collectUserSkillDirectoryPathByName(): Promise<Map<string, string>> {
-  const result = await collectSkillDirectoryPathByName(getUserZcodeSkillRoot());
-  const agentsSkillPathByName = await collectSkillDirectoryPathByName(getUserAgentsSkillRoot());
-  for (const [nameKey, directoryPath] of agentsSkillPathByName) {
-    if (!result.has(nameKey)) {
-      result.set(nameKey, directoryPath);
-    }
-  }
-  return result;
-}
-
-interface SkillSyncArchiveExtractor {
-  (
-    archive: Uint8Array,
-    targetDir: string,
-    options: { maxExtractedBytes?: number },
-  ): Promise<void>;
-}
-
-// tar.gz（远端同步）与 ZIP（本地技能包）共用同一条
-// “临时目录解压 → SKILL.md 校验 → 判重 → 逐个复制”管线，只有解压器不同。
-async function importArchiveBundle(
-  archive: Uint8Array,
-  maxArchiveBytes: number,
-  extract: SkillSyncArchiveExtractor,
-): Promise<SkillSyncImportResult> {
+  // renderer 只有本地路径、没有通用文件读取能力：ZIP 字节由 host 读盘后再解压。
+  const archive = await readFile(filePath);
   const targetRoot = getUserZcodeSkillRoot();
   await mkdir(targetRoot, { recursive: true });
-  const tempRoot = join(targetRoot, `.sync-tmp-${randomUUID()}`);
+  const tempRoot = join(targetRoot, `.zip-tmp-${randomUUID()}`);
   await mkdir(tempRoot, { recursive: true });
   try {
-    // 接收的是不可信归档，必须先解到临时目录并校验 SKILL.md，
-    // 再逐个复制到用户级 skills 根，避免路径穿越或半成品目录污染用户配置。
-    await extract(archive, tempRoot, {
-      maxExtractedBytes: maxArchiveBytes,
+    await extractSkillZipArchive(archive, tempRoot, {
+      maxExtractedBytes: options.maxArchiveBytes,
     });
-    return await importExtractedSkillDirectories(tempRoot);
+    return { results: await importExtractedSkillDirectories(tempRoot) };
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -450,14 +273,20 @@ async function importArchiveBundle(
 
 async function importExtractedSkillDirectories(
   tempRoot: string,
-): Promise<SkillSyncImportResult> {
+): Promise<SkillZipImportResultItem[]> {
   const targetRoot = getUserZcodeSkillRoot();
-  const extractedSkillDirectories = await collectExtractedSkillDirectories(tempRoot);
-  // 远端 SkillsService 会同时读取用户级 .zcode/skills 和 .agents/skills。
-  // 同名 skill 已在兼容目录存在时也必须跳过，避免同步后在 .zcode 下生成重复来源。
-  const existingSkillPathByName = await collectUserSkillDirectoryPathByName();
-  const results: SkillSyncImportResult["results"] = [];
-  for (const extracted of extractedSkillDirectories) {
+  // 复用上游的候选扫描与去重：`~/.zcode/skills` 优先，`~/.agents/skills` 同名目录/同名 skill 跳过，
+  // 避免同一次导入在 .zcode 下生成重复来源。
+  const existingCandidates = await collectUserSkillCandidates();
+  const existingPathByDirectory = new Map(
+    existingCandidates.map((candidate) => [candidate.directoryName, candidate.path]),
+  );
+  const existingPathByName = new Map(
+    existingCandidates.map((candidate) => [normalizeSkillNameKey(candidate.name), candidate.path]),
+  );
+
+  const results: SkillZipImportResultItem[] = [];
+  for (const extracted of await collectExtractedSkillDirectories(tempRoot)) {
     const { directoryName, sourcePath } = extracted;
     const targetPath = resolveSkillSyncPathWithin(targetRoot, directoryName);
     const skillContent = await readSkillFileOrNull(join(sourcePath, SKILL_FILE_NAME));
@@ -473,22 +302,14 @@ async function importExtractedSkillDirectories(
 
     const metadata = parseSkillMetadata(skillContent, directoryName);
     const nameKey = normalizeSkillNameKey(metadata.name);
-    if (existsSync(targetPath)) {
+    const existingPath =
+      existingPathByDirectory.get(directoryName) ?? existingPathByName.get(nameKey);
+    if (existingPath || existsSync(targetPath)) {
       results.push({
         name: metadata.name,
         directoryName,
         status: "skipped",
-        path: targetPath,
-      });
-      continue;
-    }
-    const existingPathForName = existingSkillPathByName.get(nameKey);
-    if (existingPathForName) {
-      results.push({
-        name: metadata.name,
-        directoryName,
-        status: "skipped",
-        path: existingPathForName,
+        path: existingPath ?? targetPath,
       });
       continue;
     }
@@ -506,7 +327,8 @@ async function importExtractedSkillDirectories(
         status: "synced",
         path: targetPath,
       });
-      existingSkillPathByName.set(nameKey, targetPath);
+      existingPathByDirectory.set(directoryName, targetPath);
+      existingPathByName.set(nameKey, targetPath);
     } catch (error) {
       results.push({
         name: metadata.name,
@@ -517,15 +339,12 @@ async function importExtractedSkillDirectories(
       });
     }
   }
-  return { results };
+  return results;
 }
 
-async function collectExtractedSkillDirectories(root: string): Promise<
-  Array<{
-    directoryName: string;
-    sourcePath: string;
-  }>
-> {
+async function collectExtractedSkillDirectories(
+  root: string,
+): Promise<Array<{ directoryName: string; sourcePath: string }>> {
   const directories: Array<{ directoryName: string; sourcePath: string }> = [];
   const stack: Array<{ directoryPath: string; relativePath: string }> = [
     { directoryPath: root, relativePath: "" },
@@ -552,5 +371,5 @@ async function collectExtractedSkillDirectories(root: string): Promise<
       });
     }
   }
-  return directories.sort((left, right) => left.directoryName.localeCompare(right.directoryName));
+  return directories;
 }

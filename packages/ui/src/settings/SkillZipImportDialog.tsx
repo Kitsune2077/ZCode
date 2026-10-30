@@ -1,17 +1,17 @@
 import { useState } from "react";
 import { FileArchive, Loader2 } from "lucide-react";
-import type { SkillSyncImportResult } from "@zcode/shared";
+import type { SkillZipImportResult } from "@zcode/services";
 import type { ISkillSyncService } from "@zcode/services";
 import { Button } from "@/components/ui/button.js";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
-import { formatRemoteSkillSyncError } from "@/settings/RemoteSkillSyncDialog.js";
+import { formatRemoteSkillSyncError } from "@/settings/skillSyncErrorFormat.js";
 import { RemoteSkillSyncResultList } from "@/settings/RemoteSkillSyncResultList.js";
 
 type Step = "pick" | "importing" | "complete";
 
-/** 与服务端后缀校验保持同一判定，UI 先拦截避免一次无意义的 RPC。 */
+/** 涓庢湇鍔＄鍚庣紑鏍￠獙淇濇寔鍚屼竴鍒ゅ畾锛孶I 鍏堟嫤鎴伩鍏嶄竴娆℃棤鎰忎箟鐨?RPC銆?*/
 export function isZipFilePath(filePath: string): boolean {
   return /\.zip$/iu.test(filePath.trim());
 }
@@ -19,7 +19,7 @@ export function isZipFilePath(filePath: string): boolean {
 interface SkillZipImportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** 使用本机 base services 的 skillSyncService，导入目标是本机用户级 ~/.zcode/skills。 */
+  /** 浣跨敤鏈満 base services 鐨?skillSyncService锛屽鍏ョ洰鏍囨槸鏈満鐢ㄦ埛绾?~/.zcode/skills銆?*/
   skillSyncService: ISkillSyncService;
   onImported: () => Promise<void> | void;
 }
@@ -33,7 +33,7 @@ export function SkillZipImportDialog({
   const { intl } = useZCodeIntl();
   const platform = usePlatform();
   const [step, setStep] = useState<Step>("pick");
-  const [result, setResult] = useState<SkillSyncImportResult | null>(null);
+  const [result, setResult] = useState<SkillZipImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const reset = () => {
@@ -43,7 +43,7 @@ export function SkillZipImportDialog({
   };
 
   const handleOpenChange = (nextOpen: boolean) => {
-    // 导入进行中禁止关闭，避免用户误以为已取消而实际 host 仍在写盘。
+    // 瀵煎叆杩涜涓姝㈠叧闂紝閬垮厤鐢ㄦ埛璇互涓哄凡鍙栨秷鑰屽疄闄?host 浠嶅湪鍐欑洏銆?
     if (!nextOpen && step === "importing") {
       return;
     }
@@ -59,7 +59,7 @@ export function SkillZipImportDialog({
     }
     setError(null);
     const filePath = await platform.selectFile();
-    // 用户取消文件选择视为无操作，保持弹窗当前状态。
+    // 鐢ㄦ埛鍙栨秷鏂囦欢閫夋嫨瑙嗕负鏃犳搷浣滐紝淇濇寔寮圭獥褰撳墠鐘舵€併€?
     if (!filePath) {
       return;
     }
@@ -70,8 +70,8 @@ export function SkillZipImportDialog({
     setStep("importing");
     try {
       const importResult = await skillSyncService.importSkillsZipArchive({ filePath });
-      // 先失效 draft session 技能上下文并刷新列表，再展示结果，
-      // 保证弹窗背后的技能列表与导入内容一致。
+      // 鍏堝け鏁?draft session 鎶€鑳戒笂涓嬫枃骞跺埛鏂板垪琛紝鍐嶅睍绀虹粨鏋滐紝
+      // 淇濊瘉寮圭獥鑳屽悗鐨勬妧鑳藉垪琛ㄤ笌瀵煎叆鍐呭涓€鑷淬€?
       await onImported();
       setResult(importResult);
       setStep("complete");

@@ -1,8 +1,9 @@
-import type { SkillSyncImportResult } from "@zcode/shared";
+import type { SkillZipImportResult } from "@zcode/services";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
 interface RemoteSkillSyncResultListProps {
-  result: SkillSyncImportResult | null;
+  /** 本仓库定制：本地 ZIP 导入结果沿用该列表渲染（上游 3.17 已移除旧的同步结果类型）。 */
+  result: SkillZipImportResult | null;
   /** 完成/状态文案可通过可选前缀换成导入等其他动作语义，默认保持远端同步文案。 */
   completeMessageId?: string;
   statusMessageIdPrefix?: string;

@@ -33,6 +33,7 @@ export const DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS: ReadonlySet<string> = new Set(
   // visualize（交互视图）随 UI 插件合入时 CLI 定义已标 defaultEnabled，但这里漏加，
   // Settings 会把它当成默认关闭，与 CLI 实际启用状态不一致。
   "visualize@zcode-plugins-official",
+  "zcode-site@zcode-plugins-official",
   // 飞书 CLI 是纯内容型插件（只有 skills），随包 vendor 并默认启用，开箱即可用。
   "lark-cli@zcode-plugins-official",
   // 电脑控制回退为默认关闭，故 computer-use 不在此名单内。
