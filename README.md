@@ -24,7 +24,7 @@ ZCode 是 AI 编程工作台，提供桌面应用、浏览器界面和终端 Age
 
 ## 相对官方仓库的修改说明
 
-本仓库 Fork 自官方 ZCode，版本基线为 v3.14.3，在其之上叠加了以下改动（其余内容随官方同步）。
+本仓库 Fork 自官方 ZCode，跟随官方版本基线（当前 v3.17.1），在其之上叠加了以下改动（其余内容随官方同步）。合并策略与定制点清单见 [docs/fork-maintenance.md](docs/fork-maintenance.md)。
 
 ### NewAPI 对接
 
@@ -37,18 +37,29 @@ ZCode 是 AI 编程工作台，提供桌面应用、浏览器界面和终端 Age
 
 ### 桌面版与分发
 
-- **Windows 便携包数据随程序走**：打包产出的免安装便携 ZIP 运行时，应用数据默认保存在程序同级的 `.zcode` 目录，拷贝整个目录即可迁移配置；NSIS 安装版行为不变，仍使用用户主目录。规则见 [packages/desktop/docs/portable-data-dir.md](packages/desktop/docs/portable-data-dir.md)。
-- **自动更新开关**：支持显式关闭自动更新，且关闭后不再受线上强制升级 gate 拦截，适合自建与私有构建场景。
+- **Windows 便携包数据随程序走**：打包产出的免安装便携 ZIP 运行时，应用数据默认保存在程序同级的 `.zcode` 目录；在程序同级手动创建 `data` 目录后，数据整体收纳到 `data/.zcode`（备份只拷 `data`），规则与验收场景见 [packages/desktop/docs/portable-data-dir.md](packages/desktop/docs/portable-data-dir.md)。
+- **自定义更新源**：设置 → 常规可填 GitHub / Gitea 仓库地址，自动更新改为消费该仓库的 Release（`latest.yml` / `beta.yml` + 安装包附件）；更新说明按「清单 → Release 正文 → 官方 manifest 同版本说明」回退，fork 版本号与上游对齐时可自动带出官方更新日志，规则见 [packages/desktop/docs/auto-update.md](packages/desktop/docs/auto-update.md)。
+- **自动更新开关**：支持显式关闭自动更新，且关闭后不再受线上强制升级 gate 拦截，适合自建与私有构建场景；Windows 便携版默认禁用应用内更新。
+- **PowerShell 7 集成终端**：Windows 集成终端自动探测 pwsh（`%ProgramFiles%\PowerShell\7` 或 PATH），选中后 Bash 工具命令经 `pwsh -NoLogo -NoProfile -NonInteractive -Command` 执行。
 - **Lark CLI 插件默认随包**：捆绑对应平台二进制，用户无需额外安装 Node.js。
-- **GitHub Actions 构建发布**：桌面安装包通过 CI 多平台矩阵构建并发布到 Releases，见 [packages/desktop/docs/ci-desktop-installers.md](packages/desktop/docs/ci-desktop-installers.md)。
+- **本地 ZIP 技能导入**：设置 → 技能页从本地 `.zip` 技能包导入到用户级 `~/.zcode/skills`，同名跳过、不覆盖。
+- **GitHub Actions 构建发布**：桌面安装包通过 CI 多平台矩阵构建并发布到 Releases，见 [packages/desktop/docs/ci-desktop-installers.md](packages/desktop/docs/ci-desktop-installers.md)；单测流水线见 [`.github/workflows/unit-tests.yml`](.github/workflows/unit-tests.yml)。
 - **Web 端 Docker 镜像**：单容器同时托管 Web 前端与 Agent 后端，见 [docker/web/README.md](docker/web/README.md)。
+
+### 会话与外部 Agent 互导
+
+- **外部 Agent 会话导入**：设置 → 迁移页支持导入 OpenCode、DeepSeek Harness（DSH）的原生会话，以及本机安装版 ZCode 桌面对话的原生合并（只读源、逐会话事务），设计见 [specs/opencode-session-import.md](specs/opencode-session-import.md) 等。
 
 ### 修复与工具链
 
-- **Composer 用量状态栏**：对话输入工具条常驻「会话 / 今日」token 累计（今日按本地时区自然日，App 用量新增「今日」时间范围），数据复用 agent SQLite 聚合并经协议读取，规则见 [packages/ui/docs/usage-status-bar.md](packages/ui/docs/usage-status-bar.md)；便携版下 usage 数据库随程序目录迁移。
+- **Composer 生成速率指标**：对话输入工具条常驻「模型此刻多快」的生成速率指标（用量累计由用量页承担），数据复用 agent SQLite 聚合并经协议读取，规则见 [packages/ui/docs/usage-status-bar.md](packages/ui/docs/usage-status-bar.md)；便携版下 usage 数据库随程序目录迁移。
 - **NewAPI 连接快照引用稳定性**：修复左下角用户名与「NewAPI」反复闪烁、NewAPI 用量页一直读取失败的问题（凭据未变化时不再产生新连接对象触发账号重读），与地址是否为 IPv4 / 内网无关，规则见 [packages/services/docs/newapi-account-usage.md](packages/services/docs/newapi-account-usage.md)。
 - Windows 开发链路修复：`pnpm dev:desktop` 对 PATH 环境变量键大小写与 pnpm 安装形态健壮，各类终端均可启动。
 - Windows 上 tsup `--onSuccess` 与 zcode-agent tsx 入口的兼容修复。
+
+### Fork 维护机制
+
+- 上游同步：每周一自动试合并上游（干净则开 PR，冲突则开 issue + 运行摘要），`upstream-mirror` 分支随时可 diff 定制全貌；Gitea 镜像每 周一/三/五 12:30 快进跟随 GitHub main。详见 [docs/fork-maintenance.md](docs/fork-maintenance.md)。
 
 
 ## 初始化

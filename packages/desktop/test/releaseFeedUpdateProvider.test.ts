@@ -1,6 +1,7 @@
 import { NsisUpdater } from "electron-updater";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  extractOfficialReleaseNotesForVersion,
   findUpdateInfoAsset,
   parseReleaseFeedSource,
   parseReleaseUpdateInfo,
@@ -208,5 +209,168 @@ describe("ReleaseFeedUpdateProvider.resolveFiles", () => {
         releaseDate: "2026-10-20",
       } as Parameters<typeof provider.resolveFiles>[0]),
     ).toThrow(/missing checksum/);
+  });
+});
+
+describe("extractOfficialReleaseNotesForVersion", () => {
+  const manifestYaml = [
+    "version: 3.17.1",
+    "path: https://cdn/ZCode-3.17.1.exe",
+    "releaseName: Release v3.17.1",
+    "releaseNotes: |-",
+    "  ## 新功能",
+    "  - 官方说明正文",
+    "releaseNotesByLocale:",
+    "  zh-CN:",
+    "    title: \"\"",
+    "    markdown: |-",
+    "      ## 新功能",
+    "      - 官方中文说明",
+    "  en-US:",
+    "    title: \"\"",
+    "    markdown: |-",
+    "      ## New Features",
+    "      - Official English notes",
+  ].join("\n");
+
+  it("版本一致时提取 releaseNotes 与双语 releaseNotesByLocale", () => {
+    const fallback = extractOfficialReleaseNotesForVersion({ manifestYaml, version: "3.17.1" });
+    expect(fallback?.releaseNotes).toContain("官方说明正文");
+    const byLocale = fallback?.releaseNotesByLocale as Record<string, { markdown: string }>;
+    expect(byLocale["zh-CN"]?.markdown).toContain("官方中文说明");
+    expect(byLocale["en-US"]?.markdown).toContain("Official English notes");
+  });
+
+  it("版本不一致返回 null（官方 manifest 只返回各通道最新版，错配说明不可用）", () => {
+    expect(extractOfficialReleaseNotesForVersion({ manifestYaml, version: "3.16.3" })).toBeNull();
+  });
+
+  it("无说明字段或非法 YAML 返回 null", () => {
+    expect(
+      extractOfficialReleaseNotesForVersion({
+        manifestYaml: "version: 3.17.1\npath: x",
+        version: "3.17.1",
+      }),
+    ).toBeNull();
+    expect(
+      extractOfficialReleaseNotesForVersion({ manifestYaml: "::not yaml{{", version: "3.17.1" }),
+    ).toBeNull();
+    expect(extractOfficialReleaseNotesForVersion({ manifestYaml: "", version: "3.17.1" })).toBeNull();
+  });
+});
+
+describe("ReleaseFeedUpdateProvider 官方更新说明回退", () => {
+  function buildProvider(options?: {
+    releaseBody?: string;
+    manifests?: Record<string, string>;
+  }) {
+    const manifests = options?.manifests ?? {};
+    const provider = new ReleaseFeedUpdateProvider(
+      {
+        provider: "custom",
+        releaseFeed: parseReleaseFeedSource("github.com/owner/repo")!,
+        releasePlatform: "windows-x86_64",
+        resolveReleaseChannel: () => "stable",
+        resolveOfficialNotesEndpointOrigin: () => "https://zcode.test",
+      },
+      Object.create(NsisUpdater.prototype),
+      { platform: "win32", isUseMultipleRangeRequest: false, executor: {} as never },
+    );
+    const release: ReleaseFeedReleaseLike = {
+      tag_name: "v3.17.1",
+      name: "v3.17.1",
+      ...(options?.releaseBody !== undefined ? { body: options.releaseBody } : {}),
+      draft: false,
+      prerelease: false,
+      assets: [
+        { name: "latest.yml", browser_download_url: "https://gh-assets.test/v3.17.1/latest.yml" },
+      ],
+    };
+    const latestYml = [
+      "version: 3.17.1",
+      "path: ZCode-Setup-3.17.1.exe",
+      "files:",
+      "  - url: ZCode-Setup-3.17.1.exe",
+      "    sha512: c2hhNTEy",
+    ].join("\n");
+    const httpRequest = vi.fn(async (url: URL) => {
+      const href = url.toString();
+      if (href.startsWith("https://api.github.com/")) {
+        return JSON.stringify([release]);
+      }
+      if (href.startsWith("https://gh-assets.test/")) {
+        return latestYml;
+      }
+      if (url.hostname === "zcode.test") {
+        const channel = url.searchParams.get("channel") ?? "";
+        return manifests[channel] ?? null;
+      }
+      throw new Error(`unexpected request: ${href}`);
+    });
+    (provider as unknown as { httpRequest: typeof httpRequest }).httpRequest = httpRequest;
+    return { provider, httpRequest };
+  }
+
+  it("清单与正文都无说明时回退官方 manifest：platform 带架构、双通道探测、双语说明随行", async () => {
+    const { provider, httpRequest } = buildProvider({
+      manifests: {
+        // stable 通道版本不匹配（官方灰度未发 stable 的形态），preview 命中。
+        "1": "version: 3.16.3\nreleaseNotes: '旧版本说明'",
+        "3": [
+          "version: 3.17.1",
+          "releaseNotes: |-",
+          "  ## 新功能",
+          "  - ZCode Sites 官方插件",
+          "releaseNotesByLocale:",
+          "  zh-CN:",
+          "    title: ''",
+          "    markdown: '## 新功能'",
+        ].join("\n"),
+      },
+    });
+
+    const info = await provider.getLatestVersion();
+    expect(info.version).toBe("3.17.1");
+    expect(info.releaseNotes).toContain("ZCode Sites");
+    expect((info as { releaseNotesByLocale?: Record<string, unknown> }).releaseNotesByLocale?.[
+      "zh-CN"
+    ]).toBeTruthy();
+
+    const manifestCalls = httpRequest.mock.calls.filter(([url]) =>
+      (url as URL).hostname === "zcode.test",
+    );
+    expect(manifestCalls).toHaveLength(2);
+    expect((manifestCalls[0]?.[0] as URL).searchParams.get("platform")).toBe("windows-x86_64");
+    expect((manifestCalls[0]?.[0] as URL).searchParams.get("channel")).toBe("1");
+    expect((manifestCalls[1]?.[0] as URL).searchParams.get("channel")).toBe("3");
+  });
+
+  it("Release 正文已含说明时不请求官方 manifest", async () => {
+    const { provider, httpRequest } = buildProvider({
+      releaseBody: "## 自己写的发布说明",
+      manifests: { "1": "version: 3.17.1\nreleaseNotes: '官方说明'" },
+    });
+    const info = await provider.getLatestVersion();
+    expect(info.releaseNotes).toBe("## 自己写的发布说明");
+    expect(
+      httpRequest.mock.calls.some(([url]) => (url as URL).hostname === "zcode.test"),
+    ).toBe(false);
+  });
+
+  it("两通道版本都不匹配时说明留空，且同版本结果被缓存不重复探测", async () => {
+    const { provider, httpRequest } = buildProvider({
+      manifests: {
+        "1": "version: 3.16.3\nreleaseNotes: '旧'",
+        "3": "version: 3.16.2\nreleaseNotes: '更旧'",
+      },
+    });
+    const first = await provider.getLatestVersion();
+    expect(first.releaseNotes).toBeUndefined();
+    await provider.getLatestVersion();
+    const manifestCalls = httpRequest.mock.calls.filter(([url]) =>
+      (url as URL).hostname === "zcode.test",
+    );
+    // 第二次检查命中缓存：manifest 请求仍只有首轮的 2 次。
+    expect(manifestCalls).toHaveLength(2);
   });
 });

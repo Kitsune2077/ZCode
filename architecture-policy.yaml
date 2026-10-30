@@ -1486,8 +1486,9 @@ exceptions:
     paths:
       - packages/services/src/skill-sync/skillZipArchive.ts
       - packages/ui/src/settings/SkillZipImportDialog.tsx
-
       - packages/ui/src/settings/skillSyncErrorFormat.ts
+      # 上游 3.17 删除了远端技能同步弹窗；该结果列表组件被 ZIP 导入弹窗复用，作为 fork 专属保留。
+      - packages/ui/src/settings/RemoteSkillSyncResultList.tsx
     reason: 本地 ZIP 技能包导入（spec：docs/superpowers/specs/2026-10-27-local-skill-zip-import-design.md）落在既有 skill-sync 与 settings 未受管目录；两个目录 adopt 时一并收编。
   - id: workflow-source-error-hint-unmanaged-edit
     rule: unmanaged-new-file

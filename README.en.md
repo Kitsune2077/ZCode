@@ -24,7 +24,7 @@ ZCode is an AI coding workspace with desktop, browser, and terminal interfaces. 
 
 ## Changes from the upstream repository
 
-This repository is forked from the official ZCode at the v3.14.3 baseline. On top of it, the following changes are layered (everything else tracks upstream).
+This repository is forked from the official ZCode and tracks the upstream version baseline (currently v3.17.1). On top of it, the following changes are layered (everything else tracks upstream). For the merge playbook and the full customization inventory, see [docs/fork-maintenance.md](docs/fork-maintenance.md).
 
 ### NewAPI integration
 
@@ -37,17 +37,29 @@ This repository is forked from the official ZCode at the v3.14.3 baseline. On to
 
 ### Desktop and distribution
 
-- **Portable data dir next to the app**: the Windows portable ZIP keeps application data in a `.zcode` directory beside the executable by default - copy the whole folder to migrate. The NSIS installer keeps using the user home. See [packages/desktop/docs/portable-data-dir.md](packages/desktop/docs/portable-data-dir.md).
-- **Auto-update switches**: the auto updater can be disabled explicitly, and doing so also skips the online forced-upgrade gate - suitable for self-hosted and private builds.
+- **Portable data dir next to the app**: the Windows portable ZIP keeps application data in a `.zcode` directory beside the executable by default; creating a `data` directory beside the executable moves everything into `data/.zcode` (back up just `data`). The NSIS installer keeps using the user home. Rules and acceptance scenarios: [packages/desktop/docs/portable-data-dir.md](packages/desktop/docs/portable-data-dir.md).
+- **Custom update source**: Settings → General accepts a GitHub / Gitea repository; auto-update then consumes that repo's Releases (`latest.yml` / `beta.yml` plus installer assets). Release notes fall back from the update manifest → the release body → the official manifest's notes for the same version, so fork builds aligned with the upstream version number automatically surface the official changelog. See [packages/desktop/docs/auto-update.md](packages/desktop/docs/auto-update.md).
+- **Auto-update switches**: the auto updater can be disabled explicitly, and doing so also skips the online forced-upgrade gate - suitable for self-hosted and private builds; the Windows portable build disables in-app updates by default.
+- **PowerShell 7 integrated terminal**: Windows auto-detects pwsh (`%ProgramFiles%\PowerShell\7` or PATH); once selected, Bash-tool commands run through `pwsh -NoLogo -NoProfile -NonInteractive -Command`.
 - **Lark CLI plugin bundled by default**: ships platform binaries so users need no extra Node.js install.
-- **GitHub Actions builds**: desktop installers are built on a CI matrix and published to Releases. See [packages/desktop/docs/ci-desktop-installers.md](packages/desktop/docs/ci-desktop-installers.md).
+- **Local ZIP skill import**: Settings → Skills imports a local `.zip` skill pack into the user-level `~/.zcode/skills`; same-name skills are skipped, never overwritten.
+- **GitHub Actions builds**: desktop installers are built on a CI matrix and published to Releases. See [packages/desktop/docs/ci-desktop-installers.md](packages/desktop/docs/ci-desktop-installers.md); the unit-test pipeline lives in [`.github/workflows/unit-tests.yml`](.github/workflows/unit-tests.yml).
 - **Web Docker image**: a single container hosts the Web frontend and the agent backend. See [docker/web/README.md](docker/web/README.md).
+
+### Sessions and external agent import
+
+- **External agent session import**: Settings → Migration imports native sessions from OpenCode and DeepSeek Harness, and merges installed-ZCode desktop conversations natively (read-only source, per-session transactions). See [specs/opencode-session-import.md](specs/opencode-session-import.md) and related specs.
 
 ### Fixes and tooling
 
-- **Composer usage status bar**: the chat input toolbar keeps persistent session / today token totals (today = the local-time-zone calendar day; App usage gains a "Today" range), reading the agent SQLite aggregates over the protocol. See [packages/ui/docs/usage-status-bar.md](packages/ui/docs/usage-status-bar.md). The portable build now also keeps the usage database beside the app.
+- **Composer generation-speed indicator**: the chat input toolbar keeps a persistent "how fast is the model right now" generation-speed metric (cumulative usage stays on the Usage page), reading the agent SQLite aggregates over the protocol. See [packages/ui/docs/usage-status-bar.md](packages/ui/docs/usage-status-bar.md). The portable build also keeps the usage database beside the app.
+- **NewAPI connection snapshot stability**: fixed the sidebar username and "NewAPI" flickering and the usage page failing to load (unchanged credentials no longer produce a new connection object that retriggers account reads), regardless of IPv4 / intranet addresses. See [packages/services/docs/newapi-account-usage.md](packages/services/docs/newapi-account-usage.md).
 - Windows dev-chain fixes: `pnpm dev:desktop` is robust against PATH env-key casing and pnpm install layouts across terminals.
 - Windows compatibility fixes for the tsup `--onSuccess` hook and the zcode-agent tsx entrypoint.
+
+### Fork maintenance
+
+- Upstream sync: a weekly workflow merge-tests upstream (clean → PR, conflicts → issue + run summary); the `upstream-mirror` branch diffs the full customization set at any time; the Gitea mirror fast-forwards from GitHub main on Mon/Wed/Fri 12:30. See [docs/fork-maintenance.md](docs/fork-maintenance.md).
 
 
 ## Setup

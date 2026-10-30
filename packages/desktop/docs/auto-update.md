@@ -70,6 +70,14 @@ Release。发布到自定义源的 Release 需要附带 electron-builder 通用�
   （GitHub/Gitea 的附件 URL 同为 `.../releases/download/{tag}/{file}` 形态）；
   每个文件必须带 `sha512`（或旧字段 `sha2`），校验语义与官方 manifest 一致；
   Release 正文（`body`）在清单缺 `releaseNotes` 时作为更新说明回退。
+- 更新说明回退链（前一级存在即不再往下）：① 清单内 `releaseNotes`/`releaseNotesByLocale`
+  → ② Release 正文（`body`）→ ③ **官方 manifest 同版本说明**：按官方
+  `{endpoint}/api/v1/releases/electron/manifest?platform=<platform-arch>&channel=<1|3>`
+  逐通道探测（先当前通道、后另一通道，覆盖官方灰度只发 preview 的形态），仅当返回
+  manifest 的 `version` 与本次更新版本**完全一致**时，才采用其 `releaseNotes` 与
+  `releaseNotesByLocale`（中英双语）；版本不一致、网络失败、响应非法一律静默跳过
+  （更新说明是尽力而为，绝不影响更新检查结果），结果按 `version` 进程内记忆避免
+  重复请求。fork 构建版本号与上游对齐时该回退可自动带出官方更新日志。
 - 生效时机：每次检查更新时读取最新设置（provider 内部分发，官方清单 provider 与
   Release feed provider 复用同一 `setFeedURL` 装载点）；保存设置后 main 立即触发
   一次重新检查，无"重启生效"要求。下载/安装中（download-progress / update-downloaded /
@@ -139,3 +147,9 @@ Windows 便携包（`win-unpacked` 内容的 zip，判定规则见 `docs/portabl
   `/api/v1/client/configs`；Help 菜单“检查更新”置灰；设置页切换 stable / preview
   通道不触发检查；托盘点击只弹“当前运行环境不检查更新”。
 - F：生产身份 + NSIS 安装版（带卸载器）→ 行为与 A 完全一致，便携判定不介入。
+- G：自定义源 Release 无正文且清单无 `releaseNotes`，官方 manifest 当前通道返回同版本
+  → 更新说明取自官方 manifest（含 `releaseNotesByLocale` 双语），检查结果不受影响。
+- H：官方 manifest 两通道的 `version` 均与本次更新版本不一致（例如官方灰度未发）→
+  更新说明为空，检查/下载流程照常，无报错日志刷屏。
+- I：官方 manifest 请求失败（离线 / 5xx / 非 YAML）→ 同 H，静默跳过且按版本记忆，
+  同版本后续检查不再重复请求。

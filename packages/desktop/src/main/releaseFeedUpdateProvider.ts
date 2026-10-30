@@ -2,8 +2,10 @@ import type { CustomPublishOptions } from "builder-util-runtime";
 import type { AppUpdater, ResolvedUpdateFileInfo, UpdateInfo } from "electron-updater";
 import { Provider } from "electron-updater";
 import type { ProviderRuntimeOptions } from "electron-updater/out/providers/Provider.js";
-import type { ElectronReleaseChannel } from "@zcode/shared";
+import { DEFAULT_ZCODE_ENDPOINT_ORIGIN, type ElectronReleaseChannel } from "@zcode/shared";
 import {
+  buildElectronManifestUrl,
+  getElectronReleasePlatform,
   getLinuxUpdateExtensions,
   normalizeReleaseChannel,
   resolveUpdateFilesAgainstBaseUrl,
@@ -167,6 +169,46 @@ export interface ParsedReleaseUpdateInfo {
   readonly baseUrl: URL;
 }
 
+/** 官方 manifest 说明回退的产物：与 electron-updater UpdateInfo 的扩展字段同形。 */
+export interface OfficialReleaseNotesFallback {
+  releaseNotes?: string;
+  releaseNotesByLocale?: Record<string, unknown>;
+}
+
+/**
+ * 从官方 manifest YAML 中提取与本次更新版本一致的更新说明（纯函数）。
+ *
+ * 官方 manifest 只返回各通道"最新版"，没有按版本查询；因此仅当 `manifest.version` 与
+ * `version` 完全一致时才采用其 `releaseNotes` / `releaseNotesByLocale`，避免把官方
+ * 另一个版本的说明错配到自定义源的发布上。版本不一致 / 无说明字段 / 响应非法一律
+ * 返回 null，由调用方继续探测下一通道或静默跳过。
+ */
+export function extractOfficialReleaseNotesForVersion(input: {
+  manifestYaml: string;
+  version: string;
+}): OfficialReleaseNotesFallback | null {
+  if (!input.version || !input.manifestYaml.trim()) {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(input.manifestYaml);
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed) || parsed.version !== input.version) {
+    return null;
+  }
+  const fallback: OfficialReleaseNotesFallback = {};
+  if (typeof parsed.releaseNotes === "string" && parsed.releaseNotes.trim()) {
+    fallback.releaseNotes = parsed.releaseNotes;
+  }
+  if (isRecord(parsed.releaseNotesByLocale)) {
+    fallback.releaseNotesByLocale = parsed.releaseNotesByLocale;
+  }
+  return fallback.releaseNotes || fallback.releaseNotesByLocale ? fallback : null;
+}
+
 /**
  * 解析 Release 附件中的 electron-builder 更新清单为 electron-updater UpdateInfo；
  * 清单缺 releaseNotes 时回退 Release 正文，保证更新弹窗有内容可展示。
@@ -201,12 +243,39 @@ export interface ReleaseFeedProviderOptions extends CustomPublishOptions {
   // 扩展属性必须全部可选，真正装配时由 autoUpdater 恒定传入 releaseFeed。
   readonly releaseFeed?: ReleaseFeedSource;
   readonly resolveReleaseChannel?: () => ElectronReleaseChannel | Promise<ElectronReleaseChannel>;
+  /** 装配方传入的发布平台（`windows-x86_64` 形态）；官方说明回退按它拼 manifest 查询。 */
+  readonly releasePlatform?: string;
+  /** 官方说明回退的 endpoint 覆盖（测试注入用）；默认官方生产 endpoint。 */
+  readonly resolveOfficialNotesEndpointOrigin?: () => string | Promise<string>;
+}
+
+/** 官方 manifest 探测顺序：先当前通道，再另一通道——官方灰度可能只发 preview。 */
+function officialNotesProbeChannels(channel: ElectronReleaseChannel): ElectronReleaseChannel[] {
+  return channel === "preview" ? ["preview", "stable"] : ["stable", "preview"];
+}
+
+function updateInfoHasReleaseNotes(updateInfo: UpdateInfo): boolean {
+  if (typeof updateInfo.releaseNotes === "string" && updateInfo.releaseNotes.trim()) {
+    return true;
+  }
+  if (Array.isArray(updateInfo.releaseNotes) && updateInfo.releaseNotes.length > 0) {
+    return true;
+  }
+  const byLocale = (updateInfo as UpdateInfo & { releaseNotesByLocale?: unknown })
+    .releaseNotesByLocale;
+  return isRecord(byLocale) && Object.keys(byLocale).length > 0;
 }
 
 export class ReleaseFeedUpdateProvider extends Provider<UpdateInfo> {
   private readonly options: ReleaseFeedProviderOptions;
   private readonly linuxExtensions: readonly string[] | null;
   private resolveFilesBaseUrl = new URL("https://github.com/");
+  /**
+   * 官方说明回退的结果缓存（含 null = 探测过但无匹配），键 `endpoint|platform|version`。
+   * 更新检查约 15 分钟轮询一次，缓存避免每次都多打官方 manifest；
+   * 版本变化后键不同，自动重新探测。
+   */
+  private readonly officialNotesCache = new Map<string, OfficialReleaseNotesFallback | null>();
 
   constructor(
     options: ReleaseFeedProviderOptions,
@@ -262,6 +331,18 @@ export class ReleaseFeedUpdateProvider extends Provider<UpdateInfo> {
       updateInfoAssetUrl: assetUrl.toString(),
     });
     this.resolveFilesBaseUrl = parsed.baseUrl;
+    // 更新说明是尽力而为：清单与 Release 正文都没有时，尝试官方 manifest 同版本说明，
+    // 任何失败都不影响更新检查结果（spec 见 docs/auto-update.md 更新说明回退链）。
+    if (!updateInfoHasReleaseNotes(parsed.updateInfo)) {
+      const fallback = await this.fetchOfficialReleaseNotes(parsed.updateInfo.version, channel);
+      if (fallback?.releaseNotes) {
+        parsed.updateInfo.releaseNotes = fallback.releaseNotes;
+      }
+      if (fallback?.releaseNotesByLocale) {
+        (parsed.updateInfo as UpdateInfo & { releaseNotesByLocale?: Record<string, unknown> })
+          .releaseNotesByLocale = fallback.releaseNotesByLocale;
+      }
+    }
     return parsed.updateInfo;
   }
 
@@ -271,5 +352,53 @@ export class ReleaseFeedUpdateProvider extends Provider<UpdateInfo> {
 
   private resolveReleaseChannel(): Promise<ElectronReleaseChannel> {
     return Promise.resolve(this.options.resolveReleaseChannel?.() ?? "stable");
+  }
+
+  /**
+   * 探测官方 manifest 的同版本更新说明。注意 platform 必须带架构后缀
+   * （`windows-x86_64` 形态，见 manifestUpdateProvider.getElectronReleasePlatform），
+   * 只传 `windows` 会被官方接口以参数错误拒绝。
+   */
+  private async fetchOfficialReleaseNotes(
+    version: string,
+    channel: ElectronReleaseChannel,
+  ): Promise<OfficialReleaseNotesFallback | null> {
+    const endpointOrigin = (
+      (await this.options.resolveOfficialNotesEndpointOrigin?.()) ??
+      DEFAULT_ZCODE_ENDPOINT_ORIGIN
+    ).trim();
+    if (!endpointOrigin) {
+      return null;
+    }
+    const platform = this.options.releasePlatform?.trim() || getElectronReleasePlatform();
+    const cacheKey = `${endpointOrigin}|${platform}|${version}`;
+    if (this.officialNotesCache.has(cacheKey)) {
+      return this.officialNotesCache.get(cacheKey) ?? null;
+    }
+    let result: OfficialReleaseNotesFallback | null = null;
+    for (const probeChannel of officialNotesProbeChannels(channel)) {
+      try {
+        const manifestUrl = buildElectronManifestUrl({
+          endpointOrigin,
+          platform,
+          channel: probeChannel,
+        });
+        const raw = await this.httpRequest(manifestUrl, {
+          accept: "application/x-yaml,text/yaml,text/plain,*/*",
+        });
+        if (!raw) {
+          continue;
+        }
+        const fallback = extractOfficialReleaseNotesForVersion({ manifestYaml: raw, version });
+        if (fallback) {
+          result = fallback;
+          break;
+        }
+      } catch {
+        // 网络/解析失败按"该通道无匹配"处理，继续探测另一通道。
+      }
+    }
+    this.officialNotesCache.set(cacheKey, result);
+    return result;
   }
 }
