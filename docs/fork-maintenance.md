@@ -38,7 +38,8 @@ git fetch origin && git diff --name-status origin/main main   # 完整定制差�
 Gitea 不做上游合并——两个远端各自合并会产生两个内容相同但提交不同的 `main`，之后互相推送
 必然非快进，等于自己制造冲突。所以 Gitea 只做一件事：把 GitHub fork 的 `main` **快进**过来。
 
-- 每 15 分钟一次（也可手动 triggers），`git fetch` GitHub 的 `main` 后按三种情况处理：
+- 每周一、三、五 12:30（实例服务器本地时区；也可手动 triggers），`git fetch` GitHub 的 `main`
+  后按三种情况处理：
   - Gitea 已包含 GitHub（或领先）→ 跳过；
   - Gitea 是 GitHub 的祖先 → `merge --ff-only` 后推送，完成跟随；
   - 两边各有对方没有的提交（分叉）→ **不强推**，开/追加 issue 列出两侧独有提交，运行变红。

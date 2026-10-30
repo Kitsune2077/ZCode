@@ -27,8 +27,9 @@ name: Mirror GitHub fork main
 
 on:
   schedule:
-    # 每 15 分钟检查一次。GitHub 侧合并上游后，Gitea 最迟 15 分钟内跟上。
-    - cron: "*/15 * * * *"
+    # 每周一、三、五 12:30（按 Gitea 实例服务器的本地时区）。
+    # GitHub 侧合并上游后，Gitea 会在下一个检查点跟上；需要立刻同步时手动触发。
+    - cron: "30 12 * * 1,3,5"
   workflow_dispatch:
 
 permissions:
