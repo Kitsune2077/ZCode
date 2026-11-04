@@ -144,8 +144,10 @@ jobs:
           # 原因未查明；REST 三端点（list/create/patch）实测全部可靠，统一切换。
           # 注意 gh api 的 -f 在不显式给 -X 时默认按 POST 处理（GET 查询参数必须
           # 显式 -X GET，否则会变成一次缺 base 字段的 POST /pulls 直接 422）。
+          # REST 的 head 过滤器格式是 user:branch（GITHUB_REPOSITORY 是 owner/repo，
+          # 直接拼会变成 owner/repo:branch 永远匹配不到，list 恒为空）。
           existing=$(gh api "repos/$GITHUB_REPOSITORY/pulls" -X GET \
-            -f state=open -f head="$GITHUB_REPOSITORY:$SYNC_BRANCH" \
+            -f state=open -f head="${GITHUB_REPOSITORY%%/*}:$SYNC_BRANCH" \
             --jq '.[0].number // empty')
           if [ -n "$existing" ]; then
             gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$existing" \
