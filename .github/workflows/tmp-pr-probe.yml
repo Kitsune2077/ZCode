@@ -30,8 +30,10 @@ jobs:
           set -uo pipefail
           echo "== repo / token identity =="
           gh api repos/$GITHUB_REPOSITORY --jq '{full_name, fork, default_branch}'
-          echo "== REST list (upstream-sync 的 list 改法) =="
-          gh api "repos/$GITHUB_REPOSITORY/pulls" -f state=open -f head="$GITHUB_REPOSITORY:$SYNC_BRANCH" --jq '.[] | {number, head: .head.ref, state}'
+          echo "== REST list (-X GET + GH_DEBUG，抓原始请求) =="
+          GH_DEBUG=api gh api "repos/$GITHUB_REPOSITORY/pulls" -X GET \
+            -f state=open -f head="$GITHUB_REPOSITORY:$SYNC_BRANCH" 2>&1 |
+            grep -E "GET /|POST /|=> Request|=> Status|^\[|number" | head -25
           echo "== gh pr list (原实现，对照) =="
           GH_DEBUG=api gh pr list --head "$SYNC_BRANCH" --state open 2>&1 | grep -E "GET /|=> [0-9]|Status:" | head -10
           echo "== REST create (POST /pulls) =="
