@@ -1,20 +1,21 @@
-# 定时把上游 zai-org/ZCode 的更新合进本 fork，能干净合并时自动开 PR。
+# 定时把上游 zai-org/ZCode 的更新合进本 fork，能干净合并且 CI 通过时自动开 PR。
 #
 # 为什么需要它：
 #   - 上游约每周推一次快照。攒着合并会让冲突规模放大：实测攒两版是 13~14 处冲突，
 #     每周合一次只有 1 处（且是纯追加的清单文件）；
-#   - 定时任务负责「早发现 + 试合并」，人只需要处理真正冲突的那部分。
+#   - 定时任务负责「早发现 + 试合并 + 预验证」，人只需要处理真正冲突的那部分。
 #
 # 行为：
 #   1. 把 machine-owned 分支 upstream-mirror 同步到上游 HEAD（用于随时查看本 fork 的
 #      定制差异，见 docs/fork-maintenance.md）；
 #   2. 尝试把 upstream/main 合并进当前 main：
-#      - 干净合并 → 推送 upstream/sync 分支并创建/更新 PR；
+#      - 干净合并 → 先在**合并结果上**跑 typecheck / lint / 全量单测，全绿才推
+#        upstream/sync 分支并创建/更新 PR；CI 失败则不开 PR，运行变红，日志即原因；
 #      - 有冲突   → 不开 PR：把冲突清单写进运行摘要并让本次运行变红（Issues 可用时同时开/追加 issue）。
 #
-# 已知限制：用 GITHUB_TOKEN 推送创建的分支/PR 不会再触发其它 workflow（GitHub 的平台限制），
-# 所以 PR 上不会自动出现 unit-tests 结果。合并前请按 docs/fork-maintenance.md 的验证清单在
-# 本地过一遍，或对该分支手动触发：gh workflow run "Unit tests" --ref upstream/sync
+# 已知限制：bot PR 不会出现在 PR 的 Checks 区——unit-tests.yml 已移除 pull_request
+# 触发（机器人开的 PR 触发该事件会被 GitHub 标为 "Awaiting approval" 审批门，纯噪声）；
+# CI 结果以本运行的 verify 步骤为准，人工只需确认定制域未受影响。
 name: Upstream sync
 
 on:
@@ -33,17 +34,24 @@ concurrency:
   group: upstream-sync
   cancel-in-progress: false
 
-env:
-  UPSTREAM_URL: https://github.com/zai-org/ZCode.git
-  SYNC_BRANCH: upstream/sync
-  MIRROR_BRANCH: upstream-mirror
-  ISSUE_TITLE: 上游同步需要手工解决冲突
-
 jobs:
   sync:
-    name: Detect and stage upstream updates
+    name: Detect, verify and stage upstream updates
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 试合并干净时还要跑完整 CI（pnpm install + adapters 构建 + typecheck + 全量单测），
+    # 实测约 15 分钟；给足余量。
+    timeout-minutes: 45
+
+    env:
+      UPSTREAM_URL: https://github.com/zai-org/ZCode.git
+      SYNC_BRANCH: upstream/sync
+      MIRROR_BRANCH: upstream-mirror
+      ISSUE_TITLE: 上游同步需要手工解决冲突
+      HUSKY: "0"
+      # tsc -b 全仓构建的堆需求（与 unit-tests.yml 同值）；vitest 步骤单独降到 4GB。
+      NODE_OPTIONS: --max-old-space-size=8192
+      # electron postinstall 走 npmmirror（与 unit-tests.yml / build-desktop.yml 同一镜像）。
+      ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
 
     steps:
       - uses: actions/checkout@v4
@@ -108,6 +116,51 @@ jobs:
             git checkout -B "$SYNC_BRANCH" HEAD
           fi
 
+      # 合并结果预验证（与 unit-tests.yml 同一套门槛）：全绿才开 PR，失败则运行变红
+      # 且不推分支、不开 PR——把上游引入的构建/测试问题挡在人工介入之前。
+      # 不加 continue-on-error：CI 红着的同步 PR 等于把上游的回归悄悄送进 main。
+      - name: Setup pnpm for merged-result verification
+        if: steps.detect.outputs.has_updates == 'true' && steps.merge.outputs.clean == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          # 与 mise.toml / package.json 的 packageManager 保持一致。
+          version: 10.33.2
+
+      - name: Setup Node for merged-result verification
+        if: steps.detect.outputs.has_updates == 'true' && steps.merge.outputs.clean == 'true'
+        uses: actions/setup-node@v4
+        with:
+          # 与 mise.toml 的 node 版本保持一致。
+          node-version: 24.14.0
+          cache: pnpm
+
+      - name: Install dependencies for merged-result verification
+        if: steps.detect.outputs.has_updates == 'true' && steps.merge.outputs.clean == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Build CLI adapters package
+        # 与 unit-tests.yml 同款：@zcode/adapters 的 "./storage" 子路径导出指向 dist，
+        # root vitest 的部分单测经 bootstrap 源码引用它，必须先按拓扑序构建（含依赖）。
+        # 必须从根 workspace 执行——apps/zcode-cli 内层 workspace 看不到根 packages/*。
+        if: steps.detect.outputs.has_updates == 'true' && steps.merge.outputs.clean == 'true'
+        run: pnpm --filter "@zcode/adapters..." run build
+
+      - name: Typecheck merged result
+        if: steps.detect.outputs.has_updates == 'true' && steps.merge.outputs.clean == 'true'
+        run: pnpm typecheck
+
+      - name: Lint merged result
+        if: steps.detect.outputs.has_updates == 'true' && steps.merge.outputs.clean == 'true'
+        run: pnpm lint
+
+      - name: Unit tests on merged result
+        if: steps.detect.outputs.has_updates == 'true' && steps.merge.outputs.clean == 'true'
+        env:
+          # 步骤级降到 4GB：vitest worker 继承 job 级 8GB 会在 16GB runner 上互相挤压
+          # （详见 unit-tests.yml 同名注释）。typecheck / lint 仍用 job 级 8GB。
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: pnpm test:unit
+
       - name: Open or update sync pull request
         if: steps.detect.outputs.has_updates == 'true' && steps.merge.outputs.clean == 'true'
         env:
@@ -120,10 +173,11 @@ jobs:
           {
             echo "定时同步把上游 \`upstream/main\`（\`$upstream_head\`）合并进 \`main\`。"
             echo
-            echo "试合并**无冲突**，但请人工过一遍再合并："
+            echo "试合并**无冲突**，且合并结果已在本 workflow 运行内通过 typecheck / lint / 全量单测。"
+            echo "请人工确认定制域后合并："
             echo
-            echo "- [ ] 按 [docs/fork-maintenance.md](../blob/main/docs/fork-maintenance.md) 的验证清单在本地跑 typecheck / lint / 架构检查 / 单测"
             echo "- [ ] 确认定制域未受影响（NewAPI、便携数据目录、Lark CLI、PowerShell 7、composer 速率指标）"
+            echo "- [ ] 扫一眼下方上游提交清单，留意与本地定制的交叉点"
             echo
             echo "本次带入的上游提交（最多 20 条）："
             echo
@@ -132,8 +186,8 @@ jobs:
             echo '```'
             echo
             echo "> 本 PR 由 \`upstream-sync\` workflow 创建，分支会被后续同步强制更新。"
-            echo "> 用 GITHUB_TOKEN 推送不会触发其它 workflow，因此这里没有 CI 结果；"
-            echo "> 可在本地验证，或手动执行 \`gh workflow run \"Unit tests\" --ref $SYNC_BRANCH\`。"
+            echo "> CI 在创建本 PR 的那次运行内执行；PR 的 Checks 区为空是有意设计"
+            echo "> （unit-tests.yml 已移除 pull_request 触发，避免机器人 PR 的审批门）。"
           } > /tmp/pr-body.md
 
           # 全部走 REST（gh api）而不是 gh pr create/edit：本仓库实测（2026-11-04）

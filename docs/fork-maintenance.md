@@ -65,11 +65,16 @@ Gitea 不做上游合并——两个远端各自合并会产生两个内容相�
 
 - 把 `upstream-mirror` 分支同步到上游 HEAD；
 - 试合并 `upstream/main` 进 `main`：
-  - **干净合并** → 推 `upstream/sync` 分支并创建/更新 PR（带上游提交清单）；
+  - **干净合并** → 先在合并结果上执行 **typecheck / lint / 全量单测**（就在本 workflow
+    运行内，步骤与 unit-tests.yml 同一套门槛），**全绿才**推 `upstream/sync` 分支并
+    创建/更新 PR（带上游提交清单）；CI 失败则不开 PR、运行**变红**，日志即失败原因；
   - **有冲突** → 不开 PR：把冲突文件与手工命令写进**运行摘要**，让这次运行**变红**，并创建或追加
     issue「上游同步需要手工解决冲突」（Issues 已开启，issue 是主要通知渠道；摘要与红运行是兜底）。
-- 用 `GITHUB_TOKEN` 推送的分支/PR 不会触发其它 workflow，PR 上没有 CI 结果；合并前按下方
-  验证清单本地验证，或手动 `gh workflow run "Unit tests" --ref upstream/sync`。
+- CI 在 sync workflow 运行内完成，**合并前不需要本地跑测试**；人工只需确认定制域
+  （NewAPI、便携数据目录、Lark CLI、PowerShell 7、composer 速率指标）未受影响。
+- PR 的 Checks 区不会有 unit-tests 运行：unit-tests.yml 已移除 `pull_request` 触发——
+  机器人开的 PR 触发该事件会被 GitHub 标为 "Awaiting approval" 审批门（每个新 PR
+  都要点一次 Approve，纯噪声）；若将来出现人工开的 PR，再评估恢复该触发器。
 
 > 取上游时**不要**加 `--tags`：本 fork 存在与上游同名但指向不同提交的本地 tag，git 会以
 > `would clobber existing tag` 拒绝并让 fetch 整体失败（workflow 首跑就踩过）。

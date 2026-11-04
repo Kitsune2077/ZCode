@@ -3,10 +3,15 @@
 # 为什么用 CI 而不是本地跑：
 #   - 本地 Windows 全量单测耗时 30 分钟以上且持续占用 CPU，影响其他工作；
 #   - Linux runner 更快也更接近官方 CI 环境，能在合入前暴露平台差异问题；
-#   - push / PR 自动触发，结果可追溯，避免"本机过了但环境不同"的盲区。
+#   - push 自动触发，结果可追溯，避免"本机过了但环境不同"的盲区。
 #
 # 仅覆盖单测（test:unit 已排除 desktop e2e）；E2E 需要真实 Electron 窗口，
 # 由专门的 e2e 流水线或本地 `pnpm test:e2e` 承担。
+#
+# 为什么没有 pull_request 触发：本 fork 的 PR 只有一个来源——upstream-sync 机器人，
+# bot 开的 PR 触发 pull_request 事件会被 GitHub 打上 "Awaiting approval" 审批门
+# （每个新 PR 要人工点一次 Approve，纯噪声）。同步 PR 的 CI 由 upstream-sync.yml
+# 在合并结果上内嵌执行；人工 PR 场景目前不存在，若将来需要再评估恢复本触发器。
 name: Unit tests
 
 on:
@@ -14,10 +19,6 @@ on:
   push:
     branches:
       - main
-    paths-ignore:
-      - "docs/**"
-      - "**/*.md"
-  pull_request:
     paths-ignore:
       - "docs/**"
       - "**/*.md"
