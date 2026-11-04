@@ -136,6 +136,8 @@ jobs:
 
           # ---------- 1. 取 GitHub 的 main（公开仓库，匿名读取；镜像源回退链） ----------
           # http.lowSpeedLimit/lowSpeedTime：传输停滞 20s 即判失败，快速切下一个源。
+          # 源列表经进程替换喂给 while（< <(...)）：变量改动留在当前 shell，
+          # 且避免 heredoc 终结符必须顶格写、穿透 YAML 块标量的问题。
           remote_sha=""
           while IFS= read -r source_url; do
             [ -n "$source_url" ] || continue
@@ -147,9 +149,7 @@ jobs:
               break
             fi
             echo "源不可用，尝试下一个。"
-          done <<MIRRORS
-$SOURCE_MIRRORS
-MIRRORS
+          done < <(printf '%s\n' "$SOURCE_MIRRORS")
 
           if [ -z "$remote_sha" ]; then
             echo "::error::所有拉取源（镜像 + 直连）均失败，无法获取 GitHub main"
