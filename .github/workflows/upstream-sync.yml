@@ -142,19 +142,22 @@ jobs:
           # POST /pulls 成功，而 gh pr create 的 GraphQL createPullRequest 仍被
           # Resource not accessible by integration 拒绝且 gh pr list 偶发返回空，
           # 原因未查明；REST 三端点（list/create/patch）实测全部可靠，统一切换。
-          existing=$(gh api "repos/$GITHUB_REPOSITORY/pulls" \
+          # 注意 gh api 的 -f 在不显式给 -X 时默认按 POST 处理（GET 查询参数必须
+          # 显式 -X GET，否则会变成一次缺 base 字段的 POST /pulls 直接 422）。
+          existing=$(gh api "repos/$GITHUB_REPOSITORY/pulls" -X GET \
             -f state=open -f head="$GITHUB_REPOSITORY:$SYNC_BRANCH" \
             --jq '.[0].number // empty')
           if [ -n "$existing" ]; then
-            jq -n --rawfile body /tmp/pr-body.md '{body: $body}' |
-              gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$existing" --input -
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$existing" \
+              -f title="chore(upstream): sync upstream $upstream_head" \
+              -f body="$(cat /tmp/pr-body.md)"
             echo "已更新 PR #$existing"
           else
-            jq -n --arg head "$SYNC_BRANCH" \
-              --arg title "chore(upstream): sync upstream $upstream_head" \
-              --rawfile body /tmp/pr-body.md \
-              '{title: $title, head: $head, base: "main", body: $body}' |
-              gh api -X POST "repos/$GITHUB_REPOSITORY/pulls" --input -
+            gh api -X POST "repos/$GITHUB_REPOSITORY/pulls" \
+              -f title="chore(upstream): sync upstream $upstream_head" \
+              -f head="$SYNC_BRANCH" \
+              -f base=main \
+              -f body="$(cat /tmp/pr-body.md)"
           fi
 
       - name: Report conflicts
