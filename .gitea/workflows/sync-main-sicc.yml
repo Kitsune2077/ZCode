@@ -1,0 +1,88 @@
+# 把 Gitea 的 main 自动 merge 进 main-sicc（私有部署定制分支）。
+#
+# 触发：Gitea 的 main 每次 push（即 GitHub 侧 sync-gitea 推送到达，或手动 push）。
+# 全程只访问 Gitea 自身的 origin，不碰外网——Gitea runner 在国内网络环境，
+# 任何需要 github.com 的步骤都不可靠（旧 mirror-from-github.yml 即因此废弃）。
+#
+# 合并语义：与人工同步一致（git merge main）；冲突时 abort、运行变红并列出冲突
+# 文件，由人工按私有定制的取舍规则解决后重跑（如 WelcomeScreen 只取 authorizeUrl、
+# new-api.mysicc.cc / iam OAuth 域名改动的交叉点）。
+#
+# 凭据：内置任务令牌（Gitea 自动注入为 GITEA_TOKEN，权限由下方 permissions 决定）。
+# 注意 Gitea 密钥命名禁止 GITEA_/GITHUB_ 前缀——自定义密钥必须换名字。
+name: Sync main-sicc from main
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# 串行：两次合并同时推 main-sicc 会互相覆盖。
+concurrency:
+  group: sync-main-sicc
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    name: Merge main into main-sicc
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 需要完整历史判断祖先关系与执行 merge。
+          fetch-depth: 0
+
+      - name: Merge main into main-sicc
+        env:
+          JOB_TOKEN: ${{ secrets.GITEA_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${JOB_TOKEN:-}" ]; then
+            echo "::error::内置任务令牌（GITEA_TOKEN）为空，无法认证 origin"
+            exit 1
+          fi
+
+          # 显式给 origin 配认证（Gitea 约定：用户名 x-access-token，令牌在密码位）。
+          server_origin=$(printf '%s' "${GITHUB_SERVER_URL}" | sed -E 's#(https?://[^/]+).*#\1#')
+          basic=$(printf 'x-access-token:%s' "$JOB_TOKEN" | base64 | tr -d '\n')
+          git config --local "http.${server_origin}/.extraheader" "AUTHORIZATION: basic ${basic}"
+
+          git config user.name "gitea-actions[bot]"
+          git config user.email "gitea-actions@noreply.local"
+
+          git fetch origin main main-sicc
+
+          # 已同步：main 已包含在 main-sicc 中（或 main-sicc 领先）→ 跳过。
+          if git merge-base --is-ancestor origin/main origin/main-sicc; then
+            echo "main-sicc 已包含 main（或领先），跳过。"
+            exit 0
+          fi
+
+          git checkout -B main-sicc origin/main-sicc
+
+          if git merge --no-edit origin/main; then
+            if ! git push origin "HEAD:refs/heads/main-sicc"; then
+              echo "::error::推送 main-sicc 失败：检查仓库 Settings → Actions 的最大令牌权限是否允许 contents: write"
+              exit 1
+            fi
+            echo "已合并 main -> main-sicc（$(git rev-parse --short HEAD)）"
+            exit 0
+          fi
+
+          # 合并冲突：回滚工作区、列出冲突文件、运行变红交人工处理。
+          git diff --name-only --diff-filter=U > /tmp/sicc-conflicts.txt || true
+          git merge --abort
+          echo "main -> main-sicc 存在冲突，需要人工解决："
+          cat /tmp/sicc-conflicts.txt
+          echo
+          echo "处理方式（与人工同步一致）：本地 main-sicc 上 git merge main，"
+          echo "按私有定制取舍解决后推回 Gitea；随后重跑本工作流确认走干净。"
+          echo "::error::main -> main-sicc 合并冲突，需要人工处理（详见上方冲突清单）"
+          exit 1

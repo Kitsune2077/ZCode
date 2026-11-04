@@ -31,26 +31,33 @@ git fetch origin && git diff --name-status origin/main main   # 完整定制差�
 
 ## 上游同步的四条机制
 
-### 0. Gitea 追随 GitHub fork（`.gitea/workflows/mirror-from-github.yml`）
+### 0. Gitea 追随 GitHub fork（镜像源回退链拉取）+ main-sicc 自动同步（Gitea 侧合并）
 
-分工是单向的：**上游 → GitHub fork（合并）→ Gitea（快进跟随）**。
+分工是单向的：**上游 → GitHub fork（合并）→ Gitea main（快进跟随）→ main-sicc（merge main）**。
 
 Gitea 不做上游合并——两个远端各自合并会产生两个内容相同但提交不同的 `main`，之后互相推送
-必然非快进，等于自己制造冲突。所以 Gitea 只做一件事：把 GitHub fork 的 `main` **快进**过来。
+必然非快进，等于自己制造冲突。
 
-- 每周一、三、五 12:30（实例服务器本地时区；也可手动 triggers），`git fetch` GitHub 的 `main`
-  后按三种情况处理：
-  - Gitea 已包含 GitHub（或领先）→ 跳过；
-  - Gitea 是 GitHub 的祖先 → `merge --ff-only` 后推送，完成跟随；
-  - 两边各有对方没有的提交（分叉）→ **不强推**，开/追加 issue 列出两侧独有提交，运行变红。
-- 只同步 `main`，不碰其它分支（如 `main-sicc`）与 tag。
-- **凭据默认零配置**：Gitea 为每个 job 自动注入任务令牌（`secrets.GITEA_TOKEN`），权限由
-  workflow 的 `permissions:` 决定（本文件已声明 `contents: write` + `issues: write`）。
-  注意 Gitea 的**密钥命名禁止以 `GITEA_` / `GITHUB_` 开头**（这两个前缀保留给内置令牌），
-  所以"自定义密钥"必须换个名字——本工作流留了 `REPO_SYNC_TOKEN` 作为可选覆盖，只有在实例把
-  内置令牌权限裁剪成只读、push 被拒时才需要在 **工作流 → 密钥** 里新建它（PAT：仓库写 + issue 写）。
-- push 报 403 时先看仓库 `Settings → Actions → General` 的最大令牌权限是否允许
-  `contents: write`。
+- **GitHub → Gitea**（`.gitea/workflows/mirror-from-github.yml`，每周一/三/五 12:30 +
+  手动触发）：按 **SOURCE_MIRRORS 回退链**依次尝试拉取 GitHub main——gh 系加速代理
+  （gh-proxy / ghproxy.net / ghfast.top / moeyy，前缀拼接形态）→ gitclone.com 整仓镜像
+  → github.com 直连兜底；任一成功即用，全部失败运行变红。
+  - 背景：Gitea runner 在国内网络环境，github.com 直连会间歇性 DNS 失败/超时
+    （2026-11-04 实测 `Could not resolve host`），直连只作 DNS 恢复后的兜底；
+  - 镜像源可用性随时间变化，直接改 workflow 里的 `SOURCE_MIRRORS` 列表增删即可；
+  - 每次尝试带 `http.lowSpeedLimit/lowSpeedTime` 快速失败配置，死源不会拖满 job；
+  - 非快进（Gitea main 与 fork main 分叉）时不强推，开/追加 issue 列出两侧独有提交。
+- **main-sicc 自动同步**（`.gitea/workflows/sync-main-sicc.yml`，跑在 Gitea runner 上）：
+  Gitea 的 `main` 每次 push（即上一条快进到达，或手动推送）后，把 `main` merge 进
+  `main-sicc` 并推送。全程只访问 Gitea 自身（origin），零外网依赖。
+  - 冲突时 abort、运行变红并列出冲突文件，人工按私有定制取舍解决后重跑
+    （new-api.mysicc.cc / iam OAuth 域与上游改动的交叉点仍需按既有 merge 语义取舍）；
+  - 已同步（main 是 main-sicc 祖先）时跳过；
+  - 曾评估"GitHub Actions 推送 Gitea"的反向方案，因 **Gitea 服务器只有 IPv6 且可达性
+    差**（GitHub runner 无法连接）而否决。
+- **凭据**：Gitea 侧用内置任务令牌（`secrets.GITEA_TOKEN`，权限由 workflow 的
+  `permissions:` 决定，需 `contents: write`）。注意 Gitea 的**密钥命名禁止以
+  `GITEA_` / `GITHUB_` 开头**（保留给内置令牌），自定义密钥要换名字。
 
 为什么不直接用 Gitea 的 pull mirror：镜像只能在**创建仓库时**设定、且镜像仓库**只读**
 （push 会被拒 `mirror repository is read-only`），无法套在现有仓库上。这个 workflow 用

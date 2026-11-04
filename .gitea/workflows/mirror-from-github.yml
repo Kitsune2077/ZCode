@@ -11,6 +11,14 @@
 #   上游 zai-org/ZCode →(合并，GitHub Actions 提醒/开 PR)→ GitHub fork main →(本工作流)→ Gitea。
 #   Gitea 侧不独立合并上游，避免出现两个内容相同但提交不同的 main。
 #
+# GitHub 拉取：镜像源回退链（2026-11-04 加入）。
+#   Gitea runner 在国内网络环境，github.com 直连会间歇性 DNS 失败/超时
+#   （实测 "Could not resolve host: github.com"）。因此 fetch 按 SOURCE_MIRRORS
+#   列表依次尝试，任一成功即用；全部失败才让运行变红。
+#   - 列表里 GitHub 直连刻意放最后兜底（DNS 恢复时零镜像依赖）；
+#   - 镜像源可用性随时间变化，按需在下方 SOURCE_MIRRORS 增删即可；
+#   - 每次尝试带 http.lowSpeedLimit/lowSpeedTime 快速失败配置，死源不会拖满整个 job。
+#
 # 凭据：默认**不需要手动建密钥**。
 #   Gitea 会为每个 job 自动注入任务令牌（`${{ secrets.GITEA_TOKEN }}`），其权限由本文件的
 #   `permissions:` 决定（这里要 contents: write 才能 push、issues: write 才能开 issue）。
@@ -22,7 +30,8 @@
 # 若 push 报 403/权限不足，先检查：仓库 Settings → Actions → General 的最大令牌权限
 #   是否允许 contents: write；被裁剪时改用上面的 REPO_SYNC_TOKEN。
 #
-# 只同步 main，不动其它分支（如 main-sicc）与 tag。
+# 只同步 main 与 main-sicc 的联动见 sync-main-sicc.yml（main 更新后自动 merge 进
+# main-sicc）；tag 不在本工作流范围内。
 name: Mirror GitHub fork main
 
 on:
@@ -42,12 +51,21 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # 公开仓库，读取无需凭据。
-  SOURCE_URL: https://github.com/Kitsune2077/ZCode.git
   SOURCE_BRANCH: main
   TARGET_BRANCH: main
   ISSUE_TITLE: Gitea 与 GitHub main 已分叉
   GITEA_API: ${{ github.server_url }}/api/v1/repos/${{ github.repository }}
+  # GitHub main 的拉取源回退链（换行分隔，逐个尝试，任一成功即用）：
+  #   - gh 系加速代理（前缀拼接形态）：可用性随时间变化，按需增删；
+  #   - gitclone.com 是整仓镜像（路径形态 /github.com/owner/repo.git）；
+  #   - github.com 直连放最后：runner 当前解析不了该域名，仅作 DNS 恢复后的兜底。
+  SOURCE_MIRRORS: |
+    https://gh-proxy.com/https://github.com/Kitsune2077/ZCode.git
+    https://ghproxy.net/https://github.com/Kitsune2077/ZCode.git
+    https://ghfast.top/https://github.com/Kitsune2077/ZCode.git
+    https://github.moeyy.xyz/https://github.com/Kitsune2077/ZCode.git
+    https://gitclone.com/github.com/Kitsune2077/ZCode.git
+    https://github.com/Kitsune2077/ZCode.git
 
 jobs:
   mirror:
@@ -76,7 +94,7 @@ jobs:
           fi
 
           # 显式给本仓库 origin 配 HTTP 基本认证：Gitea 约定用户名用 x-access-token，
-          # 令牌放在密码位。认证头只作用于 Gitea 源，取 GitHub 仍是匿名。
+          # 令牌放在密码位。认证头只作用于 Gitea 源，取镜像/GitHub 仍是匿名。
           server_origin=$(printf '%s' "${GITHUB_SERVER_URL}" | sed -E 's#(https?://[^/]+).*#\1#')
           basic=$(printf 'x-access-token:%s' "$token" | base64 | tr -d '\n')
           git config --local "http.${server_origin}/.extraheader" "AUTHORIZATION: basic ${basic}"
@@ -116,12 +134,27 @@ jobs:
             fi
           }
 
-          # ---------- 1. 取 GitHub 的 main（公开仓库，匿名读取） ----------
-          if ! git fetch --no-tags "$SOURCE_URL" "${SOURCE_BRANCH}"; then
-            echo "::error::从 GitHub 拉取失败（runner 需能访问 github.com）"
+          # ---------- 1. 取 GitHub 的 main（公开仓库，匿名读取；镜像源回退链） ----------
+          # http.lowSpeedLimit/lowSpeedTime：传输停滞 20s 即判失败，快速切下一个源。
+          remote_sha=""
+          while IFS= read -r source_url; do
+            [ -n "$source_url" ] || continue
+            echo "== 尝试源：$source_url"
+            if git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 \
+                 fetch --no-tags "$source_url" "$SOURCE_BRANCH"; then
+              remote_sha=$(git rev-parse FETCH_HEAD)
+              echo "命中源：$source_url（$(git rev-parse --short "$remote_sha")）"
+              break
+            fi
+            echo "源不可用，尝试下一个。"
+          done <<MIRRORS
+$SOURCE_MIRRORS
+MIRRORS
+
+          if [ -z "$remote_sha" ]; then
+            echo "::error::所有拉取源（镜像 + 直连）均失败，无法获取 GitHub main"
             exit 1
           fi
-          remote_sha=$(git rev-parse FETCH_HEAD)
 
           # ---------- 2. 三种情况：已最新 / 可快进 / 已分叉 ----------
           if git merge-base --is-ancestor "$remote_sha" HEAD; then
