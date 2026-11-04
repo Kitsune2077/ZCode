@@ -92,6 +92,8 @@ jobs:
           fi
           echo "has_updates=true" >> "$GITHUB_OUTPUT"
           echo "count=$(git rev-list --count HEAD..upstream/main)" >> "$GITHUB_OUTPUT"
+          # 合并前的 fork 版本号：官方更新日志按 (base, new] 的版本差取用。
+          echo "base_version=$(grep -m1 '"version":' package.json | sed 's/.*: "\([^"]*\)".*/\1/')" >> "$GITHUB_OUTPUT"
           git log --oneline HEAD..upstream/main | head -20 > /tmp/upstream-commits.txt
           echo "" >> /tmp/upstream-commits.txt
           git diff --stat HEAD...upstream/main | tail -1 >> /tmp/upstream-commits.txt
@@ -170,6 +172,15 @@ jobs:
           git push --force origin "refs/heads/$SYNC_BRANCH:refs/heads/$SYNC_BRANCH"
 
           upstream_head=$(git rev-parse --short upstream/main)
+          # 官方更新日志：合并后的版本号若高于 fork 原版本，从官方 update manifest /
+          # GitHub Release 取该版本的更新说明贴进 PR（scripts/ci/official-release-notes.mjs，
+          # 与桌面 autoUpdater 的官方说明回退同源）。拿不到（版本未发布说明/网络失败）时
+          # 省略该节，不影响 PR 创建。
+          new_version=$(grep -m1 '"version":' package.json | sed 's/.*: "\([^"]*\)".*/\1/')
+          official_notes=""
+          if [ "$new_version" != "${{ steps.detect.outputs.base_version }}" ]; then
+            official_notes=$(node scripts/ci/official-release-notes.mjs --version "$new_version" 2>/dev/null || true)
+          fi
           {
             echo "定时同步把上游 \`upstream/main\`（\`$upstream_head\`）合并进 \`main\`。"
             echo
@@ -179,6 +190,15 @@ jobs:
             echo "- [ ] 确认定制域未受影响（NewAPI、便携数据目录、Lark CLI、PowerShell 7、composer 速率指标）"
             echo "- [ ] 扫一眼下方上游提交清单，留意与本地定制的交叉点"
             echo
+            if [ -n "$official_notes" ]; then
+              echo "## 官方更新日志（v$new_version）"
+              echo
+              echo "$official_notes"
+              echo
+              echo "> 来源：官方 update manifest / GitHub Release；本 PR 同时携带未单独发版的"
+              echo "> 源码同步，完整改动以下方提交清单为准。"
+              echo
+            fi
             echo "本次带入的上游提交（最多 20 条）："
             echo
             echo '```'

@@ -72,6 +72,10 @@ Gitea 不做上游合并——两个远端各自合并会产生两个内容相�
     issue「上游同步需要手工解决冲突」（Issues 已开启，issue 是主要通知渠道；摘要与红运行是兜底）。
 - CI 在 sync workflow 运行内完成，**合并前不需要本地跑测试**；人工只需确认定制域
   （NewAPI、便携数据目录、Lark CLI、PowerShell 7、composer 速率指标）未受影响。
+- 版本号有变化时（如 3.17.1 → 3.17.2），PR 会自动附上**官方更新日志**：
+  `scripts/ci/official-release-notes.mjs` 从官方 update manifest（zcode.z.ai，与桌面
+  autoUpdater 的官方说明回退同源）取该版本的说明，官方 GitHub Release 作兜底；两处
+  都没有（纯源码同步 / 说明未发布）则省略该节。
 - PR 的 Checks 区不会有 unit-tests 运行：unit-tests.yml 已移除 `pull_request` 触发——
   机器人开的 PR 触发该事件会被 GitHub 标为 "Awaiting approval" 审批门（每个新 PR
   都要点一次 Approve，纯噪声）；若将来出现人工开的 PR，再评估恢复该触发器。
