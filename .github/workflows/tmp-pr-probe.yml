@@ -1,0 +1,55 @@
+# 临时探针（排查 upstream-sync 的 createPullRequest 403 后自删）：
+# 同一 GITHUB_TOKEN 下分别尝试 REST 与 GraphQL 两条建 PR 通道，定位被拒的具体端点。
+# 探针目标分支 upstream/sync 已存在且内容就是待同步的合并结果——若 REST 成功，
+# 创建的就是真正的同步 PR（标题/正文按 upstream-sync 的格式），不是垃圾数据。
+name: PR channel probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SYNC_BRANCH: upstream/sync
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Probe REST and GraphQL PR channels
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          echo "== repo / token identity =="
+          gh api repos/$GITHUB_REPOSITORY --jq '{full_name, fork, default_branch}'
+          echo "== REST create (POST /pulls) =="
+          upstream_head=$(git ls-remote https://github.com/$GITHUB_REPOSITORY "refs/heads/$SYNC_BRANCH" | cut -c1-7)
+          body="探针创建：REST 通道验证。若你看到这个 PR，说明 REST 建 PR 可用，GraphQL createPullRequest 在本仓库被拒。"
+          if gh api -X POST "repos/$GITHUB_REPOSITORY/pulls" \
+            -f title="chore(upstream): sync upstream $upstream_head" \
+            -f head="$SYNC_BRANCH" \
+            -f base="main" \
+            -f body="$body" 2>&1 | tee /tmp/rest.out; then
+            echo "REST_CREATE=OK"
+          else
+            echo "REST_CREATE=DENIED"
+            cat /tmp/rest.out
+          fi
+          echo "== GraphQL createPullRequest =="
+          repo_id=$(gh api graphql -f query='query{repository(owner:"Kitsune2077",name:"ZCode"){id}}' --jq '.data.repository.id')
+          if gh api graphql \
+            -f query='mutation($repo:ID!,$head:String!,$base:String!){createPullRequest(input:{repositoryId:$repo,headRefName:$head,baseRefName:$base,title:"probe graphql"}){pullRequest{number}}}' \
+            -f repo="$repo_id" -f head="$SYNC_BRANCH" -f base="main" 2>&1 | tee /tmp/gql.out; then
+            echo "GQL_CREATE=OK"
+          else
+            echo "GQL_CREATE=DENIED"
+            cat /tmp/gql.out
+          fi
