@@ -136,16 +136,25 @@ jobs:
             echo "> 可在本地验证，或手动执行 \`gh workflow run \"Unit tests\" --ref $SYNC_BRANCH\`。"
           } > /tmp/pr-body.md
 
-          existing=$(gh pr list --head "$SYNC_BRANCH" --state open --json number --jq '.[0].number // empty')
+          # 全部走 REST（gh api）而不是 gh pr create/edit：本仓库实测（2026-11-04）
+          # GITHUB_TOKEN 在 job 内声明了 pull-requests: write 且仓库已开启
+          # 「Allow GitHub Actions to create and approve pull requests」后，REST
+          # POST /pulls 成功，而 gh pr create 的 GraphQL createPullRequest 仍被
+          # Resource not accessible by integration 拒绝且 gh pr list 偶发返回空，
+          # 原因未查明；REST 三端点（list/create/patch）实测全部可靠，统一切换。
+          existing=$(gh api "repos/$GITHUB_REPOSITORY/pulls" \
+            -f state=open -f head="$GITHUB_REPOSITORY:$SYNC_BRANCH" \
+            --jq '.[0].number // empty')
           if [ -n "$existing" ]; then
-            gh pr edit "$existing" --body-file /tmp/pr-body.md
+            jq -n --rawfile body /tmp/pr-body.md '{body: $body}' |
+              gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$existing" --input -
             echo "已更新 PR #$existing"
           else
-            gh pr create \
-              --base main \
-              --head "$SYNC_BRANCH" \
-              --title "chore(upstream): sync upstream $upstream_head" \
-              --body-file /tmp/pr-body.md
+            jq -n --arg head "$SYNC_BRANCH" \
+              --arg title "chore(upstream): sync upstream $upstream_head" \
+              --rawfile body /tmp/pr-body.md \
+              '{title: $title, head: $head, base: "main", body: $body}' |
+              gh api -X POST "repos/$GITHUB_REPOSITORY/pulls" --input -
           fi
 
       - name: Report conflicts

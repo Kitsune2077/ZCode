@@ -30,26 +30,21 @@ jobs:
           set -uo pipefail
           echo "== repo / token identity =="
           gh api repos/$GITHUB_REPOSITORY --jq '{full_name, fork, default_branch}'
+          echo "== REST list (upstream-sync 的 list 改法) =="
+          gh api "repos/$GITHUB_REPOSITORY/pulls" -f state=open -f head="$GITHUB_REPOSITORY:$SYNC_BRANCH" --jq '.[] | {number, head: .head.ref, state}'
+          echo "== gh pr list (原实现，对照) =="
+          GH_DEBUG=api gh pr list --head "$SYNC_BRANCH" --state open 2>&1 | grep -E "GET /|=> [0-9]|Status:" | head -10
           echo "== REST create (POST /pulls) =="
           upstream_head=$(git ls-remote https://github.com/$GITHUB_REPOSITORY "refs/heads/$SYNC_BRANCH" | cut -c1-7)
-          body="探针创建：REST 通道验证。若你看到这个 PR，说明 REST 建 PR 可用，GraphQL createPullRequest 在本仓库被拒。"
           if gh api -X POST "repos/$GITHUB_REPOSITORY/pulls" \
-            -f title="chore(upstream): sync upstream $upstream_head" \
+            -f title="chore(upstream): sync upstream $upstream_head (probe)" \
             -f head="$SYNC_BRANCH" \
             -f base="main" \
-            -f body="$body" 2>&1 | tee /tmp/rest.out; then
+            -f body="REST 通道探针第二次验证（首次已建 PR #3，这次预期 422 already exists）。" 2>&1 | tail -3; then
             echo "REST_CREATE=OK"
           else
             echo "REST_CREATE=DENIED"
-            cat /tmp/rest.out
           fi
-          echo "== GraphQL createPullRequest =="
-          repo_id=$(gh api graphql -f query='query{repository(owner:"Kitsune2077",name:"ZCode"){id}}' --jq '.data.repository.id')
-          if gh api graphql \
-            -f query='mutation($repo:ID!,$head:String!,$base:String!){createPullRequest(input:{repositoryId:$repo,headRefName:$head,baseRefName:$base,title:"probe graphql"}){pullRequest{number}}}' \
-            -f repo="$repo_id" -f head="$SYNC_BRANCH" -f base="main" 2>&1 | tee /tmp/gql.out; then
-            echo "GQL_CREATE=OK"
-          else
-            echo "GQL_CREATE=DENIED"
-            cat /tmp/gql.out
-          fi
+          echo "== gh pr create (原实现，GH_DEBUG 抓原始报文) =="
+          GH_DEBUG=api gh pr create --base main --head "$SYNC_BRANCH" \
+            --title "probe create" --body "x" 2>&1 | grep -E "POST /|=> [0-9]|Status:|message" | head -20
