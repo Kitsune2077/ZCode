@@ -130,6 +130,11 @@ jobs:
       - name: Build installer
         run: pnpm bundle:desktop -- --os ${{ matrix.target_os }} --arch ${{ matrix.arch }}
 
+      - name: Test Windows uninstaller
+        if: runner.os == 'Windows'
+        # 只操作临时目录/假安装目录，不碰真实注册表、快捷方式或安装目录。
+        run: pnpm --filter @zcode/desktop test:windows-uninstaller
+
       - name: Collect release info
         # 跨平台逻辑放在脚本里（Windows/macOS/Linux 三种 runner 都跑同一份代码），
         # 本地可用真实 dist 目录验证；详见 scripts/ci/desktop-release-info.mjs。

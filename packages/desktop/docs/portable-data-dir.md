@@ -31,7 +31,8 @@ Windows 便携包是 `win-unpacked` 的 zip（`electron-builder.config.js` 中 `
 `app.isPackaged === true` 且 exe 同目录**不存在** `Uninstall*.exe`：
 
 - electron-builder 的 NSIS 安装版一定带 `Uninstall <产品名>.exe`；
-- zip 便携包（win-unpacked 内容）没有卸载器；
+- 安装版还会带一个不匹配 `Uninstall*.exe` 的 `ZCodeUninstall.exe`（自定义卸载入口）；它故意不参与便携判定，便携 zip 中如果带了这个文件，直接运行会拒绝执行；
+- zip 便携包（win-unpacked 内容）没有 `Uninstall*.exe`；
 - 开发态（`process.defaultApp` 为真 / 未打包）与非 Windows 平台不参与判定。
 
 ### 优先级（高 → 低）

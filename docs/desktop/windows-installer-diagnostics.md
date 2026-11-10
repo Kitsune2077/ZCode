@@ -42,6 +42,13 @@ NSIS .onInit
 - 每条日志包含 `pid=<十进制 PID>`；日志写入失败只影响诊断，不得阻止安装流程。
 - 正式安装器的内层判据必须接入 electron-builder 使用的 `UAC_IsInnerInstance`；不能默认写成恒假，只在 smoke fixture 中强制模拟内层。测试替换只允许隔离夹具显式定义，正式默认行为必须使用真实 UAC 状态。
 
+## 自定义卸载器日志
+
+- 用户可见卸载入口由 `ZCodeUninstall.exe` 承担；它默认写 `%TEMP%\ZCode-uninstaller.log`，沿用 `[pid=N]` 和阶段 marker，交互/静默卸载与更新委托使用同一文件。
+- 新增 marker：`custom-uninstaller-started mode=interactive|silent|updated|dry-run`、`cleanup-failed path=... reason=... code=...`、`cleanup-completed files=N failed=N`、`update-delegation-started/completed exit-code=N`。
+- `--updated` 时自定义卸载器不执行清理，只把参数转发给官方 `$INSTDIR\Uninstall*.exe` 并透传退出码；更新阶段逐文件清理仍由官方卸载器写入同一日志。
+- `access-denied-security-software` 表示删除被终端安全/加密驱动拒绝；需要 IT 将 `ZCodeUninstall.exe`、`ZCode.exe` 按签名或哈希放行。详细清理范围和退出码见 [Windows 自定义卸载器规范](windows-custom-uninstaller.md)。
+
 ## 卸载器能力判断
 
 - 安装器在调用旧卸载器前检查旧 `$INSTDIR\\.zcode-install-manifest`。

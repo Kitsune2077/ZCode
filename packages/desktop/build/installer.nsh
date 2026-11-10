@@ -97,6 +97,9 @@
       StrCpy $R2 $R1 2
       StrCmp $R2 ".." zcodeManifestRead
       StrCmp $R1 "${UNINSTALL_FILENAME}" zcodeManifestRead
+      ; 自定义卸载器是 ARP 的当前入口；更新清理先保留它，等新安装覆盖，
+      ; 避免新版本解压失败时注册表 UninstallString 指向已删除的 exe。
+      StrCmp $R1 "ZCodeUninstall.exe" zcodeManifestRead
       GetFullPathName $R2 "$INSTDIR\$R1"
       StrCmp $R2 "$INSTDIR\$R1" 0 zcodeManifestRead
 
@@ -431,6 +434,21 @@
   ; 不应额外启动 PowerShell。用户已删除的快捷方式也不会重建。
   ; assisted installer 完成页始终直接运行本次安装落盘的 exe。
   StrCpy $launchLink "$appExe"
+
+  ; 用户可见卸载入口指向自定义 ZCodeUninstall.exe：它不落临时目录，失败会明确报告。
+  ; 官方 Uninstall ZCode.exe 仍保留，供自动更新 --updated 清理和便携判定使用。
+  !ifndef BUILD_UNINSTALLER
+    IfFileExists "$INSTDIR\ZCodeUninstall.exe" 0 zcodeCustomUninstallerEntryDone
+      StrCpy $R0 "/currentuser"
+      ${if} $installMode == "all"
+        StrCpy $R0 "/allusers"
+      ${endif}
+      WriteRegStr SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" "UninstallString" '"$INSTDIR\ZCodeUninstall.exe" $R0'
+      WriteRegStr SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" "QuietUninstallString" '"$INSTDIR\ZCodeUninstall.exe" /S $R0'
+      WriteRegStr SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" "DisplayIcon" "$INSTDIR\${APP_EXECUTABLE_FILENAME},0"
+    zcodeCustomUninstallerEntryDone:
+  !endif
+
   !ifndef BUILD_UNINSTALLER
     !insertmacro ZCodeReportInstallerStage "install-completed"
   !endif
