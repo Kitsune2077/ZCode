@@ -37,6 +37,7 @@ const shouldPrepareMacosWindowBounds = target.os === "darwin";
 // checksums.txt 校验）；离线构建可用 ZCODE_SKIP_LARK_CLI=1 跳过，代价是包内不带飞书 CLI。
 const localRuntimeScripts = [
   "prepare:agent-bundle",
+  ...(target.os === "win32" ? ["prepare:windows-uninstaller"] : []),
   ...(shouldPrepareWindowsCuaHelper ? ["prepare:windows-cua-helper"] : []),
   ...(nativeSearchReleasePlan.enabled ? ["prepare:native-search"] : []),
   ...(process.env.ZCODE_SKIP_LARK_CLI === "1" ? [] : ["prepare:lark-cli"]),

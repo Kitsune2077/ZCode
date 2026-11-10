@@ -20,7 +20,7 @@ managed 覆盖更新只清理由 ZCode 发行包声明拥有的文件，安装�
 
 ## 兼容和边界
 
-- 普通卸载（无 `--updated`）继续由 electron-builder 默认流程处理；本规范只改变覆盖更新的清理阶段。
+- 普通卸载（无 `--updated`）由自定义 `ZCodeUninstall.exe` 处理，见 [Windows 自定义卸载器规范](windows-custom-uninstaller.md)；本规范只约束覆盖更新的 manifest 清理阶段。
 - 安装目录之外的数据目录（例如 `%USERPROFILE%\.zcode`）不在清单范围内，也不会被更新清理。
 - 清单只记录文件，不主动删除空目录，因此目录中无关文件和目录结构均保留。
 

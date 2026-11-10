@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- Electron Builder config keeps related packaging hooks together so build order stays explicit. */
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -221,6 +221,27 @@ function assertPackagedCuaHelper(context) {
 }
 const shouldEnableWindowsVsign =
   process.platform === "win32" && process.env.ZCODE_ENABLE_WINDOWS_SIGN === "1";
+const WINDOWS_UNINSTALLER_FILENAME = "ZCodeUninstall.exe";
+const windowsUninstallerPath = resolve(
+  desktopPackageRoot,
+  "bundled-tools",
+  targetPlatform.key,
+  "uninstaller",
+  WINDOWS_UNINSTALLER_FILENAME,
+);
+// 自定义卸载器是用户可见卸载入口；官方 Uninstall ZCode.exe 继续保留给
+// 自动更新 --updated 清理和便携判定。构建阶段必须已经由 prepare:windows-uninstaller 产出。
+const shouldPackageWindowsUninstaller = targetPlatform.os === "win32";
+if (shouldPackageWindowsUninstaller && !existsSync(windowsUninstallerPath)) {
+  throw new Error(
+    `Windows 卸载器缺失: ${windowsUninstallerPath}; 先运行 pnpm prepare:windows-uninstaller`,
+  );
+}
+// 自定义卸载器放在 appOutDir 根目录，NSIS 安装后位于 $INSTDIR\ZCodeUninstall.exe。
+// 名称故意不匹配 Uninstall*.exe，避免 zip 便携包被误判为安装版。
+const windowsExtraFiles = shouldPackageWindowsUninstaller
+  ? [{ from: windowsUninstallerPath, to: WINDOWS_UNINSTALLER_FILENAME }]
+  : [];
 const commandStdoutMaxBuffer = 64 * 1024 * 1024;
 // 产物后缀只标记后端环境（_TEST）；身份靠 productName 区分，生产后端的 Preview 包没有后缀。
 const desktopArtifactEnvSuffix = resolveDesktopArtifactSuffix(process.env);
@@ -587,6 +608,63 @@ function signWindowsBrowserImportHelper(context) {
   ]);
 }
 
+function assertWindowsUninstallerArtifact(context) {
+  if (!shouldPackageWindowsUninstaller || context.electronPlatformName !== "win32") return;
+  const uninstallerPath = resolve(context.appOutDir, WINDOWS_UNINSTALLER_FILENAME);
+  if (!existsSync(uninstallerPath)) {
+    throw new Error(`打包产物缺少 Windows 卸载器: ${uninstallerPath}`);
+  }
+
+  const content = readFileSync(uninstallerPath);
+  if (content[0] !== 0x4d || content[1] !== 0x5a) {
+    throw new Error(`Windows 卸载器不是 PE 文件: ${uninstallerPath}`);
+  }
+
+  const peOffset = content.readUInt32LE(0x3c);
+  if (
+    peOffset + 4 > content.length ||
+    content[peOffset] !== 0x50 ||
+    content[peOffset + 1] !== 0x45 ||
+    content[peOffset + 2] !== 0x00 ||
+    content[peOffset + 3] !== 0x00
+  ) {
+    throw new Error(`Windows 卸载器 PE 头无效: ${uninstallerPath}`);
+  }
+
+  console.log(`[afterPack] windows uninstaller: ${uninstallerPath} (${content.length} bytes)`);
+}
+
+function assertSignedWindowsUninstaller(context) {
+  if (
+    !shouldPackageWindowsUninstaller ||
+    context.electronPlatformName !== "win32" ||
+    !shouldEnableWindowsVsign
+  )
+    return;
+  const uninstallerPath = resolve(context.appOutDir, WINDOWS_UNINSTALLER_FILENAME);
+  const appExecutablePath = resolve(
+    context.appOutDir,
+    `${context.packager.appInfo.productFilename}.exe`,
+  );
+  // 自定义卸载器必须和主程序同证书；未签名或不同证书时，受管终端会把它当成未知程序。
+  const script = [
+    "$uninstaller=Microsoft.PowerShell.Security\\Get-AuthenticodeSignature -LiteralPath $zcodeArg0;",
+    "$app=Microsoft.PowerShell.Security\\Get-AuthenticodeSignature -LiteralPath $zcodeArg1;",
+    "if($uninstaller.Status -ne 'Valid' -or $app.Status -ne 'Valid'){",
+    "[Console]::Error.WriteLine(('Authenticode status invalid: uninstaller={0} ({1}); app={2} ({3})' -f $uninstaller.Status,$uninstaller.StatusMessage,$app.Status,$app.StatusMessage));",
+    "exit 30};",
+    "if($null -eq $uninstaller.SignerCertificate -or $null -eq $app.SignerCertificate){",
+    "[Console]::Error.WriteLine('Authenticode signer certificate missing');exit 31};",
+    "if($uninstaller.SignerCertificate.Thumbprint -ne $app.SignerCertificate.Thumbprint){",
+    "[Console]::Error.WriteLine(('Authenticode signer mismatch: uninstaller={0}; app={1}' -f $uninstaller.SignerCertificate.Thumbprint,$app.SignerCertificate.Thumbprint));",
+    "exit 32};",
+  ].join("");
+  runCommand(
+    "powershell.exe",
+    createWindowsPowerShellSecurityArgs(script, [uninstallerPath, appExecutablePath]),
+  );
+}
+
 /** @type {import("electron-builder").Configuration} */
 export default {
   appId: desktopProductIdentity.appId,
@@ -642,6 +720,7 @@ export default {
     // 整个目标目录必须 unpack；其他平台目录已由 files 规则裁剪。
     `node_modules/node-pty/prebuilds/${targetPlatform.key}/**`,
   ],
+  extraFiles: windowsExtraFiles,
   beforePack: async (context) => {
     runTimedSync("beforePack:restoreTargetNodePtyPrebuild", () =>
       restoreTargetNodePtyPrebuild({ desktopPackageRoot, targetPlatform }),
@@ -727,11 +806,19 @@ export default {
         signWindowsBrowserImportHelper(context),
       );
     }
+    runTimedSync("afterPack:assertWindowsUninstallerArtifact", () =>
+      assertWindowsUninstallerArtifact(context),
+    );
   },
   afterSign: async (context) => {
     if (shouldPackageWindowsBrowserImportHelper) {
       runTimedSync("afterSign:assertSignedWindowsBrowserImportHelper", () =>
         assertSignedWindowsBrowserImportHelper(context),
+      );
+    }
+    if (shouldPackageWindowsUninstaller) {
+      runTimedSync("afterSign:assertSignedWindowsUninstaller", () =>
+        assertSignedWindowsUninstaller(context),
       );
     }
     if (context.electronPlatformName === "win32" && shouldEnableWindowsVsign) {

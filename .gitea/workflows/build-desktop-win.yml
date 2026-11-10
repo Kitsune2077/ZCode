@@ -130,6 +130,21 @@ jobs:
           fi
           wine --version || wine64 --version
 
+      - name: Install .NET SDK for Windows uninstaller
+        # 自定义卸载器是 net48 工程；Linux 交叉构建用 dotnet + ReferenceAssemblies
+        # 产出 Windows PE，不需要 Wine 跑 C#。GitHub windows-latest 自带 SDK，
+        # 这里只给 Gitea 的 Linux runner 补；NuGet restore 需要能访问 nuget.org。
+        run: |
+          set -euo pipefail
+          if command -v dotnet >/dev/null 2>&1; then
+            dotnet --version
+            exit 0
+          fi
+          curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
+          bash /tmp/dotnet-install.sh --channel 8.0 --install-dir "$HOME/.dotnet"
+          echo "$HOME/.dotnet" >> "$GITHUB_PATH"
+          "$HOME/.dotnet/dotnet" --version
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 

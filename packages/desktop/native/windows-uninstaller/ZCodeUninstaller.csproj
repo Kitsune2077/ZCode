@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <RootNamespace>ZCode.Uninstaller</RootNamespace>
+    <AssemblyName>ZCodeUninstall</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Linux 交叉构建不保证 SDK 的 Win32 图标资源任务可用；图标只影响外观，
+         不阻塞 Gitea 产出。Windows 原生构建始终带安装器图标。 -->
+    <ApplicationIcon Condition="'$(OS)' == 'Windows_NT'">..\..\build\icon_installer.ico</ApplicationIcon>
+    <LangVersion>latest</LangVersion>
+    <Prefer32Bit>false</Prefer32Bit>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Version>0.0.0</Version>
+    <FileVersion>0.0.0.0</FileVersion>
+    <InformationalVersion>dev</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <Product>ZCode</Product>
+    <AssemblyTitle>ZCode Uninstaller</AssemblyTitle>
+    <Company>ZCode</Company>
+    <Description>ZCode uninstaller</Description>
+    <Copyright>Copyright © ZCode</Copyright>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Management" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+</Project>
