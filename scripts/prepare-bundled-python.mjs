@@ -49,6 +49,7 @@ import {
 } from "./prebuilt-binary-download.mjs";
 import { extractPrebuiltArchive } from "./prebuilt-binary-extract.mjs";
 import { runCommand } from "./spawn-command.mjs";
+import { spawnSync } from "node:child_process";
 import { getTargetPlatform } from "../packages/desktop/scripts/target-platform.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -302,8 +303,18 @@ function trimRuntime(runtimeDir) {
 }
 
 function verifyImports(interpreter) {
-  const code = `import ${REQUIRED_IMPORTS.join(", ")}`;
-  runCommand(interpreter, ["-c", code], { stdio: "pipe" });
+  // 逐模块校验：合并成一条 import 时，任一失败只会得到 "code 1"，无法定位是哪个包、
+  // 也不会显示 stderr（macOS 首跑就因此只看到 failed with code 1）。这里单独跑并回传 stderr。
+  for (const name of REQUIRED_IMPORTS) {
+    const result = spawnSync(interpreter, ["-c", `import ${name}`], { encoding: "utf8" });
+    if (result.error) {
+      throw new Error(`[prepare-python] 无法启动内置解释器校验 import ${name}：${result.error.message}`);
+    }
+    if (result.status !== 0) {
+      const detail = (result.stderr || result.stdout || "").trim().split(/\r?\n/).slice(-6).join(" | ");
+      throw new Error(`[prepare-python] import ${name} 失败（exit ${result.status}）：${detail}`);
+    }
+  }
   console.log(`    [verify] import 通过：${REQUIRED_IMPORTS.join(", ")}`);
 }
 
