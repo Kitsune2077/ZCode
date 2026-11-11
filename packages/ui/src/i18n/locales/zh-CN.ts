@@ -2649,7 +2649,6 @@ const zhCN: Record<string, string> = {
   "workspaceSidebar.organizeByProject": "项目",
   "workspaceSidebar.conversationsSection": "任务",
   "workspaceSidebar.projectsSection": "项目",
-  "workspaceSidebar.addProject": "添加项目",
   "workspaceSidebar.newConversation": "新建任务",
   "workspaceSidebar.reorderSection": "移动{section}分区",
   "workspaceSidebar.sortBy": "排序方式",

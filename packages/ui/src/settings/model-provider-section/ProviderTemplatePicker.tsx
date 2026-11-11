@@ -102,6 +102,7 @@ export function ProviderTemplatePicker({
             </h3>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {group.id === "other" ? (
+                <>
                 <ProviderTemplateCard
                   label={intl.formatMessage({ id: "login.newApi.entry" })}
                   disabled={creating}
@@ -124,6 +125,7 @@ export function ProviderTemplatePicker({
                   }
                   onClick={() => void createWithFeedback(() => onCreateCustom(customLabel))}
                 />
+                </>
               ) : null}
               {group.templates.map((template) => {
                 const label = resolveProviderTemplateName(

@@ -667,6 +667,6 @@ function toInstalledPluginSummary(input: {
 
 function resolvePluginStorageRoot(workingDirectory: string): string {
   const config = createConfig({ workingDirectory });
-  const storageRoot = resolveStorageRootDir(config.config.storage.dir);
+  const storageRoot = resolvePath(config.config.storage.dir);
   return getPluginStorageRoot(getCliStorageRoot(storageRoot));
 }
