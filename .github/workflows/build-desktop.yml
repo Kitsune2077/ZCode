@@ -58,7 +58,9 @@ jobs:
             # 因此默认跳过远端资产；需要时用 include_remote_assets 覆盖。
             skip_by_default: "1"
             skip_when_included: "0"
-          - runner: macos-14
+          # macos-14 的运行器配置 2026-11 起报 "not supported"（arm64-us-default），
+          # 改用 macos-15（同为 Apple Silicon，自带 Xcode/CLT）。
+          - runner: macos-15
             label: macOS arm64
             target_os: mac
             arch: arm64
