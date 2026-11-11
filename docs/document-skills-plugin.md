@@ -52,15 +52,24 @@ filesystem seed、SEA、Electron Node bundle、remote prebuild、server remote �
 
 ## 依赖边界
 
-内置 skill 不等于内置系统依赖——**唯一例外是 Office 转换引擎**：ZCode 桌面随包内置
-`@deepseek-ai/libreoffice-kit` 预编译引擎（MPL-2.0，`resources/tools/libreoffice-kit`，经
-runtime tool 机制注册为 `dsoffice`，见 `packages/desktop/docs/bundled-runtime-tools.md`），
-docx/pptx/xlsx/pdf 四个 skill 的转换、渲染视觉验证与公式重算优先使用它；随包后运行时零下载，
-公司内网不再依赖现场安装 LibreOffice。
+内置 skill 不等于内置系统依赖——**Office 转换引擎与 Python 创作环境都是例外**，随桌面安装包内置：
 
-其余依赖（Poppler、Playwright、ReportLab、Tectonic、python-pptx、openpyxl、Python 本身等）
-仍由运行环境提供或按 skill 的环境检查安装。skill 的引擎解析降级链为：
+- **转换引擎**：`@deepseek-ai/libreoffice-kit` 预编译 LibreOffice（MPL-2.0），经 runtime tool
+  `dsoffice` 暴露（`resources/tools/libreoffice-kit`）。
+- **Python 创作环境**：CPython（python-build-standalone，PSF-2.0）+ 锁定版本的创作/PDF 库
+  （python-docx、python-pptx、openpyxl、xlsxwriter、defusedxml、Pillow、lxml、pypdf、
+  reportlab、pdfplumber、pikepdf），经 runtime tool `python` 暴露
+  （`resources/tools/python`，`command -v python3` 命中内置解释器）。
+  **不含 PyMuPDF（AGPL-3.0）**：pdf skill 的 `fitz` 检查为 optional，页面渲染统一走
+  `dsoffice render`。
+
+两项都随包后运行时零下载，公司内网不再依赖现场安装。skill 的引擎解析降级链为：
 内置 `dsoffice` → 本机 `soffice`（探测并注册，不重装）→ 征得用户同意后安装（大下载）→
 经用户同意用本机 Word/WPS 兜底（警告保真度差异）→ 如实报告不可用操作（禁止静默跳过验证）。
+
+其余依赖（Poppler、Playwright、Tectonic、markitdown 等）仍由运行环境提供或按 skill 的环境
+检查安装；Poppler 仅在本地 `soffice` 回退路径需要，内置引擎路径用 `dsoffice render` 直接
+产出分页图片。Python PATH 注入沿用 runtime tool 的"追加"语义：用户自带的 `python3` 优先，
+内置解释器兜底（内网无 Python 的机器因此可用）。
 
 脚本相对路径以 Skill 工具返回的 base directory 为准。

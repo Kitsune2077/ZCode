@@ -19,9 +19,12 @@ export async function generateThirdPartyNotices(root = repositoryRoot) {
   const copied = await readJson("third-party/copied-components.json");
   const embedded = await readJson("third-party/embedded-components.json");
   const runtimes = await readJson("third-party/runtime/sources.json");
-  for (const runtime of runtimes.node) {
-    if (hashBytes(await readInput(runtime.file)) !== runtime.sha256)
-      throw new Error(`Changed Node ${runtime.version} license`);
+  // 所有随包运行时（Node / CPython）都必须逐字节校验许可原文；新增运行时只需在 sources.json 登记。
+  for (const [kind, entries] of Object.entries(runtimes)) {
+    for (const runtime of entries) {
+      if (hashBytes(await readInput(runtime.file)) !== runtime.sha256)
+        throw new Error(`Changed ${kind} ${runtime.version} license`);
+    }
   }
   const pkg = await readJson("package.json");
   await readInput("pnpm-lock.yaml");
@@ -45,6 +48,10 @@ export async function generateThirdPartyNotices(root = repositoryRoot) {
     record.references.push({ owner, origin });
     textRecords.set(sha256, record);
     return sha256;
+  }
+  // CPython 许可全文随 notices 一起呈现；Node 的许可由各发行包以 LICENSE.node.txt 单独携带。
+  for (const runtime of runtimes.python ?? []) {
+    addText(await readInput(runtime.file), `CPython ${runtime.version}`, runtime.file);
   }
   for (const record of overrides) if (record.file) await readInput(record.file);
   const packageInventory = packages.map(({ notices, ...item }) => ({
@@ -144,6 +151,7 @@ export async function generateThirdPartyNotices(root = repositoryRoot) {
         `- ${item.id} inside ${item.parentPackage}; upstream revision ${item.revision}; source: ${item.source}. ${item.reviewRequired ?? ""}`,
     ),
     "Electron/Chromium target-specific notices are shipped separately under Resources/licenses/electron. Distributions containing an independent Node runtime also include its exact-version LICENSE.node.txt; SEA includes that text in --licenses output.",
+    "The bundled Python authoring runtime (CPython) is distributed under PSF-2.0; its exact-version license text is retained below. Python wheels installed into that runtime keep their own license files under resources/tools/python/licenses/.",
     "## Modified npm packages",
     ...patches.map(
       (item) =>

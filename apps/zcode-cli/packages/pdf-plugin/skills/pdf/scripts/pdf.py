@@ -388,9 +388,12 @@ def env_check(argv: list):
                 "python3": s_py[0], "python3_version": s_py[1],
                 "reportlab": s_rl[0], "reportlab_version": s_rl[1],
                 "pypdf": s_pypdf[0], "pypdf_version": s_pypdf[1],
-                "PyMuPDF": s_fitz[0], "PyMuPDF_version": s_fitz[1],
                 "pikepdf": s_pike[0], "pikepdf_version": s_pike[1],
                 "pdfplumber": s_plumb[0], "pdfplumber_version": s_plumb[1],
+            },
+            # PyMuPDF 是 AGPL-3.0，不随 ZCode 分发；页面渲染由 dsoffice 承担。
+            "optional_rendering": {
+                "PyMuPDF": s_fitz[0], "PyMuPDF_version": s_fitz[1],
             },
             "optional_html_route": {  # Creative / poster / HTML->PDF \u2014 install on demand
                 "node": s_node[0], "node_version": s_node[1],
@@ -406,7 +409,7 @@ def env_check(argv: list):
         sys.stdout.write(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
         # Exit code reflects CORE only; optional engines never fail the check.
         rc = 0
-        for v in [s_py, s_rl, s_pypdf, s_fitz, s_pike, s_plumb]:
+        for v in [s_py, s_rl, s_pypdf, s_pike, s_plumb]:
             if v[0] != "ok":
                 rc = 2
                 break
@@ -439,9 +442,11 @@ def env_check(argv: list):
     show("python3", s_py)
     show("reportlab", s_rl)
     show("pypdf", s_pypdf)
-    show("PyMuPDF", s_fitz)
     show("pikepdf", s_pike)
     show("pdfplumber", s_plumb)
+
+    print("\n--- Optional: PyMuPDF (AGPL-3.0 — not bundled; pages render via dsoffice) ---")
+    show("PyMuPDF", s_fitz, optional=True)
 
     print("\n--- Optional: HTML route (Creative / poster / HTML\u2192PDF) ---")
     show("node", s_node, optional=True)
@@ -460,7 +465,8 @@ def env_check(argv: list):
     show("tectonic", s_tec, optional=True)
 
     print("\n=== Install Commands (optional engines — install only when a route needs them, with the user's OK) ===")
-    print("  Core Python: pip install reportlab pypdf PyMuPDF pikepdf pdfplumber")
+    print("  Core Python: pip install reportlab pypdf pikepdf pdfplumber")
+    print("  PyMuPDF:     pip install PyMuPDF   # AGPL-3.0, optional; prefer dsoffice render")
     print("  Node.js:     brew install node (macOS) / apt install nodejs (Ubuntu)")
     print("  Playwright:  npm install -g playwright && npx playwright install chromium   # large download, minutes")
     print("  Office→PDF:  bundled dsoffice engine first (convert.office uses it automatically).")
@@ -484,7 +490,6 @@ def env_fix(argv: list):
     modules = {
         "reportlab": "reportlab",
         "pypdf": "pypdf",
-        "fitz": "PyMuPDF",
         "pikepdf": "pikepdf",
         "pdfplumber": "pdfplumber",
         "pdf2image": "pdf2image",

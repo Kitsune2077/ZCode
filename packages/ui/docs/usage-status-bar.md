@@ -1,21 +1,26 @@
-# Composer 生成速率指标（Generation Speed Indicator）
+# Composer 用量状态条（Usage Status Bar）
 
 ## 范围
 
 | 批次 | 内容 | 状态 |
-| --- | --- |
-| A | 生成速率（最近完成请求，`首 token → 完成` 口径） | 已实现，状态栏唯一展示项 |
-| A' | 当前轮次/会话/今日/工具/子代理等用量展示 | 数据层已实现（协议 `v4/conversation/usageDetail`），**状态栏不再展示**（见下） |
+| --- | --- | --- |
+| A | 输入框下方常驻状态条：速率（最近完成请求，`首 token → 完成` 口径）、输出 token、TTFT、生成时长 | 已实现 |
+| A2 | 回复末尾统计行（仅最新轮，同源复用 `usageDetail`） | 已实现 |
+| A' | 当前轮次/会话/今日/工具/子代理等累计用量 | 数据层已实现（协议 `v4/conversation/usageDetail`），**状态条不展示**（见下） |
 | B1 | 子代理用量聚合（按 `session.parent_id` 关联子会话，与主会话合计分开统计） | 数据层已实现 |
 | B2 | 设置面板（条目开关、上下文窗口手动覆盖） | 未实现 |
 | C1 | 模型侧用量查询能力（MCP `token_usage(scope)` 的等价物） | 未实现 |
 | C2 | `/usage` 聊天命令 | 未实现 |
 | C3 | 独立 CLI 查询入口（`zusage` 等价物） | 未实现 |
 
-> **展示收敛决策**：状态栏初期同时展示速率与各类用量累计，实测与左侧用量圆环
-> （ChatContextUsage）及设置 → 用量页职责重叠、视觉冗余。收敛后状态栏只保留圆环
-> 没有的"模型此刻多快"（tokens/s 三档配色）；用量数据层与协议完整保留，供 C1/C2/C3
-> 等查询类入口复用，不因展示收敛而回退。
+> **展示口径决策**：状态条只承担"模型此刻多快 + 这次生成了多少"——速率、输出 token、
+> TTFT、生成时长四项，均为左侧用量圆环与设置页没有的指标。会话/今日/项目等累计仍由
+> 左侧圆环（ChatContextUsage）与设置 → 用量页承担，避免同一事实出现第二处展示；
+> 用量数据层与协议完整保留，供 C1/C2/C3 等查询类入口复用。
+>
+> **与社区插件的关系**：对齐 `zcode-token-usage-statusbar` 的指标口径与药丸形态
+> （输入框下方常驻、速率三档配色、悬停看明细），但不采用其 asar 补丁、DOM 注入与
+> CDP 调试口方案——本仓库的展示全部走组件与既有服务协议。
 
 > **C1 的实现路径已在本仓库探明，与原方案不同**：外挂工具通过外部 MCP server 暴露
 > `token_usage(scope)`；本仓库已有原生 tool 基建（`list_models` 即是先例），因此 C1 应实现为
@@ -25,13 +30,22 @@
 > scope（current/today/week/days:N/sessions:N/models:days/session:<id>/workspace:<dir>）在
 > 查询层实现一次即可三处复用。
 
-状态栏在**对话输入工具条**常驻唯一指标：
+状态条在**输入框正下方**常驻，药丸形态（与会话输入卡同宽居中，宽度随内容收缩但受窄窗约束）：
 
 | 指标 | 数据源 | 语义 |
 | --- | --- | --- |
-| 速率 | `model_usage` 最近一条请求：`output_tokens ÷ (completed_at − first_token_at)` | 最近完成请求的生成速度（tokens/s），三档配色 ≥70 / ≥40 / <40；hover 给模型/输出量/生成耗时 |
+| 速率 | `model_usage` 最近一条**已完成**请求：`output_tokens ÷ (completed_at − first_token_at)` | 最近完成请求的生成速度（tok/s），三档配色 ≥70 / ≥40 / <40 |
+| 输出 token | 同一条请求的 `output_tokens` | 本轮实际输出量（K/M 缩写，hover 显示精确值） |
+| TTFT | 同一条请求的 `time_to_first_token_ms` | 首字延迟；缺失时显示 `--` |
+| 时长 | 同一条请求的 `duration_ms` | 整请求耗时；hover 同时给生成耗时（`generationMs`）与模型名 |
 
-刻意**不在**状态栏展示（避免与既有 UI 冗余）：
+指标顺序固定为 速率 → 输出 token → TTFT → 时长，段间用竖分隔线；窄屏按
+时长 → token → TTFT 的顺序逐段收起（速率始终保留）。
+
+回复末尾另有一行同源统计（仅**最新一轮**、终态渲染）：`速率 · 输出 token · TTFT · 时长`，
+弱化文本，不带交互。历史轮不渲染，避免每轮一次 RPC。
+
+刻意**不在**状态条展示（避免与既有 UI 冗余）：
 
 | 数据 | 承担方 |
 | --- | --- |
@@ -46,16 +60,20 @@
 | 会话/今日聚合事实 | agent SQLite（`model_usage` 等），经 ZCode Protocol 读取，桌面与远控同源 |
 | `today` range 定义 | `packages/shared/src/usage-stats.ts` `APP_USAGE_RANGES` |
 | `today` 聚合窗口（本地午夜起） | CLI `getUsageStats`（server-operations） |
-| 状态栏渲染与轮询 | `packages/ui/src/v4/composer/V4ComposerUsageStats.tsx`（纯派生逻辑在 `usageStatusBarModel.ts`） |
+| 状态条/回复尾行渲染与轮询 | `packages/ui/src/v4/composer/V4ComposerUsageStatusBar.tsx`（纯派生逻辑在 `usageStatusBarModel.ts`；回复尾行为 `AssistantReplyUsageLine`） |
 | 刷新节奏 | 组件内部：sessionId 变化即刷 + 10s 间隔轮询（`document.visibilityState === "visible"` 时） |
 
 ## 行为细则
 
-- 状态栏只显示速率一项；无会话（草稿态）、无请求记录或速率窗口缺失时整体隐藏。
-- 查询失败静默降级为隐藏（warn 日志），不阻塞输入区。
+- 状态条常驻：无会话（草稿态）、无请求记录时显示 `--` 占位而不是隐藏；
+  查询失败时保留上一次成功值并弱化，不阻塞输入区。
+- 请求进行中（`generationMs` 为 null）时，状态条保留**上一轮已完成**的指标并加
+  「生成中」提示；不显示 0 或实时字符估算——实时速率需要订阅 `model.request.metrics`，
+  另行排期。
 - 速率分母是「首 token → 完成」的生成时长，不是整请求时长（后者含排队与首 token 延迟，
-  会系统性算低速度）；首 token 或完成时间缺失时整项隐藏，不用 0 冒充。
-- 指标不可点击；样式遵循 DESIGN.md 的弱化文本呈现，不与 ChatContextUsage 抢焦点。
+  会系统性算低速度）；首 token 或完成时间缺失时该段显示 `--`。
+- 指标不可点击；样式遵循 DESIGN.md 的弱化文本呈现（`text-ui-xs` + `tabular-nums` +
+  `text-foreground-subtle`），与 ChatContextUsage 圆环分工而不抢焦点。
 
 ## 协议扩展
 
@@ -82,11 +100,14 @@
 
 ## 验收场景
 
-- A：进行中的会话完成一轮后，工具条出现速率（tokens/s，三档配色），10s 内更新；
-- B：新任务草稿态 / 无请求记录 / 请求进行中 → 状态栏整体隐藏；
-- C：设置 → 用量 → App 用量时间范围出现「今日」（设置页职责，与状态栏无耦合）；
-- D：便携版运行后 usage 库出现在 `<exe 目录>/.zcode/cli/db/db.sqlite`，安装版仍为 `~` 下；
-- E：agent 不可用/查询失败时指标静默隐藏，输入区不受影响。
+- A：进行中的会话完成一轮后，输入框下方状态条出现速率（tok/s，三档配色）、输出 token、
+  TTFT、时长，10s 内更新；回复末尾同时出现一行同源统计；
+- B：新任务草稿态 / 无请求记录 → 状态条显示 `--` 占位（常驻），回复尾行不渲染；
+- C：请求进行中 → 状态条保留上一轮已完成指标并标注「生成中」，不闪退成 0/空；
+- D：设置 → 用量 → App 用量时间范围出现「今日」（设置页职责，与状态条无耦合）；
+- E：便携版运行后 usage 库出现在 `<exe 目录>/.zcode/cli/db/db.sqlite`，安装版仍为 `~` 下；
+- F：agent 不可用/查询失败时保留上一轮值并弱化，输入区不受影响；
+- G：手机 Web 窄视口下状态条仍位于输入框下方，依次收起时长/token/TTFT，速率保留。
 
 ## 未决/后续（批次 B2、C）
 

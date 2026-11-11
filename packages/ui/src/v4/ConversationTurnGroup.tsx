@@ -111,6 +111,7 @@ import type {
 import { formatConversationWorkDuration } from "@/v4/conversationWorkDuration.js";
 import { ConversationTurnRow, resolveAssistantCopyText } from "@/v4/ConversationTurnRow.js";
 import { ConversationHookDetailsAction } from "@/v4/ConversationHookDetailsAction.js";
+import { AssistantReplyUsageLine } from "@/v4/composer/AssistantReplyUsageLine.js";
 import { toolCallRowToLegacyNode } from "@/v4/toolCallRowAdapter.js";
 
 interface ConversationTurnGroupProps {
@@ -1626,6 +1627,15 @@ function ConversationTurnGroupImpl({
                   sourceCommandIds={deliverySourceCommandIds}
                 />
               </MessageActions>
+            ) : null}
+            {unit.isLastTurn && !unit.isRunning ? (
+              // 回复末尾的用量统计行（仅最新轮，与输入框下方状态条同源）。
+              <AssistantReplyUsageLine
+                workspacePath={context.workspacePath}
+                sessionId={context.sessionId}
+                refreshKey={unit.turnId}
+                compactForRemoteControl={context.compactForRemoteControl}
+              />
             ) : null}
             {showHighspeedOutputFooter ? (
               <HighspeedOutputFooter

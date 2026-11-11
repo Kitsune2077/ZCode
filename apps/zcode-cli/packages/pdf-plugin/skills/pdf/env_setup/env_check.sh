@@ -42,7 +42,10 @@ check "pikepdf"    python3 -c "import pikepdf"
 check "pdfplumber" python3 -c "import pdfplumber"
 check "pypdf"      python3 -c "import pypdf"
 check "reportlab"  python3 -c "import reportlab"
-check "PyMuPDF"    python3 -c "import fitz"
+
+# PyMuPDF 是 AGPL-3.0，不随 ZCode 分发：仅 optional。页面渲染统一走 `dsoffice render`，
+# 只有在用户自行安装（接受 AGPL）时才用于额外字形检查。
+optional "PyMuPDF (fitz; AGPL — pages render via dsoffice)" python3 -c "import fitz"
 
 # Font check: verify an embeddable CJK font is available (SimHei/Noto/WenQuanYi/Songti…)
 if command -v fc-list &>/dev/null; then

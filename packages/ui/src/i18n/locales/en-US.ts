@@ -5409,6 +5409,18 @@ const enUS: Record<string, string> = {
   "settings.usage.range.today": "Today",
   "composer.usage.speedTooltip":
     "Generation speed of the latest completed request: {model}, {output} output tokens over {duration}",
+  "composer.usage.speedUnit": "tok/s",
+  "composer.usage.statusBar.ttft": "TTFT {value}",
+  "composer.usage.statusBar.tokens": "{value} tokens",
+  "composer.usage.statusBar.duration": "{value}",
+  "composer.usage.statusBar.running": "Generating",
+  "composer.usage.statusBar.empty": "--",
+  "composer.usage.statusBar.tooltip":
+    "Latest request: {model} · {output} output tokens · TTFT {ttft} · total {duration} · generation {generation}",
+  "chat.message.usage.speed": "{value} tok/s",
+  "chat.message.usage.tokens": "{value} tokens",
+  "chat.message.usage.ttft": "TTFT {value}",
+  "chat.message.usage.duration": "{value}",
   "settings.usage.appUsageRangeTitle": "Time range",
   "settings.usage.codingPlanRange.today": "Today",
   "settings.usage.codingPlanRange.7d": "7 days",

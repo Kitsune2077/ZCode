@@ -168,10 +168,13 @@ export function buildRuntimeProcessEnvPatch(
     ...normalizedBaseEnv,
     ...loginShellEnvPatch,
   });
-  const runtimeToolEnvPatch = buildRuntimeToolEnvPatch(["bfs", "dsoffice", "lark-cli", "ripgrep", "ugrep"], {
-    ...normalizedBaseEnv,
-    PATH: undefined,
-  });
+  const runtimeToolEnvPatch = buildRuntimeToolEnvPatch(
+    ["bfs", "dsoffice", "lark-cli", "python", "ripgrep", "ugrep"],
+    {
+      ...normalizedBaseEnv,
+      PATH: undefined,
+    },
+  );
 
   const runtimeToolPathEntries = runtimeToolEnvPatch.PATH?.split(delimiter).filter(Boolean) ?? [];
   // 远端 server 可能由非交互 SSH /bin/sh 启动，原始 PATH 只有系统目录；

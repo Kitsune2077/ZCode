@@ -443,6 +443,25 @@ function resolveBundledDsofficeBinaryPath(): string | undefined {
   return candidates.find((candidate) => existsSync(candidate));
 }
 
+// 随包 Python 同样是双入口 shim：win32 用 python3.cmd（cmd/PowerShell/Node 解析），
+// 其余平台用无扩展名 python3（Git Bash 的 command -v 命中）。
+function resolveBundledPythonBinaryPath(): string | undefined {
+  const toolDir = "python";
+  const shimName = process.platform === "win32" ? "python3.cmd" : "python3";
+  const candidates = [
+    isElectronAppPackaged() ? join(process.resourcesPath, "tools", toolDir, shimName) : null,
+    join(
+      import.meta.dirname,
+      "../../bundled-tools",
+      resolvePlatformKeyForPackagedApp(),
+      toolDir,
+      shimName,
+    ),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
 export function resolveBundledGlmBinaryPath(): string | undefined {
   return resolveBundledZCodeAgentBinaryPath();
 }
@@ -530,6 +549,12 @@ export function buildHostProcessEnv(hostProcessLocalEnv: Record<string, string>)
     "ZCODE_DSOFFICE_BINARY",
     hostProcessLocalEnv,
     dsofficeBinaryPath,
+  );
+  const pythonBinaryPath = resolveBundledPythonBinaryPath();
+  const resolvedPythonBinaryPath = resolveHostProcessBinaryEnv(
+    "ZCODE_PYTHON_BINARY",
+    hostProcessLocalEnv,
+    pythonBinaryPath,
   );
   const dataBaseDir = getDataBaseDir();
   const rawInheritedEnv = {
@@ -626,5 +651,6 @@ export function buildHostProcessEnv(hostProcessLocalEnv: Record<string, string>)
           ZCODE_DSOFFICE_NODE_EXE: process.execPath,
         }
       : {}),
+    ...(resolvedPythonBinaryPath ? { ZCODE_PYTHON_BINARY: resolvedPythonBinaryPath } : {}),
   };
 }

@@ -1,4 +1,4 @@
-export type RuntimeToolId = "bfs" | "dsoffice" | "lark-cli" | "ripgrep" | "ugrep";
+export type RuntimeToolId = "bfs" | "dsoffice" | "lark-cli" | "python" | "ripgrep" | "ugrep";
 
 export interface RuntimeToolRuntimeDescriptor {
   binaryEnvVar: string;
@@ -46,6 +46,17 @@ export const RUNTIME_TOOL_RUNTIME: Record<RuntimeToolId, RuntimeToolRuntimeDescr
     bundledResourceDir: "lark-cli",
     resolveEntrySegments: (platform) => [resolvePlatformBinaryName("lark-cli", platform)],
   },
+  python: {
+    // 随包最小 Python 创作环境（CPython + Office 创作/PDF 库，见
+    // scripts/prepare-bundled-python.mjs）。skill 里用裸 `python3`，而 Windows 的
+    // CPython 只有 python.exe（没有 python3.exe），因此工具根同时放两个入口：
+    // - .cmd 供 cmd/PowerShell/Node argv 解析（PATHEXT）；
+    // - 无扩展名 sh 供 Git Bash 的 `command -v python3` 命中（MSYS 不读 PATHEXT）。
+    // 注意不能用 resolvePlatformBinaryName("python3")：它会拼成不存在的 python3.exe。
+    binaryEnvVar: "ZCODE_PYTHON_BINARY",
+    bundledResourceDir: "python",
+    resolveEntrySegments: (platform) => [platform === "win32" ? "python3.cmd" : "python3"],
+  },
   ripgrep: {
     binaryEnvVar: "ZCODE_RG_BINARY",
     bundledResourceDir: "ripgrep",
@@ -74,6 +85,12 @@ export const REMOTE_RUNTIME_TOOL_RUNTIME = {
   "lark-cli": {
     ...RUNTIME_TOOL_RUNTIME["lark-cli"],
     // 只随桌面/本机包内置，不参与远端 workspace 的工具部署：
+    // 版本表留空后 getRemoteRuntimeToolsForPlatform 不会产出该工具。
+    versions: {},
+  },
+  python: {
+    ...RUNTIME_TOOL_RUNTIME.python,
+    // 只随桌面/本机包内置（CPython + wheel 集体积大，远端部署面不参与）：
     // 版本表留空后 getRemoteRuntimeToolsForPlatform 不会产出该工具。
     versions: {},
   },

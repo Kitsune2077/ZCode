@@ -58,7 +58,6 @@ import {
   getThoughtLevelLabel,
 } from "@/chat-input-toolbar/thoughtLevelOptions.js";
 import type { V4ComposerConfigPicker } from "@/v4/composer/configPickerState.js";
-import { V4ComposerUsageStats } from "@/v4/composer/V4ComposerUsageStats.js";
 import { useToolbarShortcutBindings } from "@/v4/composer/toolbarShortcuts.js";
 import {
   resolveModelSelectTriggerDisplay,
@@ -1301,12 +1300,6 @@ function V4ComposerModelControlsImpl({
           compressionDisabled={disabled || recoveryPending}
         />
       ) : null}
-      {/* 生成速率指标：用量累计由左侧用量圆环与设置→用量页承担，这里只补“模型此刻多快”。 */}
-      <V4ComposerUsageStats
-        workspacePath={workspacePath}
-        workspaceIdentity={workspaceIdentity}
-        sessionId={sessionId}
-      />
       {/* 加速轮的模型由本次卡决定，选型菜单此时不可用，所以指示器优先于选型加载态。 */}
       {highspeedPresented && highspeedModel ? (
         <HighspeedModelIndicator

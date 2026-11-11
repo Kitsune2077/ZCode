@@ -794,6 +794,10 @@ export const TID_V4_BACKGROUND_WORK_CANCEL = "v4-background-work-cancel";
 export const TID_V4_MODEL_CONFIG = "v4-model-config";
 /** v4 Composer 用量状态栏（会话累计 + 今日累计） */
 export const TID_V4_USAGE_STATS = "v4-usage-stats";
+/** v4 输入框下方的常驻用量状态条（速率 / 输出 token / TTFT / 时长） */
+export const TID_V4_USAGE_STATUS_BAR = "v4-usage-status-bar";
+/** 助手回复末尾的用量统计行（仅最新轮） */
+export const TID_ASSISTANT_USAGE_LINE = "assistant-usage-line";
 // v4-model-provider-input / v4-model-model-input / v4-model-thought-input /
 // v4-model-apply（调试表单）已退役——模型切换由 composer 工具条的
 // TID_CHAT_MODEL_SELECT_* / TID_CHAT_THOUGHT_LEVEL_SELECT_* 承载。

@@ -912,6 +912,18 @@ export default {
           },
         ]
       : []),
+    ...(existsSync(resolve(desktopPackageRoot, `bundled-tools/${targetPlatform.key}/python`))
+      ? [
+          {
+            // 随包最小 Python 创作环境（CPython + Office 创作/PDF 库）：内网机器无需预装
+            // Python/pip，skill 的 `command -v python3` 直接命中内置副本。
+            // 离线构建（ZCODE_SKIP_PYTHON=1）缺资产时宁可不带，让 skill 回落系统 Python。
+            from: `bundled-tools/${targetPlatform.key}/python`,
+            to: "tools/python",
+            filter: ["**/*"],
+          },
+        ]
+      : []),
   ],
   // pnpm 依赖图不完整时禁止仅记录警告并继续生成安装包；afterPack 只能补齐可解析依赖，
   // collector 已确认缺失的生产依赖必须在打包阶段停止。

@@ -1,49 +1,61 @@
 import type { V4ConversationUsageDetailResult } from "@zcode/shared/zcode-protocol-v4";
 
 /**
- * Composer 生成速率指标的纯派生逻辑（组件只做 IO 与渲染）。
+ * Composer 用量状态条的纯派生逻辑（组件只做 IO 与渲染）。
  *
  * 速率按“首 token → 完成”的生成时长计算（与社区工具同口径），而不是整请求时长：
  * 后者包含排队与首 token 延迟，会把模型速度系统性算低。
  *
- * 用量类指标（会话/今日/轮次/工具/子代理累计）刻意不在状态栏展示：
- * 左侧用量圆环（ChatContextUsage）与设置 → 用量页已承担该职责；完整数据仍可经
- * v4/conversation/usageDetail 协议读取，供后续查询类入口（工具/命令）复用。
+ * 状态条只承担“模型此刻多快 + 这次生成了多少”（速率/输出 token/TTFT/时长）；
+ * 会话/今日/轮次/工具/子代理累计仍由左侧用量圆环（ChatContextUsage）与设置 → 用量页
+ * 承担，完整数据经 v4/conversation/usageDetail 协议读取。
+ *
+ * 产品规则见 packages/ui/docs/usage-status-bar.md。
  */
 
-export interface UsageStatusBarGeneration {
-  /** tokens/秒；generationMs 缺失或为 0 时为 null。 */
-  readonly tokensPerSecond: number;
+export interface UsageStatusBarSnapshot {
+  /** tokens/秒；生成时长缺失、为 0 或请求仍在跑时为 null。 */
+  readonly tokensPerSecond: number | null;
   readonly outputTokens: number;
-  readonly generationMs: number;
+  /** 首 token → 完成的生成时长；null 表示无法计算（未完成或首 token 缺失）。 */
+  readonly generationMs: number | null;
+  /** 整请求耗时（含排队与首 token 延迟）。 */
+  readonly durationMs: number | null;
+  /** 首字延迟。 */
+  readonly timeToFirstTokenMs: number | null;
   readonly modelId: string;
+  readonly status: string;
 }
 
 export interface UsageStatusBarModel {
-  /** 最近一次请求的生成速率；null = 缺首 token/完成时间或尚无请求，无法计算。 */
-  readonly generation: UsageStatusBarGeneration | null;
+  /** 最近一条请求的快照；null = 无会话/无请求记录（草稿态）。 */
+  readonly latest: UsageStatusBarSnapshot | null;
 }
 
 export function buildUsageStatusBarModel(input: {
   detail?: V4ConversationUsageDetailResult | null;
 }): UsageStatusBarModel {
   return {
-    generation: deriveGeneration(input.detail ?? null),
+    latest: deriveSnapshot(input.detail?.latestRequest ?? null),
   };
 }
 
-function deriveGeneration(
-  detail: V4ConversationUsageDetailResult | null,
-): UsageStatusBarGeneration | null {
-  const request = detail?.latestRequest;
-  if (!request || request.generationMs === null || request.generationMs <= 0) {
-    return null;
-  }
+function deriveSnapshot(
+  request: V4ConversationUsageDetailResult["latestRequest"],
+): UsageStatusBarSnapshot | null {
+  if (!request) return null;
+  // 生成时长缺失（进行中请求）时速率不可算，但其它指标仍是有效事实，不能整条丢弃。
+  const hasGenerationWindow = request.generationMs !== null && request.generationMs > 0;
   return {
-    tokensPerSecond: request.outputTokens / (request.generationMs / 1000),
+    tokensPerSecond: hasGenerationWindow
+      ? request.outputTokens / (request.generationMs! / 1000)
+      : null,
     outputTokens: request.outputTokens,
     generationMs: request.generationMs,
+    durationMs: request.durationMs,
+    timeToFirstTokenMs: request.timeToFirstTokenMs,
     modelId: request.modelId,
+    status: request.status,
   };
 }
 
@@ -56,15 +68,33 @@ export function resolveGenerationSpeedTier(tokensPerSecond: number): GenerationS
   return "slow";
 }
 
-/** 无速率可展示时状态栏整体隐藏。 */
+/** 有请求快照即可渲染（含进行中与缺速率的情况）；null 表示草稿态，渲染占位。 */
 export function hasUsageStatusBarContent(model: UsageStatusBarModel): boolean {
-  return model.generation !== null;
+  return model.latest !== null;
+}
+
+/** 请求仍在进行中：状态条保留上一轮已完成指标并标注「生成中」。 */
+export function isUsageSnapshotRunning(snapshot: UsageStatusBarSnapshot): boolean {
+  return snapshot.status === "running";
 }
 
 /** tooltip 用完整值。 */
 export function formatFullTokenCount(locale: string, value: number): string {
   const safe = Number.isFinite(value) && value > 0 ? value : 0;
   return new Intl.NumberFormat(locale).format(safe);
+}
+
+/** 状态条用短单位：1000 → 1K，1_200_000 → 1.2M（与社区工具默认口径一致）。 */
+export function formatCompactTokenCount(locale: string, value: number): string {
+  const safe = Number.isFinite(value) && value > 0 ? value : 0;
+  if (safe < 1000) return new Intl.NumberFormat(locale).format(safe);
+  if (safe < 1_000_000) return `${trimTrailingZero(safe / 1000)}K`;
+  if (safe < 1_000_000_000) return `${trimTrailingZero(safe / 1_000_000)}M`;
+  return `${trimTrailingZero(safe / 1_000_000_000)}B`;
+}
+
+function trimTrailingZero(value: number): string {
+  return value.toFixed(1).replace(/\.0$/, "");
 }
 
 /** 速率展示：一位小数；非有限值防御性归零。 */

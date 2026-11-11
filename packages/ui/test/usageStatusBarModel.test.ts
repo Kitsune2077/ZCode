@@ -5,10 +5,12 @@ import { test } from "vitest";
 import type { V4ConversationUsageDetailResult } from "@zcode/shared/zcode-protocol-v4";
 import {
   buildUsageStatusBarModel,
+  formatCompactTokenCount,
   formatDurationMs,
   formatFullTokenCount,
   formatTokensPerSecond,
   hasUsageStatusBarContent,
+  isUsageSnapshotRunning,
   resolveGenerationSpeedTier,
 } from "../src/v4/composer/usageStatusBarModel.js";
 
@@ -34,13 +36,15 @@ test("generation speed derives from first-token to completion", () => {
       timeToFirstTokenMs: 1_200,
     }),
   });
-  // 1000 tokens / 10s = 100 tok/s锛堜笉鏄敤鏁磋姹傛椂闀?15s 绠楀嚭鐨?66.7锛夈€?
-  assert.equal(model.generation?.tokensPerSecond, 100);
-  assert.equal(model.generation?.modelId, "glm-5.3");
+  // 1000 tokens / 10s = 100 tok/s（不是用整请求时长 15s 算出的 66.7）。
+  assert.equal(model.latest?.tokensPerSecond, 100);
+  assert.equal(model.latest?.modelId, "glm-5.3");
+  assert.equal(model.latest?.timeToFirstTokenMs, 1_200);
+  assert.equal(model.latest?.durationMs, 15_000);
   assert.equal(hasUsageStatusBarContent(model), true);
 });
 
-test("generation is hidden when the generation window is unknown", () => {
+test("running request keeps the snapshot but has no derivable speed", () => {
   for (const generationMs of [null, 0] as const) {
     const model = buildUsageStatusBarModel({
       detail: detail({
@@ -50,15 +54,19 @@ test("generation is hidden when the generation window is unknown", () => {
         outputTokens: 500,
         generationMs,
         durationMs: null,
-        timeToFirstTokenMs: null,
+        timeToFirstTokenMs: 900,
       }),
     });
-    assert.equal(model.generation, null);
-    assert.equal(hasUsageStatusBarContent(model), false);
+    // 快照仍在：输出量/TTFT 是有效事实，状态条不应整条消失。
+    assert.equal(hasUsageStatusBarContent(model), true);
+    assert.equal(model.latest?.tokensPerSecond, null);
+    assert.equal(model.latest?.outputTokens, 500);
+    assert.equal(model.latest?.timeToFirstTokenMs, 900);
+    assert.equal(isUsageSnapshotRunning(model.latest!), true);
   }
 });
 
-test("no session or no detail hides the bar entirely (draft mode)", () => {
+test("no session or no detail yields an empty model (draft placeholder)", () => {
   assert.equal(hasUsageStatusBarContent(buildUsageStatusBarModel({ detail: null })), false);
   assert.equal(hasUsageStatusBarContent(buildUsageStatusBarModel({})), false);
 });
@@ -74,6 +82,10 @@ test("formatters degrade defensively", () => {
   assert.equal(formatTokensPerSecond("en-US", Number.NaN), "0");
   assert.equal(formatFullTokenCount("en-US", 123_456), "123,456");
   assert.equal(formatFullTokenCount("en-US", 0), "0");
+  assert.equal(formatCompactTokenCount("en-US", 999), "999");
+  assert.equal(formatCompactTokenCount("en-US", 1_000), "1K");
+  assert.equal(formatCompactTokenCount("en-US", 1_234), "1.2K");
+  assert.equal(formatCompactTokenCount("en-US", 1_200_000), "1.2M");
   assert.equal(formatDurationMs("en-US", 1_234), "1.2s");
   assert.equal(formatDurationMs("en-US", 65_000), "1m5s");
   assert.equal(formatDurationMs("en-US", null), null);

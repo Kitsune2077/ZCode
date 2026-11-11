@@ -5082,6 +5082,18 @@ const zhCN: Record<string, string> = {
   "settings.usage.range.today": "今日",
   "composer.usage.speedTooltip":
     "最近完成请求的生成速率：{model}，输出 {output} tokens，生成耗时 {duration}",
+  "composer.usage.speedUnit": "tok/s",
+  "composer.usage.statusBar.ttft": "TTFT {value}",
+  "composer.usage.statusBar.tokens": "{value} tokens",
+  "composer.usage.statusBar.duration": "{value}",
+  "composer.usage.statusBar.running": "生成中",
+  "composer.usage.statusBar.empty": "--",
+  "composer.usage.statusBar.tooltip":
+    "最近一次请求：{model} · 输出 {output} tokens · 首字 {ttft} · 总耗时 {duration} · 生成耗时 {generation}",
+  "chat.message.usage.speed": "{value} tok/s",
+  "chat.message.usage.tokens": "{value} tokens",
+  "chat.message.usage.ttft": "TTFT {value}",
+  "chat.message.usage.duration": "{value}",
   "settings.usage.appUsageRangeTitle": "时间范围",
   "settings.usage.codingPlanRange.today": "当日",
   "settings.usage.codingPlanRange.7d": "近 7 日",

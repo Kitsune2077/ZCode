@@ -103,6 +103,39 @@ function resolveLarkCliProvenance() {
   }
 }
 
+// 通用随包工具 provenance：读取 bundled-tools/<platform>/<dir>/<meta> 的版本与来源。
+function resolveBundledToolProvenance(dirName, metaFile) {
+  const platformKey = `${process.platform}-${process.arch}`;
+  const metaPath = join(rootDir, "packages", "desktop", "bundled-tools", platformKey, dirName, metaFile);
+  if (!existsSync(metaPath)) return null;
+  try {
+    return readJson(metaPath);
+  } catch {
+    return null;
+  }
+}
+
+function resolveDsofficeProvenance() {
+  // kit 元数据把信息放在嵌套对象里，归一化成与 lark 一致的三字段。
+  const meta = resolveBundledToolProvenance("libreoffice-kit", "libreoffice-kit-bundle.json");
+  if (!meta?.kit?.version) return null;
+  return {
+    archiveSha256: meta.engine?.version ? `engine ${meta.engine.version}` : undefined,
+    sourceUrl: meta.upstream,
+    version: meta.kit.version,
+  };
+}
+
+function resolvePythonProvenance() {
+  const meta = resolveBundledToolProvenance("python", "python-runtime-bundle.json");
+  if (!meta?.cpython?.version) return null;
+  return {
+    archiveSha256: meta.cpython.archiveSha256,
+    sourceUrl: meta.upstream,
+    version: `CPython ${meta.cpython.version}`,
+  };
+}
+
 function resolveArtifactForm(targetOs, lowerName) {
   const forms = ARTIFACT_FORMS[targetOs] ?? {};
   return (
@@ -160,7 +193,9 @@ function collect() {
     arch: targetArch,
     artifacts: classifyArtifacts(distDir, targetOs),
     commit: resolveCommitId(),
+    dsoffice: resolveDsofficeProvenance(),
     larkCli: resolveLarkCliProvenance(),
+    pythonRuntime: resolvePythonProvenance(),
     os: targetOs,
     // 远端 mock-cdn 资产是否随包构建；跳过时说明里要写清楚，避免用户以为远程工作区开箱可用。
     remoteAssetsIncluded: process.env.ZCODE_SKIP_REMOTE_ASSETS !== "1",
@@ -212,6 +247,8 @@ function render() {
       ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
       : null;
   const larkCli = infos.find((info) => info.larkCli)?.larkCli ?? null;
+  const dsoffice = infos.find((info) => info.dsoffice)?.dsoffice ?? null;
+  const pythonRuntime = infos.find((info) => info.pythonRuntime)?.pythonRuntime ?? null;
   const remoteAssetsIncluded = infos.every((info) => info.remoteAssetsIncluded);
 
   const rows = infos
@@ -255,6 +292,17 @@ function render() {
     lines.push(
       `- 内置飞书 CLI \`${larkCli.version}\`（无需预装 Node.js）。来源：${larkCli.sourceUrl}` +
         `，归档 sha256 \`${larkCli.archiveSha256}\`。`,
+    );
+  }
+  if (dsoffice) {
+    lines.push(
+      `- 内置 Office 转换引擎 \`${dsoffice.version}\`（dsoffice，无需安装 LibreOffice）。来源：${dsoffice.sourceUrl}。`,
+    );
+  }
+  if (pythonRuntime) {
+    lines.push(
+      `- 内置 Python Office 创作环境 \`${pythonRuntime.version}\`（含 python-docx / python-pptx / openpyxl 等，无需预装 Python）。` +
+        `来源：${pythonRuntime.sourceUrl}，归档 sha256 \`${pythonRuntime.archiveSha256}\`。`,
     );
   }
   lines.push(

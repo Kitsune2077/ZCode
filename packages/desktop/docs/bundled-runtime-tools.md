@@ -152,3 +152,60 @@
 
 引擎解包约 192 MB（win32-x64，含 MPL sources/licenses），安装包压缩后预计 +60~90 MB。
 升级 lark-cli 时安装包从 142→190 MB；dsoffice 后预计 250~280 MB 量级，DMG 预算（3200m）足够。
+
+---
+
+## python（Office 创作环境）
+
+### 背景
+
+四个文档插件的创作脚本依赖 `python3` 与一批 pip 包（python-docx / python-pptx / openpyxl 等）。
+此前只靠系统 Python：公司内网无外网时 pip 装不了包，创建/编辑/校验链路直接断。参照
+DeepSeek Harness 的"锁定运行时 + 锁定库 + 校验 + 可离线预置"思路，把 CPython 与库随包分发，
+运行时零下载。与 dsoffice 的分工：**dsoffice 负责转换/渲染/公式重算，python 负责创作与解析**。
+
+### 机制
+
+| 环节 | 所有者 | 说明 |
+| --- | --- | --- |
+| 取得运行时 | `scripts/prepare-bundled-python.mjs`（`prepare:python`） | 按 `scripts/python-runtime-lock.json` 下载 python-build-standalone 的 `install_only` 归档（校验 sha256）→ 解到 `bundled-tools/<key>/python/runtime`；再用内置 pip 从 PyPI 下载锁定 wheel（`--require-hashes`）、逐字节复核后 `--no-deps` 安装到 site-packages |
+| shim | 同上 | 工具根产出 `python3`（sh，0755）与 `python3.cmd`：清 `PYTHONHOME`/`PYTHONPATH`、`PYTHONNOUSERSITE=1`，不覆盖 ZCode 注入的 `PYTHONUTF8`；Windows 的 CPython 没有 `python3.exe`，Git Bash 又不解析 `.cmd`，因此两个入口必须成对 |
+| 打进安装包 | `electron-builder.config.js` extraResources | `bundled-tools/<key>/python` → `resources/tools/python`（existsSync 条件） |
+| 运行时解析 | `packages/services/src/runtime-tools/runtimeToolResolver.ts` | 工具 id `"python"`：`ZCODE_PYTHON_BINARY` → `resources/tools/python/python3[.cmd]` → PATH 兜底；命中后把工具根追加进 Agent PATH |
+| 桌面侧注入 | `packages/desktop/src/main/desktopRuntimeEnv.ts` | 提前解析并注入 `ZCODE_PYTHON_BINARY`（Preview/生产不必猜路径） |
+| 消费方 | 四个插件的 `env_check.sh` / `setup.sh` | 裸 `command -v python3` 与 `python3 -c "import openpyxl"` 命中内置副本；PATH 为**追加**语义，用户自带 python3 优先 |
+
+### 供应链
+
+- **CPython**：python-build-standalone（PSF-2.0），release / 资产名 / sha256 钉死在
+  `scripts/python-runtime-lock.json`；当前 `3.12.16`（release `20261110`）。
+- **wheel**：包名 + 版本 + 每平台 sha256 全部锁定（含传递依赖，约 20~22 个/平台）；
+  `pip download --require-hashes` 下载后逐字节复核，`pip install --no-deps` 安装锁定文件，
+  不做运行时版本解析。
+- **排除 PyMuPDF（AGPL-3.0）**：PDF 页面渲染由 `dsoffice render` 承担；pdf skill 的
+  `fitz` 检查为 optional。
+- **许可**：CPython 与各 wheel 的许可原文随包放在 `resources/tools/python/licenses/`；
+  仓库级声明登记在 `third-party/runtime/sources.json`（生成器逐字节校验并写入 notices）。
+
+### 开关
+
+| 变量 | 作用 |
+| --- | --- |
+| `ZCODE_SKIP_PYTHON=1` | 跳过该步骤（离线构建）。缺环境时 skill 回落系统 `python3` |
+| `ZCODE_PYTHON_VERSION`（预留） | 版本由 lock 文件决定；升级需同时更新 lock 与 sha256 |
+
+### 验收场景
+
+- A：`node scripts/prepare-bundled-python.mjs` → `bundled-tools/<key>/python/` 出现
+  `python3`/`python3.cmd`、`runtime/`、`licenses/`、`python-runtime-bundle.json`。
+- B：Git Bash 中 `command -v python3` 命中工具根 shim；cmd/PowerShell 命中 `.cmd`；
+  `python3 -c "import sys; print(sys.prefix)"` 指向 `resources/tools/python/runtime`。
+- C：仅内置解释器在 PATH 时，docx/xlsx/pdf 三个 `env_check.sh` 退出码为 0。
+- D：`ZCODE_SKIP_PYTHON=1` 打包 → 包内不含 python、打包不失败，skill 回落系统 Python。
+- E：幂等——同版本二次执行 `[skip]`；删元数据后 `[repair]`。
+
+### 体积
+
+win32-x64 解包约 135 MB（CPython 裁剪 test/idlelib/tkinter/tcl/include/libs 后 + 20 个 wheel），
+压缩后预计 +40~55 MB。安装包在 dsoffice 的约 280 MB 基础上预计到 320~340 MB 量级，
+`audit-bundle-size` 单产物 500 MB 上限仍有余量（以 CI 实测为准）。

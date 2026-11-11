@@ -2208,6 +2208,15 @@ exceptions:
     reason: Admitted upstream files edited only to let the user's dynamic workflow mode choice always win, keep the settings row visible, and describe that the snapshot reload no longer waits for CLI answers; adopting packages/shared/src and packages/ui/src needs a separate module boundary refactor.
 
   # 本地 ZIP 技能包导入：复用 skill-sync 既有导入管线，仅新增 ZIP 解压器与设置页弹窗。
+  # 输入框下的常驻用量状态条：纯展示派生 + 复用既有 usageDetail 协议，无新状态所有者。
+  - id: usage-status-bar-unmanaged-files
+    rule: unmanaged-new-file
+    paths:
+      - packages/ui/src/v4/composer/V4ComposerUsageStatusBar.tsx
+      - packages/ui/src/v4/composer/AssistantReplyUsageLine.tsx
+      - packages/ui/src/v4/composer/useUsageDetail.ts
+    reason: 用量状态条（spec：packages/ui/docs/usage-status-bar.md）落在既有 v4 composer 未受管目录，读取协议与旧速率指标同源；接管 packages/ui/src/v4 的模块边界不在本次范围内。
+
   - id: skill-zip-import-unmanaged-files
     rule: unmanaged-new-file
     paths:

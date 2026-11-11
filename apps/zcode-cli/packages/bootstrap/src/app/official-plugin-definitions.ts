@@ -245,8 +245,9 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
       // 本 fork 0.2.2（pdf 0.2.3）起 skill 文案与上游分叉：LibreOffice HARD REQUIREMENT 改为
       // "内置 dsoffice 引擎 → 本机 soffice → 用户同意安装 → 本机 Word/WPS 兜底 → 如实报告"
       // 的降级链（随包引擎见 scripts/prepare-bundled-libreoffice-kit.mjs），上游同步时需保留。
+      // pdf 0.2.4 起 PyMuPDF（AGPL）降为 optional：随包 Python 环境不含它，页面渲染走 dsoffice。
       ["documents", "docx", "Documents", "Word文档", "0.2.2"],
-      ["pdf", "pdf", "PDF", "PDF", "0.2.3"],
+      ["pdf", "pdf", "PDF", "PDF", "0.2.4"],
       ["presentations", "pptx", "Presentations", "演示文档", "0.2.2"],
       ["spreadsheets", "xlsx", "Spreadsheets", "电子表格", "0.2.2"],
     ] as const

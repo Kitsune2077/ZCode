@@ -12,5 +12,13 @@
       "file": "third-party/runtime/node-24.14.0-LICENSE.txt",
       "sha256": "4573185d56580da2b890ba34a85a409257640f1c5632eade4300137266194d18"
     }
+  ],
+  "python": [
+    {
+      "version": "3.12.16",
+      "source": "https://github.com/astral-sh/python-build-standalone/releases/tag/20261110 (CPython 3.12.16 LICENSE.txt)",
+      "file": "third-party/runtime/python-3.12.16-LICENSE.txt",
+      "sha256": "886a0ead2d89030ee62dbff52b04e47ab91998341295bb9c56fb952b4e081c7a"
+    }
   ]
 }

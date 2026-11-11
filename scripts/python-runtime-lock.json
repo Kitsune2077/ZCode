@@ -1,0 +1,92 @@
+{
+  "cpython": {
+    "release": "20261110",
+    "version": "3.12.16",
+    "assets": {
+      "win32-x64": {
+        "name": "cpython-3.12.16+20261110-x86_64-pc-windows-msvc-install_only.tar.gz",
+        "sha256": "e23fe5b16926de1d81661b1a97352e89fb167549c55a6825796ccd0f32ec7f1b"
+      },
+      "darwin-arm64": {
+        "name": "cpython-3.12.16+20261110-aarch64-apple-darwin-install_only.tar.gz",
+        "sha256": "e956e60bc9465d577ef8062059aa05cd3a2665b4b8678a2ed24e432368330b8f"
+      },
+      "darwin-x64": {
+        "name": "cpython-3.12.16+20261110-x86_64-apple-darwin-install_only.tar.gz",
+        "sha256": "83f2922437e6d546d0fcdb8c11f150a8e52787e8d9ea8651b1974e20908eb1bc"
+      }
+    }
+  },
+  "packages": {
+    "win32-x64": {
+      "cffi-2.1.1-cp312-cp312-win_amd64.whl": "f53e442b08449d42821fa4a4fba000095af9f62742a500f978a9f557ec44339a",
+      "charset_normalizer-3.5.2-cp312-cp312-win_amd64.whl": "780fbe7cab297b81dad9fb8dc5eb003c0468ffb0d9e5f65068c53a34661a96bc",
+      "cryptography-50.0.2-cp311-abi3-win_amd64.whl": "7afa5a6602a9f29af1f3a2965f831bae7c9d5d597b7cbb716d41ab3b7d89879c",
+      "defusedxml-0.7.1-py2.py3-none-any.whl": "a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61",
+      "et_xmlfile-2.0.0-py3-none-any.whl": "7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa",
+      "lxml-6.1.3-cp312-cp312-win_amd64.whl": "3e9a00d1c2c30936f7add097c41afc5da6556c580909104aafd382cac92a855c",
+      "openpyxl-3.1.5-py2.py3-none-any.whl": "5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2",
+      "packaging-26.3-py3-none-any.whl": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c",
+      "pdfminer_six-20260107-py3-none-any.whl": "366585ba97e80dffa8f00cebe303d2f381884d8637af4ce422f1df3ef38111a9",
+      "pdfplumber-0.11.10-py3-none-any.whl": "7741ea81bf165b474b153e6789d10d18e06b6ddcf3ec84289c3ef2fed6802580",
+      "pikepdf-10.18.0-cp312-cp312-win_amd64.whl": "d566923d457c6133660ee8b8e1933b908e743069354fc66cfe4e8ecdc313833f",
+      "pillow-13.0.0-cp312-cp312-win_amd64.whl": "ff3fe9eb621fbb9db4c4be33ab946f6bac5f98ab50ca8d3260503653656c961b",
+      "pycparser-3.12-py3-none-any.whl": "a076f3f489b39b43ed13563a1dafe42447445bec2e294154ec5c57fcdda4c85e",
+      "pypdf-7.0.1-py3-none-any.whl": "6131b764b046282357037309e7ef2a1b7679d4a5c53eed3db2bfbf7c673ddc2b",
+      "pypdfium2-5.15.2-py3-none-win_amd64.whl": "74d1bace34fb01c660d0b64344d5a4b7d276942b7c6623c88ab59ea21c5acfbd",
+      "python_docx-1.2.0-py3-none-any.whl": "3fd478f3250fbbbfd3b94fe1e985955737c145627498896a8a6bf81f4baf66c7",
+      "python_pptx-1.0.2-py3-none-any.whl": "160838e0b8565a8b1f67947675886e9fea18aa5e795db7ae531606d68e785cba",
+      "reportlab-5.1.0-py3-none-any.whl": "59fdbaec5efe437095ad1d7292ec9a271c8ca2d3ec75e889c6e61400929b90df",
+      "typing_extensions-4.16.0-py3-none-any.whl": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+      "xlsxwriter-3.3.1-py3-none-any.whl": "8e2c89e59d733fe59e112317218c64fbbc276d90a8c144ebd6f7fa15e7ab184a"
+    },
+    "darwin-arm64": {
+      "cffi-2.1.1-cp312-cp312-macosx_11_0_arm64.whl": "f81b3b8f3d4e343550fa4baa0e479bba9f2d29ce9c2e9b51d1ce1718d7442fcf",
+      "charset_normalizer-3.5.2-cp312-cp312-macosx_10_13_universal2.whl": "ed2a239c0ea213acc1908150a3037257083c7c083128f1a4cec2ec4b97dca491",
+      "cryptography-50.0.2-cp311-abi3-macosx_11_0_arm64.whl": "fa8f5efb344d6908a1ce62f4a24e2e5780f825d6f53f5f50ec5ffacac72936cb",
+      "defusedxml-0.7.1-py2.py3-none-any.whl": "a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61",
+      "deprecated-3.0.1-py3-none-any.whl": "eda314c115e8bc0fe52b90a6869e19240ac3cedb7449adfdba5981cf9ef693e1",
+      "et_xmlfile-2.0.0-py3-none-any.whl": "7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa",
+      "lxml-6.1.3-cp312-cp312-macosx_10_13_universal2.whl": "0c0710ac085a157b593c38fbcacd950f15c4afa8e2057527185875ab302752bc",
+      "openpyxl-3.1.5-py2.py3-none-any.whl": "5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2",
+      "packaging-26.3-py3-none-any.whl": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c",
+      "pdfminer_six-20260107-py3-none-any.whl": "366585ba97e80dffa8f00cebe303d2f381884d8637af4ce422f1df3ef38111a9",
+      "pdfplumber-0.11.10-py3-none-any.whl": "7741ea81bf165b474b153e6789d10d18e06b6ddcf3ec84289c3ef2fed6802580",
+      "pikepdf-8.15.1-cp312-cp312-macosx_11_0_arm64.whl": "2253abe1e779c247dd55384a9b2d6c6c0e1784194302a8a72f995cdb7aaebada",
+      "pillow-13.0.0-cp312-cp312-macosx_11_0_arm64.whl": "fc481f742ccda20e9ed760b8f978dff50f2a4e9bc253ac167fb0a05b0783ef52",
+      "pycparser-3.12-py3-none-any.whl": "a076f3f489b39b43ed13563a1dafe42447445bec2e294154ec5c57fcdda4c85e",
+      "pypdf-7.0.1-py3-none-any.whl": "6131b764b046282357037309e7ef2a1b7679d4a5c53eed3db2bfbf7c673ddc2b",
+      "pypdfium2-5.9.0-py3-none-macosx_11_0_arm64.whl": "6c4fbe3a7190b329c526358fb2855d797f7b74b5ecfc61d19657ef20bcebc108",
+      "python_docx-1.2.0-py3-none-any.whl": "3fd478f3250fbbbfd3b94fe1e985955737c145627498896a8a6bf81f4baf66c7",
+      "python_pptx-1.0.2-py3-none-any.whl": "160838e0b8565a8b1f67947675886e9fea18aa5e795db7ae531606d68e785cba",
+      "reportlab-5.1.0-py3-none-any.whl": "59fdbaec5efe437095ad1d7292ec9a271c8ca2d3ec75e889c6e61400929b90df",
+      "typing_extensions-4.16.0-py3-none-any.whl": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+      "wrapt-2.5.2-cp312-cp312-macosx_11_0_arm64.whl": "e57d79e3338b3cecee1dd80d6ef8f945f8ea7b92f0d8d5591f840ffa0afc14dc",
+      "xlsxwriter-3.3.1-py3-none-any.whl": "8e2c89e59d733fe59e112317218c64fbbc276d90a8c144ebd6f7fa15e7ab184a"
+    },
+    "darwin-x64": {
+      "cffi-2.1.1-cp312-cp312-macosx_10_15_x86_64.whl": "c8c69575568085ba0b1b10c0249d779a214aea6f6522e949a0fc9fb0fcb449d0",
+      "charset_normalizer-3.5.2-cp312-cp312-macosx_10_13_universal2.whl": "ed2a239c0ea213acc1908150a3037257083c7c083128f1a4cec2ec4b97dca491",
+      "cryptography-48.0.1-cp311-abi3-macosx_10_9_universal2.whl": "3e4a1a3232eef2e6c732827d5722db29a0cc8b27af2a4d865b094cf954be9ca1",
+      "defusedxml-0.7.1-py2.py3-none-any.whl": "a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61",
+      "deprecated-3.0.1-py3-none-any.whl": "eda314c115e8bc0fe52b90a6869e19240ac3cedb7449adfdba5981cf9ef693e1",
+      "et_xmlfile-2.0.0-py3-none-any.whl": "7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa",
+      "lxml-6.1.3-cp312-cp312-macosx_10_13_x86_64.whl": "623c8799c17128753c65699f1c3aa32402657393a9ad6db09ed8b98ddf76611d",
+      "openpyxl-3.1.5-py2.py3-none-any.whl": "5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2",
+      "packaging-26.3-py3-none-any.whl": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c",
+      "pdfminer_six-20251230-py3-none-any.whl": "9ff2e3466a7dfc6de6fd779478850b6b7c2d9e9405aa2a5869376a822771f485",
+      "pdfplumber-0.11.9-py3-none-any.whl": "33ec5580959ba524e9100138746e090879504c42955df1b8a997604dd326c443",
+      "pikepdf-8.15.1-cp312-cp312-macosx_10_9_x86_64.whl": "77a58bf66222bdb1ab32840ac77e1354b0b9733fe06336e4fa3ce54d8acba70c",
+      "pillow-13.0.0-cp312-cp312-macosx_10_13_x86_64.whl": "67c8d44ad89fa7eb88de5d6ef6199b1e03dd24974f85a67639fc8badb801fe79",
+      "pycparser-3.12-py3-none-any.whl": "a076f3f489b39b43ed13563a1dafe42447445bec2e294154ec5c57fcdda4c85e",
+      "pypdf-7.0.1-py3-none-any.whl": "6131b764b046282357037309e7ef2a1b7679d4a5c53eed3db2bfbf7c673ddc2b",
+      "pypdfium2-4.30.0-py3-none-macosx_10_13_x86_64.whl": "b33ceded0b6ff5b2b93bc1fe0ad4b71aa6b7e7bd5875f1ca0cdfb6ba6ac01aab",
+      "python_docx-1.2.0-py3-none-any.whl": "3fd478f3250fbbbfd3b94fe1e985955737c145627498896a8a6bf81f4baf66c7",
+      "python_pptx-1.0.2-py3-none-any.whl": "160838e0b8565a8b1f67947675886e9fea18aa5e795db7ae531606d68e785cba",
+      "reportlab-5.1.0-py3-none-any.whl": "59fdbaec5efe437095ad1d7292ec9a271c8ca2d3ec75e889c6e61400929b90df",
+      "typing_extensions-4.16.0-py3-none-any.whl": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+      "wrapt-2.5.2-cp312-cp312-macosx_10_13_x86_64.whl": "bec3b6b1ae2f7ed763fb0ba1776b9b5f11283e6ff40c9cbe3a855ea652c326cf",
+      "xlsxwriter-3.3.1-py3-none-any.whl": "8e2c89e59d733fe59e112317218c64fbbc276d90a8c144ebd6f7fa15e7ab184a"
+    }
+  }
+}
