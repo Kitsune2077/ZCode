@@ -58,14 +58,17 @@ jobs:
             # 因此默认跳过远端资产；需要时用 include_remote_assets 覆盖。
             skip_by_default: "1"
             skip_when_included: "0"
-          # macos-14 的运行器配置 2026-11 起报 "not supported"（arm64-us-default），
-          # 改用 macos-15（同为 Apple Silicon，自带 Xcode/CLT）。
-          - runner: macos-15
-            label: macOS arm64
-            target_os: mac
-            arch: arm64
-            skip_by_default: "0"
-            skip_when_included: "0"
+          # TODO(2026-11-11 临时): GitHub macOS arm64 runner 容量不足，连续多次
+          # "The job was not acquired by Runner of type hosted"（排队 15 分钟后
+          # cancelled），先停掉 macOS 构建把 Windows/Linux 流程走通。
+          # 容量恢复后删除下面的注释与 TODO，恢复 macOS 产物：
+          # （macos-14 已不可用，配置报 "not supported"；macos-15 同为 Apple Silicon。）
+          # - runner: macos-15
+          #   label: macOS arm64
+          #   target_os: mac
+          #   arch: arm64
+          #   skip_by_default: "0"
+          #   skip_when_included: "0"
           # Intel macOS 需换 macos-13（arm64 runner 交叉产出 x64 的 dmg 依赖 prebuild 齐全，
           # 未在本仓库验证）：
           # - runner: macos-13
