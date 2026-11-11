@@ -211,10 +211,13 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
     [
       // 版本按插件各自升，换新缓存目录：pdf 0.2.1 起面板带中日韩字体回退；0.2.1（pdf 0.2.2）起
       // server 由工作区内各 session 共享，旧缓存的 server 不区分 session，不能沿用。
-      ["documents", "docx", "Documents", "Word文档", "0.2.1"],
-      ["pdf", "pdf", "PDF", "PDF", "0.2.2"],
-      ["presentations", "pptx", "Presentations", "演示文档", "0.2.1"],
-      ["spreadsheets", "xlsx", "Spreadsheets", "电子表格", "0.2.1"],
+      // 本 fork 0.2.2（pdf 0.2.3）起 skill 文案与上游分叉：LibreOffice HARD REQUIREMENT 改为
+      // "内置 dsoffice 引擎 → 本机 soffice → 用户同意安装 → 本机 Word/WPS 兜底 → 如实报告"
+      // 的降级链（随包引擎见 scripts/prepare-bundled-libreoffice-kit.mjs），上游同步时需保留。
+      ["documents", "docx", "Documents", "Word文档", "0.2.2"],
+      ["pdf", "pdf", "PDF", "PDF", "0.2.3"],
+      ["presentations", "pptx", "Presentations", "演示文档", "0.2.2"],
+      ["spreadsheets", "xlsx", "Spreadsheets", "电子表格", "0.2.2"],
     ] as const
   ).map(
     ([name, skill, displayName, chineseName, version]): OfficialPluginDefinition => ({

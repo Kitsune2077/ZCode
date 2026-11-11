@@ -593,7 +593,7 @@ toc.check <pdf>              # Validate TOC
 convert.blueprint <llm_json_response.md> -o final.pdf  # CRITICAL FOR CREATIVE: Auto-extracts JSON, compiles, and renders PDF.
 convert.html <html>          # HTML → PDF (Playwright)
 convert.latex <tex>           # LaTeX → PDF (Tectonic). Bundled binary is macOS arm64 only; see academic.md for other-platform install.
-convert.office <file>         # Office → PDF (LibreOffice)
+convert.office <file>         # Office → PDF (bundled dsoffice engine, LibreOffice fallback)
 
 # Processing
 extract.text <pdf>            # Extract text
@@ -684,7 +684,7 @@ palette.cascade --title "..." --format reportlab           # Ready-to-paste Repo
 | Report | ReportLab + pypdf | **ReportLab cover (`cover_render.py`)** | ❌ (tofu □) | Manual pagination |
 | Creative | Playwright *(optional)* | html2pdf-next.js (pdf-lib for post-processing) | ✅ native | ✅ any size |
 | Academic | Tectonic *(optional)* + pypdf | **ReportLab cover (`cover_render.py`)** | ❌ (dropped) | Template-dependent |
-| Process | pikepdf, pdfplumber | LibreOffice (soffice) *(install on demand — not substitutable)* | N/A | N/A |
+| Process | pikepdf, pdfplumber | bundled dsoffice engine *(LibreOffice fallback)* | N/A | N/A |
 
 > **Cover System (V4.0)**: Report and Academic covers are rendered with **ReportLab** via
 > `scripts/cover_render.py` (templates 01–05 report, 06–08 academic dark, 09 institutional) and
@@ -695,24 +695,21 @@ palette.cascade --title "..." --format reportlab           # Ready-to-paste Repo
 > **Optional engines**: Playwright/Chromium (Creative/poster/HTML→PDF) and Tectonic (Academic/LaTeX)
 > are optional — probe first and ask the user before installing (large downloads / long waits).
 >
-> **LibreOffice (Office→PDF) is different — you MUST install it, not substitute it.** Using Word,
-> WPS, Keynote or Pages *instead of* installing is forbidden, and a large download is **not** a reason
-> to skip it. Required: explain the necessity to the user (only engine that preserves
-> themes/layouts/master slides faithfully), say the package is large, then install it — **preferred
-> source is the Tsinghua TUNA mirror**
-> `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/` (pick the
-> platform/arch subdirectory; if that version is gone, take the newest under
-> `.../libreoffice/stable/`), with `brew install --cask libreoffice` /
-> `sudo apt install libreoffice-core` / `winget install TheDocumentFoundation.LibreOffice` as
-> fallbacks. **Then register the binary on `PATH` and re-verify `soffice --version`** — an install
-> left off the executable search path reads as "not installed" to the next probe and causes a
-> redundant multi-hundred-MB reinstall; the mechanism differs per OS (Linux/macOS symlink into
-> `/usr/local/bin`, Windows `setx` the program dir onto the user `PATH`). So **probe before
-> installing**: a binary already on disk but off-`PATH` needs registering, not reinstalling.
-> Another program is permitted **only after** an
-> install attempt has actually failed. **No install attempt = no substitute program.**
-> See `briefs/process.md` and `env_setup/setup.md` (→ *"Register the binary on PATH"*) for the full
-> procedure.
+> **Office→PDF engine resolution order.** ZCode bundles a prebuilt LibreOffice engine as the
+> `dsoffice` CLI — `convert.office` uses it automatically and falls back to a local LibreOffice.
+> When neither exists: probe `soffice` on PATH and common install locations first (register
+> off-`PATH` binaries instead of reinstalling; re-verify `soffice --version`), then install **only
+> with user consent** after being told the download is large (hundreds of MB) — preferred source is
+> the Tsinghua TUNA mirror `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/`
+> (pick the newest version, then the platform/arch subdirectory), with `brew install --cask
+> libreoffice` / `sudo apt install libreoffice-core` / `winget install
+> TheDocumentFoundation.LibreOffice` as fallbacks; register the binary on `PATH` afterwards
+> (Linux/macOS symlink into `/usr/local/bin`, Windows `setx` the program dir onto the user `PATH`).
+> A conversion through local Word/WPS/Keynote/Pages is a **user-consented last resort** — warn that
+> fidelity may differ (LibreOffice preserves themes/layouts/master slides faithfully). If no engine
+> can be resolved, report the Office→PDF conversion as unavailable and continue with text-level
+> processing — never silently skip it. See `briefs/process.md` and `env_setup/setup.md` (→
+> *"Register the binary on PATH"*) for the full procedure.
 >
 > **Fallback**: If Report brief content has emoji → reroute to Creative.
 

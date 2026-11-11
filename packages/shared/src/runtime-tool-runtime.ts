@@ -1,4 +1,4 @@
-export type RuntimeToolId = "bfs" | "lark-cli" | "ripgrep" | "ugrep";
+export type RuntimeToolId = "bfs" | "dsoffice" | "lark-cli" | "ripgrep" | "ugrep";
 
 export interface RuntimeToolRuntimeDescriptor {
   binaryEnvVar: string;
@@ -25,6 +25,16 @@ export const RUNTIME_TOOL_RUNTIME: Record<RuntimeToolId, RuntimeToolRuntimeDescr
     binaryEnvVar: "ZCODE_BFS_BINARY",
     bundledResourceDir: "bfs",
     resolveEntrySegments: (platform) => [resolvePlatformBinaryName("bfs", platform)],
+  },
+  dsoffice: {
+    // Office 转换引擎（@deepseek-ai/libreoffice-kit 预编译 LibreOffice，MPL-2.0）的 CLI。
+    // 不是单一原生 exe：入口是随包 shim（Windows 为 .cmd，其余平台为 POSIX sh），
+    // shim 内部用 ELECTRON_RUN_AS_NODE 复用 app 自带 Electron Node 执行 kit 的 lib/cli.js。
+    // 桌面端 desktopRuntimeEnv 已按同一环境变量注入随包路径与 Node 路径；命中 PATH 后
+    // 文档插件 skills 的 `command -v dsoffice` 直接用内置引擎，内网不再依赖现场装 LibreOffice。
+    binaryEnvVar: "ZCODE_DSOFFICE_BINARY",
+    bundledResourceDir: "libreoffice-kit",
+    resolveEntrySegments: (platform) => [platform === "win32" ? "dsoffice.cmd" : "dsoffice"],
   },
   "lark-cli": {
     // 飞书 CLI 的原生二进制（上游以 GitHub Release 分发单文件，npm 包只是转发壳）。
@@ -54,6 +64,12 @@ export const REMOTE_RUNTIME_TOOL_RUNTIME = {
     versions: {
       linux: "v4.1.1-2",
     },
+  },
+  dsoffice: {
+    ...RUNTIME_TOOL_RUNTIME.dsoffice,
+    // 只随桌面/本机包内置（约 200MB 引擎不进远端部署面），不参与远端 workspace 的工具部署：
+    // 版本表留空后 getRemoteRuntimeToolsForPlatform 不会产出该工具。
+    versions: {},
   },
   "lark-cli": {
     ...RUNTIME_TOOL_RUNTIME["lark-cli"],

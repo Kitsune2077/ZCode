@@ -47,7 +47,8 @@ Run the platform-appropriate setup script:
 | npm pkg | docx | Word document creation library |
 | Runtime | Python 3 + pip | Post-processing scripts |
 | Python pkg | defusedxml | Safe XML parsing for validation |
-| On demand (not substitutable) | LibreOffice | `.doc`→`.docx`, DOCX→PDF, visual verification — install it; do not swap in local Word/WPS/Pages |
+| Engine (bundled) | dsoffice | `.doc`→`.docx`, DOCX→PDF, rendering — ships with ZCode desktop; below only applies when it is absent |
+| Engine (fallback) | LibreOffice | Only when bundled dsoffice is missing AND no local LibreOffice exists — install with user consent; see SKILL.md resolution order |
 | Font | CJK fonts (from CDN) | Chinese text in documents |
 
 ### Manual Install by Platform
@@ -58,7 +59,7 @@ Run the platform-appropriate setup script:
 brew install node python3
 npm install -g docx
 python3 -m pip install defusedxml
-# On demand, not substitutable: LibreOffice (prefer the Tsinghua mirror below)
+# Engine fallback (user consent; prefer the Tsinghua mirror below)
 brew install --cask libreoffice
 ```
 
@@ -68,7 +69,7 @@ brew install --cask libreoffice
 sudo apt install nodejs npm python3 python3-pip
 npm install -g docx
 python3 -m pip install defusedxml
-# On demand, not substitutable: LibreOffice (prefer the Tsinghua mirror below)
+# Engine fallback (user consent; prefer the Tsinghua mirror below)
 sudo apt install libreoffice-core
 ```
 
@@ -79,7 +80,7 @@ winget install OpenJS.NodeJS.LTS
 winget install Python.Python.3.11
 npm install -g docx
 python -m pip install defusedxml
-# On demand, not substitutable: LibreOffice (prefer the Tsinghua mirror below)
+# Engine fallback (user consent; prefer the Tsinghua mirror below)
 winget install TheDocumentFoundation.LibreOffice
 ```
 
@@ -188,11 +189,15 @@ python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host
 |----------|-------------|
 | Node.js | https://npmmirror.com/mirrors/node/ |
 | Python | https://npmmirror.com/mirrors/python/ |
-| LibreOffice | https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/ |
+| LibreOffice | https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/ |
 
 ---
 
 ## LibreOffice — Recommended Download Source (Tsinghua TUNA mirror)
+
+Only needed when the bundled `dsoffice` engine is missing and no local LibreOffice exists —
+get the user's consent first (the download is large, hundreds of MB), per SKILL.md's
+*"Office conversion engine resolution order"*.
 
 **Prefer this mirror over the official libreoffice.org download and over `brew`/`apt`/`winget`
 package sources** — it is much faster on Chinese networks and ships the current full build.
@@ -279,9 +284,8 @@ Start-Process msiexec.exe -ArgumentList "/i `"$Msi`" /qn" -Wait   # silent insta
 
 **Do this as part of the install, not as an afterthought.** A LibreOffice that is installed but whose
 `soffice` binary is not on the executable search path is indistinguishable from "not installed" to
-the next `command -v soffice` probe — which re-triggers the HARD REQUIREMENT and makes you download
-several hundred MB you already have. **The mechanism differs per OS; use the one for the platform you
-are on.**
+the next `command -v soffice` probe — which makes you download several hundred MB you already have.
+**The mechanism differs per OS; use the one for the platform you are on.**
 
 Before installing anything, probe first — if the binary already exists somewhere on disk, you need
 only the registration step below, **not** a reinstall:

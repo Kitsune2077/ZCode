@@ -54,7 +54,8 @@ Run the platform-appropriate setup script:
 | Optional | playwright (npm) | HTML-to-PDF for Creative pipeline |
 | Optional | Chromium (via Playwright) | Headless rendering (large download) |
 | Optional | tectonic | LaTeX/Academic PDF compilation |
-| On demand (not substitutable) | LibreOffice | Office-to-PDF conversion — install it; do not swap in local Office/WPS |
+| Engine (bundled) | dsoffice | Office-to-PDF conversion — ships with ZCode desktop; below only applies when it is absent |
+| Engine (fallback) | LibreOffice | Only when bundled dsoffice is missing AND no local LibreOffice exists — install with user consent; see SKILL.md resolution order |
 
 > **Covers no longer need Playwright.** All Report/Academic covers render with ReportLab
 > (`scripts/cover_render.py`). Playwright/Chromium is required **only** for the Creative/poster
@@ -62,15 +63,15 @@ Run the platform-appropriate setup script:
 > Install these optional engines **on demand, after asking the user** (they involve large
 > downloads / long first-run waits) — do not install them up front.
 >
-> **Once an Office→PDF task is requested, LibreOffice MUST be installed — not substituted.** Using
-> the user's already-installed Word/WPS/Keynote/Pages *instead of* installing it is **forbidden**, and
-> the package being large (several hundred MB) is **not** a reason to skip the install. Required:
-> explain the necessity to the user (only engine that preserves themes, layouts, master slides and
-> pagination faithfully), tell them the download is large, then install it — **preferring the
-> Tsinghua TUNA mirror** documented in *"LibreOffice — Recommended Download Source"* at the end of
-> this file (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`), falling
-> back to the platform package manager command below. Another program is permitted **only after** an install attempt has actually failed, and that
-> failure must be reported to the user. **No install attempt = no substitute program.**
+> **Office→PDF engine fallback.** The bundled `dsoffice` engine covers Office→PDF with no install;
+> a local LibreOffice is the second choice (probe and register off-`PATH` installs, never
+> reinstall). The LibreOffice instructions in this file apply only when neither exists — install
+> **with user consent** after telling them the download is large (several hundred MB), **preferring
+> the Tsinghua TUNA mirror** documented in *"LibreOffice — Recommended Download Source"* at the end
+> of this file (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/`), falling
+> back to the platform package manager command below. Converting via the user's Word/WPS/Keynote/
+> Pages is a user-consented last resort (fidelity may differ); if no engine can be resolved,
+> report Office→PDF as unavailable — never silently skip it.
 
 ### Manual Install by Platform
 
@@ -88,7 +89,7 @@ npm install -g playwright@1.50.0 && npx playwright install chromium
 
 # ── Optional: Academic/LaTeX (install on demand — downloads packages on first run) ──
 brew install tectonic
-# ── On demand, not substitutable: Office-to-PDF ──
+# ── Engine fallback (user consent): Office-to-PDF ──
 # Preferred: Tsinghua mirror — see "LibreOffice — Recommended Download Source" below
 brew install --cask libreoffice   # fallback if the mirror is unreachable
 ```
@@ -106,7 +107,7 @@ npm install -g playwright@1.50.0 && npx playwright install chromium && npx playw
 
 # ── Optional: Academic/LaTeX (install on demand) ──
 conda install -c conda-forge tectonic   # use Tsinghua mirror: conda config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge/
-# ── On demand, not substitutable: Office-to-PDF ──
+# ── Engine fallback (user consent): Office-to-PDF ──
 # Preferred: Tsinghua mirror — see "LibreOffice — Recommended Download Source" below
 sudo apt install libreoffice-core   # fallback if the mirror is unreachable
 ```
@@ -122,7 +123,7 @@ npm install -g playwright@1.50.0
 npx playwright install chromium
 # optional:
 scoop install tectonic                           # LaTeX
-# on demand, not substitutable: prefer the Tsinghua mirror (see section below)
+# engine fallback (user consent): prefer the Tsinghua mirror (see section below)
 winget install TheDocumentFoundation.LibreOffice  # Office-to-PDF fallback
 ```
 
@@ -241,17 +242,21 @@ npx playwright install chromium
 |----------|-------------|
 | Node.js | https://npmmirror.com/mirrors/node/ |
 | Python | https://npmmirror.com/mirrors/python/ |
-| LibreOffice | https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/ |
+| LibreOffice | https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/ |
 
 ---
 
 ## LibreOffice — Recommended Download Source (Tsinghua TUNA mirror)
 
+Only needed when the bundled `dsoffice` engine is missing and no local LibreOffice exists —
+get the user's consent first (the download is large, hundreds of MB), per SKILL.md's
+*"Office conversion engine resolution order"*.
+
 **Prefer this mirror over the official libreoffice.org download and over `brew`/`apt`/`winget`
 package sources** — it is much faster on Chinese networks and ships the current full build.
 
-- **Recommended base URL:** `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`
-- **If 26.8.0 is gone** (the mirror only keeps a few releases), list
+- **Recommended base URL:** `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/`
+- **If the pinned version is gone** (the mirror only keeps a few releases), list
   `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/` and pick the newest
   version directory, then substitute that version number everywhere below.
 

@@ -46,7 +46,8 @@ Run the platform-appropriate setup script:
 | Runtime | Python 3 + pip | Spreadsheet generation and processing |
 | Python pkg | openpyxl | Read/write .xlsx files |
 | Python pkg | XlsxWriter | High-performance .xlsx creation |
-| On demand (not substitutable) | LibreOffice | recalc, .xlsx-to-PDF, .csv-to-.xlsx — install it; do not swap in local Excel/WPS |
+| Engine (bundled) | dsoffice | recalc, .xlsx-to-PDF, .csv-to-.xlsx — ships with ZCode desktop; below only applies when it is absent |
+| Engine (fallback) | LibreOffice | Only when bundled dsoffice is missing AND no local LibreOffice exists — install with user consent; see SKILL.md resolution order |
 | Font | CJK fonts (pre-installed in /usr/share/fonts) | Chinese text in spreadsheets |
 
 ### Manual Install by Platform
@@ -56,7 +57,7 @@ Run the platform-appropriate setup script:
 ```bash
 brew install python3
 python3 -m pip install openpyxl XlsxWriter
-brew install --cask libreoffice   # on demand (not substitutable) — prefer the Tsinghua mirror below
+brew install --cask libreoffice   # engine fallback (user consent) — prefer the Tsinghua mirror below
 ```
 
 #### Linux (Debian/Ubuntu)
@@ -64,7 +65,7 @@ brew install --cask libreoffice   # on demand (not substitutable) — prefer the
 ```bash
 sudo apt install python3 python3-pip
 python3 -m pip install openpyxl XlsxWriter
-sudo apt install libreoffice-core   # on demand (not substitutable) — prefer the Tsinghua mirror below
+sudo apt install libreoffice-core   # engine fallback (user consent) — prefer the Tsinghua mirror below
 ```
 
 #### Windows (PowerShell)
@@ -72,45 +73,30 @@ sudo apt install libreoffice-core   # on demand (not substitutable) — prefer t
 ```powershell
 winget install Python.Python.3.11
 python -m pip install openpyxl XlsxWriter
-winget install TheDocumentFoundation.LibreOffice   # on demand (not substitutable) — prefer the Tsinghua mirror below
+winget install TheDocumentFoundation.LibreOffice   # engine fallback (user consent) — prefer the Tsinghua mirror below
 ```
 
 Alternative Windows package managers:
 - `choco install python3`
 - `scoop install python`
 
-> 🔴 **HARD REQUIREMENT.** LibreOffice is "on demand" only in the sense that it is installed when a
-> task needs it. Once a task does need it (formula recalculation via `recalc`, .xlsx→PDF, .csv→.xlsx),
-> **you MUST install it. This is not a choice.**
+> **Conversion engine fallback.** The bundled `dsoffice` engine covers recalc, .xlsx→PDF and
+> .csv→.xlsx with no install. The LibreOffice instructions in this file apply only when the bundled
+> engine is missing and no local LibreOffice exists — follow SKILL.md →
+> *"Office conversion engine resolution order"*:
 >
-> **FORBIDDEN:**
-> - ❌ Using Microsoft Excel, WPS Office, Numbers, or any other program already on the user's machine
->   *instead of* installing LibreOffice.
-> - ❌ Deciding on the user's behalf that the download is "too large" or "too slow".
->   **The package being large is NOT a reason to skip the install** — it is expected to be large.
-> - ❌ Asking "should I just use Excel instead to save time?" — same violation, phrased as a question.
-> - ❌ Skipping recalculation/verification altogether to avoid installing.
->
-> **REQUIRED sequence, no steps skipped:**
->
-> 1. **Explain the necessity to the user.** LibreOffice is the engine that recalculates formulas and
->    renders the workbook faithfully — without it, formula results cannot be verified and PDF output
->    loses layout fidelity.
-> 2. **Tell them the download is large** (several hundred MB) and may take a while — information for
->    the user, **not** a decision point for you. State it and proceed.
-> 3. **Install it now** — prefer the **Tsinghua TUNA mirror** documented in *"LibreOffice —
->    Recommended Download Source"* at the end of this file
->    (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`); fall back to the
+> 1. **Probe first.** A `soffice` already on disk but off-`PATH` needs registering, not reinstalling
+>    (see *"Register the binary on PATH"* at the end of this file).
+> 2. **Install only with user consent** — tell them the download is large (several hundred MB) and
+>    let them decide; prefer the **Tsinghua TUNA mirror** documented in *"LibreOffice — Recommended
+>    Download Source"* at the end of this file
+>    (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/`); fall back to the
 >    platform package manager command above if the mirror is unreachable.
-> 4. **Register the binary on `PATH`, then re-verify `soffice --version`.** An install left off the
->    executable search path reads as "not installed" to the next probe and causes the same
->    several-hundred-MB package to be downloaded twice. The mechanism differs per OS — see
->    *"Register the binary on PATH"* at the end of this file. **Probe before installing**: a binary
->    already on disk but off-`PATH` needs registering, not reinstalling.
-> 5. **Only after that install has actually been attempted AND failed** may you use software already
->    on the user's machine (Excel, WPS, Numbers). Report the failure and which checks were skipped.
->
-> **The gate is simple: no install attempt = no substitute program.**
+> 3. **Register the binary on `PATH`, then re-verify `soffice --version`.**
+> 4. **No network?** With user consent, recalculating via local Excel/WPS is a last resort (results
+>    may differ from LibreOffice).
+> 5. **If nothing works**, deliver with engine-free checks (audit/scan/validate) and report that
+>    formula values may be stale — never silently skip recalculation.
 
 ---
 
@@ -194,11 +180,15 @@ python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host
 
 ## LibreOffice — Recommended Download Source (Tsinghua TUNA mirror)
 
+Only needed when the bundled `dsoffice` engine is missing and no local LibreOffice exists —
+get the user's consent first (the download is large, hundreds of MB), per SKILL.md's
+*"Office conversion engine resolution order"*.
+
 **Prefer this mirror over the official libreoffice.org download and over `brew`/`apt`/`winget`
 package sources** — it is much faster on Chinese networks and ships the current full build.
 
-- **Recommended base URL:** `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`
-- **If 26.8.0 is gone** (the mirror only keeps a few releases), list
+- **Recommended base URL:** `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/`
+- **If the pinned version is gone** (the mirror only keeps a few releases), list
   `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/` and pick the newest
   version directory, then substitute that version number everywhere below.
 
@@ -279,9 +269,8 @@ Start-Process msiexec.exe -ArgumentList "/i `"$Msi`" /qn" -Wait   # silent insta
 
 **Do this as part of the install, not as an afterthought.** A LibreOffice that is installed but whose
 `soffice` binary is not on the executable search path is indistinguishable from "not installed" to
-the next `command -v soffice` probe — which re-triggers the HARD REQUIREMENT and makes you download
-several hundred MB you already have. **The mechanism differs per OS; use the one for the platform you
-are on.**
+the next `command -v soffice` probe — which makes you download several hundred MB you already have.
+**The mechanism differs per OS; use the one for the platform you are on.**
 
 Before installing anything, probe first — if the binary already exists somewhere on disk, you need
 only the registration step below, **not** a reinstall:

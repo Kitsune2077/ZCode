@@ -68,26 +68,18 @@ for para in paras:
 ## Method 3: Convert to Images (Visual Analysis)
 
 ```bash
-# Convert to PDF first
-libreoffice --headless --convert-to pdf input.docx
-
-# Then to images
-pdftoppm -png -r 200 input.pdf page
-
-# Generates page-1.png, page-2.png, etc.
+# Bundled engine — renders page PNGs in one step (page-0001.png, page-0002.png, ...)
+dsoffice render --input input.docx --output-dir <dir> --pages all
 ```
 
 **Best for**: Visual layout analysis, comparing formatting, generating previews, when user asks "what does it look like".
 
-> 🔴 **This route needs LibreOffice — if it is missing you MUST install it, not substitute it.**
-> Using Word/WPS/Pages to make the preview *instead of* installing is forbidden, and a large download
-> is **not** a reason to skip. Required: explain the necessity (it renders the document exactly as
-> laid out, which is the whole point of a visual check), say the package is large, then install it **from the Tsinghua TUNA mirror** (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`, or the newest version under `.../libreoffice/stable/`; package-manager commands are the fallback). Only
-> after an install attempt has **failed** may you use another program, and you must say so.
-> **No install attempt = no substitute program.** After installing, **register `soffice` on `PATH`
-> and re-verify `soffice --version`** (per-OS commands: `env_setup/setup.md` → *"Register the binary
-> on PATH"*) — an install left off the search path reads as "not installed" next time and gets
-> reinstalled needlessly. See `SKILL.md`.
+> 🔴 **No conversion engine?** Follow the engine resolution order in `SKILL.md` →
+> *"Office conversion engine resolution order"*: bundled `dsoffice` first, then an existing local
+> LibreOffice (`soffice --headless --convert-to pdf` + `pdftoppm -png -r 200`), then a user-consented
+> install, and only with explicit user consent a preview through local Word/WPS (warn that fidelity
+> may differ). If nothing is available, say the visual preview was not produced — never fabricate
+> layout claims without rendering.
 
 ## Method 4: python-docx Reading
 

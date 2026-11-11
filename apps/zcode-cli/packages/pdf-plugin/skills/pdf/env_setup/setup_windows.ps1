@@ -220,35 +220,32 @@ try {
 }
 Write-Host ""
 
-# ── Step 2g: LibreOffice (install-on-demand, NOT substitutable) ──
-Write-Host "--- [7/9] LibreOffice (Office->PDF conversion) ---"
-$SofficePath = "C:\Program Files\LibreOffice\program\soffice.exe"
-if (Test-Path $SofficePath) {
+# ── Step 2g: Office→PDF engine (bundled dsoffice first, local LibreOffice second) ──
+Write-Host "--- [7/9] Office->PDF engine ---"
+if (Get-Command dsoffice -ErrorAction SilentlyContinue) {
+    Write-Ok "dsoffice (bundled engine)"
+} elseif (Test-Path "C:\Program Files\LibreOffice\program\soffice.exe") {
     Write-Ok "libreoffice found"
 } elseif (Get-Command soffice -ErrorAction SilentlyContinue) {
     Write-Ok "libreoffice (in PATH)"
 } else {
-    Write-Warn "libreoffice not installed - REQUIRED for any .docx/.xlsx/.pptx -> PDF task"
-    Write-Info "You MUST install it. FORBIDDEN: using Word/WPS/Keynote/Pages instead of"
-    Write-Info "installing. A large download is NOT a reason to skip - it is expected to be large."
-    Write-Info "REQUIRED: explain the necessity to the user, say the package is large, THEN install."
+    Write-Warn "no Office->PDF engine (dsoffice / soffice) - needed for any .docx/.xlsx/.pptx -> PDF task"
+    Write-Info "Follow SKILL.md 'Office conversion engine resolution order'. Local LibreOffice install"
+    Write-Info "(only with USER CONSENT after being told the download is large, hundreds of MB):"
     Write-Info "PREFERRED source (fast in China, current build): Tsinghua TUNA mirror"
-    Write-Info "  https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/"
-    Write-Info "  Windows x64:   win/x86_64/LibreOffice_26.8.0_Win_x86-64.msi"
-    Write-Info "  Windows ARM64: win/aarch64/LibreOffice_26.8.0_Win_aarch64.msi"
+    Write-Info "  https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/"
+    Write-Info "  Pick the newest version, then:  Windows x64:   win/x86_64/  Windows ARM64: win/aarch64/"
     Write-Info "  Then: msiexec /i <file>.msi /qn   (needs admin)"
-    Write-Info "  If 26.8.0 is gone, pick the newest version under .../libreoffice/stable/"
     Write-Info "FALLBACK (only if the mirror is unreachable):"
     Write-Info "  winget install TheDocumentFoundation.LibreOffice"
     Write-Info "  or: https://www.libreoffice.org/download/"
-    Write-Info "AFTER installing, REGISTER it on PATH (Windows method - differs per OS):"
+    Write-Info "AFTER installing, REGISTER it on PATH (Windows method):"
     Write-Info '  setx PATH "$([Environment]::GetEnvironmentVariable(''PATH'',''User''));C:\Program Files\LibreOffice\program"'
     Write-Info "  setx affects NEW shells only - for this session use the full soffice.exe path."
     Write-Info '  then re-verify: & "C:\Program Files\LibreOffice\program\soffice.exe" --version'
-    Write-Info "An install left off PATH looks 'not installed' next run and gets reinstalled"
-    Write-Info "needlessly. If soffice already exists on disk but is off PATH, just register it."
-    Write-Info "Another program is allowed ONLY after an install attempt has FAILED. Report it."
-    Write-Info "No install attempt = no substitute program."
+    Write-Info "If soffice already exists on disk but is off PATH, just register it (never reinstall)."
+    Write-Info "No network? With user consent, converting via local Word/WPS is a last resort"
+    Write-Info "(fidelity may differ). If nothing works, report Office->PDF as unavailable."
 }
 Write-Host ""
 

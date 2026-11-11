@@ -14,6 +14,12 @@
 四个内置发布版本均为 `0.1.8`（高于旧聚合插件 `0.1.5`）。导入目录逐字节对齐上游，
 仅允许 package.json 与 .zcode-plugin/plugin.json 的内置版本字段差异；本次内容差异均来自上游导出，版本字段按内置发布序列升版。
 
+> **Fork 分叉（2026-11 起）**：本仓库 0.2.2（pdf 0.2.3）起对四个插件的 skill 文案做了内网可用性
+> 改造——LibreOffice"强制安装"章节改写为引擎解析降级链（见下文"依赖边界"），并在 `setup.sh`、
+> `env_setup/*`、`routes/*`、`xlsx.py`、`pdf.py` 中把 `soffice` 命令替换为 `dsoffice` 优先。
+> skill 正文**不再与上游逐字节对齐**；后续从 `zcode-marketplace` 同步时必须保留本 fork 文案
+> （对上游改动做三方比对，只吸收非引擎相关修复），否则会把"运行时强制下载 LibreOffice"带回内网环境。
+
 许可证：四个文档插件与搜图插件均为 Apache-2.0（2026-10-08 起，文档插件原为非商业许可，随开源改为 Apache-2.0，0.1.8 起生效；上游插件仓库需同步修改许可，否则下次同步会把旧许可带回）。
 
 展示名对应：Documents / Word文档、Presentations / 演示文档、PDF / PDF、Spreadsheets / 电子表格、Image Search / 搜图。
@@ -45,6 +51,15 @@ filesystem seed、SEA、Electron Node bundle、remote prebuild、server remote �
 
 ## 依赖边界
 
-内置 skill 不等于内置系统依赖。LibreOffice、Poppler、Playwright、ReportLab、Tectonic、
-python-pptx、openpyxl 等由运行环境提供或按上游 skill 的环境检查安装。
+内置 skill 不等于内置系统依赖——**唯一例外是 Office 转换引擎**：ZCode 桌面随包内置
+`@deepseek-ai/libreoffice-kit` 预编译引擎（MPL-2.0，`resources/tools/libreoffice-kit`，经
+runtime tool 机制注册为 `dsoffice`，见 `packages/desktop/docs/bundled-runtime-tools.md`），
+docx/pptx/xlsx/pdf 四个 skill 的转换、渲染视觉验证与公式重算优先使用它；随包后运行时零下载，
+公司内网不再依赖现场安装 LibreOffice。
+
+其余依赖（Poppler、Playwright、ReportLab、Tectonic、python-pptx、openpyxl、Python 本身等）
+仍由运行环境提供或按 skill 的环境检查安装。skill 的引擎解析降级链为：
+内置 `dsoffice` → 本机 `soffice`（探测并注册，不重装）→ 征得用户同意后安装（大下载）→
+经用户同意用本机 Word/WPS 兜底（警告保真度差异）→ 如实报告不可用操作（禁止静默跳过验证）。
+
 脚本相对路径以 Skill 工具返回的 base directory 为准。

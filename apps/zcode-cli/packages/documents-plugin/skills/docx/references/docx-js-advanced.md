@@ -231,43 +231,34 @@ const doc = new Document({
 
 ## Converting DOCX to PDF
 
-> 🔴 **LibreOffice not installed? You MUST install it — do not substitute.** Using Word/WPS *instead
-> of* installing is forbidden, and a large download is **not** a reason to skip it. Required: explain
-> the necessity to the user (it preserves styles, layout, fonts and pagination faithfully), say the
-> package is large, then install it — **preferred source is the Tsinghua TUNA mirror**
-> `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/` (pick the
-> platform/arch subdirectory; if that version is gone, take the newest under
-> `.../libreoffice/stable/`; full commands in `env_setup/setup.md`), with
-> `brew install --cask libreoffice` / `sudo apt install libreoffice-core` /
-> `winget install TheDocumentFoundation.LibreOffice` as fallbacks. Only
-> after an install attempt has **failed** may you use another program. **No install attempt = no
-> substitute program.** After installing, **register `soffice` on `PATH` and re-verify
-> `soffice --version`** (per-OS commands: `env_setup/setup.md` → *"Register the binary on PATH"*) —
-> an install left off the search path reads as "not installed" next time and gets reinstalled
-> needlessly. Note this is separate from the TOC rule below, which is about field
-> recalculation, not about avoiding LibreOffice.
-
 ```bash
-# Using LibreOffice (headless)
-libreoffice --headless --convert-to pdf output.docx
+# Bundled engine (preferred)
+dsoffice convert --input output.docx --output output.pdf
 
 # ⚠️ TOC Rule: If document has TOC, warn user that:
-# 1. LibreOffice conversion may show empty TOC
+# 1. LibreOffice-based conversion may show empty TOC
 # 2. User should open in Word first, update fields (Ctrl+A → F9), save, then convert
 # 3. Or use Word's "Save as PDF" for best results
 ```
 
+> 🔴 **No conversion engine?** Follow the engine resolution order in `SKILL.md` →
+> *"Office conversion engine resolution order"*: bundled `dsoffice` first, then an existing local
+> LibreOffice (`soffice --headless --convert-to pdf`, register off-`PATH` binaries instead of
+> reinstalling), then a user-consented install (Tsinghua TUNA mirror; full commands in
+> `env_setup/setup.md`), and only with explicit user consent a conversion through local Word/WPS
+> (warn that fidelity may differ). If nothing is available, skip the PDF export, run the remaining
+> checks, and report it as unavailable. This is separate from the TOC rule above, which is about
+> field recalculation.
+
 ## Converting DOCX to Images
 
 ```bash
-# Step 1: Convert to PDF
-libreoffice --headless --convert-to pdf output.docx
+# Bundled engine — one step (output_page-0001.png, output_page-0002.png, ...)
+dsoffice render --input output.docx --output-dir <dir> --pages all
 
-# Step 2: Convert PDF to images
-pdftoppm -png -r 200 output.pdf output_page
-
-# This generates output_page-1.png, output_page-2.png, etc.
-# Use -r 200 for good quality (200 DPI)
+# Local-LibreOffice fallback: two steps
+# soffice --headless --convert-to pdf output.docx
+# pdftoppm -png -r 200 output.pdf output_page
 ```
 
 Useful for generating preview thumbnails or when user needs images instead of document files.

@@ -211,60 +211,44 @@ See `references/chart-templates.md`.
 
 - **pandoc**: Text extraction
 - **docx**: `bun add docx` or `npm install docx` (creating)
-- **LibreOffice**: PDF conversion, .doc support — install from the Tsinghua mirror
-  (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`, see below)
-- **Poppler**: PDF to image (`pdftoppm`)
+- **dsoffice**: bundled LibreOffice conversion engine (preferred) — `.doc` support, DOCX → PDF,
+  page rendering; falls back to a local LibreOffice, see the resolution order below
+- **Poppler**: PDF to image (`pdftoppm`) — only needed on the local-`soffice` fallback path
 - **defusedxml**: Secure XML parsing
 - **python-docx**: Simple comment operations
 
-### 🔴 HARD REQUIREMENT — LibreOffice is missing
+### Office conversion engine resolution order
 
-Any step that calls `libreoffice`/`soffice` (`.doc` → `.docx`, DOCX → PDF, visual verification)
-depends on LibreOffice.
+Steps that convert or render Office files (`.doc` → `.docx`, DOCX → PDF, visual verification)
+need a conversion engine. ZCode bundles a prebuilt LibreOffice engine as the `dsoffice` CLI.
+Resolve the engine top-down and stop at the first entry that works — never silently skip the
+verification the task depends on:
 
-**If LibreOffice is not installed, you MUST install it. This is not a choice.**
-
-**FORBIDDEN — do not do any of these:**
-- ❌ Using Microsoft Word, WPS Office, Pages, or any other program already on the user's machine
-  *instead of* installing LibreOffice.
-- ❌ Deciding on the user's behalf that the download is "too large", "too slow", or "not worth it".
-  **The package being large is NOT a reason to skip the install.** It is expected to be large.
-- ❌ Asking the user "should I use Word instead to save time?" — that is the same violation dressed
-  up as a question. Do not offer the substitution.
-- ❌ Silently degrading (skipping the PDF check, skipping visual verification) to avoid installing.
-
-**REQUIRED sequence — no steps skipped, in this order:**
-
-1. **Explain the necessity to the user.** LibreOffice is the conversion engine that preserves the
-   document's styles, layout, fonts, and page breaks faithfully — no other tool reproduces the same
-   output, so substituting it degrades fidelity.
-2. **Tell them the download is large** (roughly several hundred MB) and may take a while. This is
-   information for the user, **not** a decision point for you — state it and proceed to install.
-3. **Install it now.** **Preferred source — Tsinghua TUNA mirror** (fast in China, current build):
-   `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/` — pick the
-   subdirectory for the platform/arch (`deb/x86_64`, `deb/aarch64`, `rpm/x86_64`, `mac/aarch64`,
-   `mac/x86_64`, `win/x86_64`, `win/aarch64`) and download the main package from it. If 26.8.0 is no
-   longer there, list `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/` and take
-   the newest version. Full per-platform download-and-install commands: `env_setup/setup.md` →
-   *"LibreOffice — Recommended Download Source"*.
-   Package-manager fallback, only if the mirror is unreachable:
-   - macOS: `brew install --cask libreoffice`
-   - Linux (Debian/Ubuntu): `sudo apt install libreoffice-core`
-   - Windows: `winget install TheDocumentFoundation.LibreOffice`
-4. **Register the binary on `PATH`, then re-verify.** An install that leaves `soffice` off the
-   executable search path looks identical to "not installed" on the next probe — that is what causes
-   the same several-hundred-MB package to be downloaded twice. **The mechanism differs per OS**
-   (Linux/macOS: symlink into `/usr/local/bin`; Windows: append the program dir to the user `PATH`
-   with `setx`). Full per-OS commands: `env_setup/setup.md` → *"Register the binary on PATH"*.
-   Re-run `soffice --version` and only continue once it prints a version. Corollary: **probe before
-   installing** — if the binary already exists on disk but off-`PATH`, register it instead of
-   reinstalling.
-5. **Only after that install has actually been attempted AND failed** may you use software already
-   on the user's machine (Word, WPS, Pages). Report the install failure and what you switched to,
-   and warn that output fidelity may differ.
-
-> **The gate is simple: no install attempt = no substitute program.** If you have not run the
-> install command and seen it fail, using Word/WPS/Pages/Keynote is a violation of this skill.
+1. **`dsoffice` — bundled engine, preferred.** `command -v dsoffice` (also honor
+   `$ZCODE_DSOFFICE_BINARY` when set). Convert with
+   `dsoffice convert --input input.docx --output output.pdf`. Render page images for visual
+   verification in one step with `dsoffice render --input input.docx --output-dir <dir> --pages 1`
+   (it replaces the `soffice` + `pdftoppm` two-step; the JSON result reports `pageCount` and
+   `missingFonts`).
+2. **Existing local LibreOffice.** Probe `soffice` on PATH and common install locations
+   (Windows: `C:\Program Files\LibreOffice\program\soffice.exe`; macOS:
+   `/Applications/LibreOffice.app/Contents/MacOS/soffice`; Linux: `/opt/libreoffice*/program/soffice`).
+   Found off PATH? Register it (Linux/macOS: symlink into `/usr/local/bin`; Windows: `setx` the
+   program dir onto the user `PATH`) and re-verify `soffice --version` — never reinstall. Convert
+   with `soffice --headless --convert-to pdf --outdir <dir> <file>`, then `pdftoppm` for images.
+3. **Install with user consent (needs network).** Only when no engine exists AND the user agrees
+   after being told the download is large (hundreds of MB): preferred source is the Tsinghua TUNA
+   mirror `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/` (pick newest
+   version, then the platform/arch subdirectory); package-manager fallbacks: Windows
+   `winget install TheDocumentFoundation.LibreOffice`, macOS `brew install --cask libreoffice`,
+   Linux (Debian/Ubuntu) `sudo apt install libreoffice-core`. Register the binary on `PATH`
+   afterwards and re-verify `soffice --version`.
+4. **Local Office as last resort (user consent).** If installing is impossible (no network), a
+   conversion through Office software already on the user's machine (Word / WPS / Pages) is
+   acceptable — tell the user first and warn that layout fidelity may differ from LibreOffice.
+5. **Report honestly when nothing works.** Deliver the document anyway: run `postcheck.py` and
+   every text-level check that does not need an engine, and state exactly which operations
+   (PDF export, visual verification, `.doc` handling) could not be performed and why.
 
 ## Final response citations
 

@@ -168,40 +168,44 @@ if [ ${#MISSING_PY[@]} -gt 0 ]; then
     fi
 fi
 
-# ── LibreOffice (install-on-demand, NOT substitutable) ──
+# ── Office conversion engine (bundled dsoffice first, local LibreOffice second) ──
 echo ""
-echo "--- LibreOffice (.doc→.docx, DOCX→PDF, visual verification) ---"
-if command -v soffice &>/dev/null; then
+echo "--- Conversion engine (.doc→.docx, DOCX→PDF, visual verification) ---"
+if command -v dsoffice &>/dev/null; then
+    ok "dsoffice (bundled engine)"
+elif command -v soffice &>/dev/null; then
     LO_VER=$(soffice --version 2>/dev/null | head -1)
     ok "libreoffice ($LO_VER)"
 else
-    warn "libreoffice not installed — REQUIRED for .doc→.docx, DOCX→PDF, visual checks"
-    info "You MUST install it. FORBIDDEN: using Word/WPS/Pages instead of installing,"
-    info "or skipping the PDF/visual check. A large download is NOT a reason to skip."
-    info "REQUIRED: explain the necessity to the user, say the package is large, THEN install."
-    info "PREFERRED source (fast in China, current build): Tsinghua TUNA mirror"
-    info "  https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/"
-    info "  Pick the subdir for this platform/arch ($(uname -m)):"
-    info "    Linux deb  -> deb/x86_64/ or deb/aarch64/   (tar -xzf, then dpkg -i */DEBS/*.deb)"
-    info "    Linux rpm  -> rpm/x86_64/"
-    info "    macOS      -> mac/aarch64/ (Apple Silicon) or mac/x86_64/ (Intel)  (.dmg)"
-    info "  If 26.8.0 is gone, pick the newest version under .../libreoffice/stable/"
-    info "Package-manager FALLBACK (only if the mirror is unreachable):"
+    warn "no conversion engine (dsoffice / soffice) — needed for .doc→.docx, DOCX→PDF, visual checks"
+    info "Follow SKILL.md 'Office conversion engine resolution order':"
+    info "  1. Bundled dsoffice is preferred — if missing, this package was built with"
+    info "     ZCODE_SKIP_LIBREOFFICE_KIT=1 or is a slim build."
+    info "  2. Probe local LibreOffice and register off-PATH installs (never reinstall):"
+    info "     ls /opt/libreoffice*/program/soffice /Applications/LibreOffice.app/Contents/MacOS/soffice"
+    info "  3. With USER CONSENT and network: install (download is large, hundreds of MB)."
+    info "     PREFERRED source (fast in China, current build): Tsinghua TUNA mirror"
+    info "       https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/"
+    info "       Pick the subdir for this platform/arch ($(uname -m)):"
+    info "         Linux deb  -> deb/x86_64/ or deb/aarch64/   (tar -xzf, then dpkg -i */DEBS/*.deb)"
+    info "         Linux rpm  -> rpm/x86_64/"
+    info "         macOS      -> mac/aarch64/ (Apple Silicon) or mac/x86_64/ (Intel)  (.dmg)"
+    info "     Package-manager FALLBACK (only if the mirror is unreachable):"
     case "$(uname -s)" in
-        Darwin) info "  brew install --cask libreoffice" ;;
-        Linux)  info "  sudo apt install libreoffice-core  (Debian/Ubuntu)" ;;
+        Darwin) info "       brew install --cask libreoffice" ;;
+        Linux)  info "       sudo apt install libreoffice-core  (Debian/Ubuntu)" ;;
     esac
-    info "AFTER installing, REGISTER the binary on PATH -- the method differs per OS:"
+    info "     AFTER installing, REGISTER the binary on PATH -- the method differs per OS:"
     case "$OS" in
-        Darwin) info "  sudo ln -sf /Applications/LibreOffice.app/Contents/MacOS/soffice /usr/local/bin/soffice"
-                info "  (Apple Silicon: use /opt/homebrew/bin/soffice if /usr/local/bin is not on PATH)" ;;
-        Linux)  info "  sudo ln -sf /opt/libreoffice*/program/soffice /usr/local/bin/soffice" ;;
+        Darwin) info "       sudo ln -sf /Applications/LibreOffice.app/Contents/MacOS/soffice /usr/local/bin/soffice"
+                info "       (Apple Silicon: use /opt/homebrew/bin/soffice if /usr/local/bin is not on PATH)" ;;
+        Linux)  info "       sudo ln -sf /opt/libreoffice*/program/soffice /usr/local/bin/soffice" ;;
     esac
-    info "  then re-verify: soffice --version"
-    info "An install left off PATH looks 'not installed' next run and gets reinstalled"
-    info "needlessly. If soffice already exists on disk but is off PATH, just link it."
-    info "Another program is allowed ONLY after an install attempt has FAILED. Report it."
-    info "No install attempt = no substitute program."
+    info "     then re-verify: soffice --version"
+    info "  4. No network? With user consent, converting via local Word/WPS is acceptable;"
+    info "     warn that fidelity may differ from LibreOffice."
+    info "  5. If nothing works, deliver with text-level checks and report which operations"
+    info "     are unavailable. Never silently skip verification."
 fi
 
 # ── Summary ──
@@ -210,5 +214,5 @@ echo "============================================"
 echo "  Setup complete."
 echo "  Core: Node.js + docx (npm)"
 echo "  Post-processing: Python + defusedxml"
-echo "  On-demand (not substitutable): LibreOffice"
+echo "  Engine: bundled dsoffice (fallback: local LibreOffice)"
 echo "============================================"

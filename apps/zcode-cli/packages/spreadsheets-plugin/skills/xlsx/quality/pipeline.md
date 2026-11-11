@@ -10,7 +10,7 @@ All commands: `python3 "$XLSX_SKILL_DIR/xlsx.py" <command> [arguments]`
 
 | Command | Purpose | Called By |
 |---------|---------|-----------|
-| `recalc <file>` | Recalculate formulas via LibreOffice, scan for errors | Builder (self-check) |
+| `recalc <file>` | Recalculate formulas via bundled dsoffice (local LibreOffice fallback), scan for errors | Builder (self-check) |
 | `audit <file>` | Deep formula error scan + zero-value + implicit array detection | Builder (self-check) |
 | `scan <file>` | Detect out-of-range, header-included, small-aggregate, inconsistent patterns | Builder (self-check) |
 | `inspect <file> --pretty` | Get sheet structure, data ranges, headers (JSON) | Blueprint Architect |
@@ -18,21 +18,14 @@ All commands: `python3 "$XLSX_SKILL_DIR/xlsx.py" <command> [arguments]`
 | `chart-verify <file>` | Verify embedded charts have data | Builder (self-check) |
 | `validate <file>` | Structural validation (release gate) | Inspector |
 
-> 🔴 **`recalc` needs LibreOffice — if it is missing you MUST install it, not substitute it.**
-> Forbidden: skipping recalculation, or handing the workbook to the user's Excel/WPS/Numbers *instead
-> of* installing. A large download is **not** a reason to skip. Required: explain the necessity (it is
-> what actually recalculates the formulas so errors surface), say the package is large, then install
-> it — **preferred source is the Tsinghua TUNA mirror**
-> `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/` (pick the
-> platform/arch subdirectory; if that version is gone, take the newest under
-> `.../libreoffice/stable/`), with `brew install --cask libreoffice` /
-> `sudo apt install libreoffice-core` / `winget install TheDocumentFoundation.LibreOffice` as
-> fallbacks. Only after an install attempt has **failed**
-> may you use another program, and you must report which verification steps were skipped.
-> **No install attempt = no substitute program.** After installing, **register `soffice` on `PATH`
-> and re-verify `soffice --version`** (per-OS commands: `env_setup/setup.md` → *"Register the binary
-> on PATH"*) — an install left off the search path reads as "not installed" next time and gets
-> reinstalled needlessly. See `env_setup/setup.md`.
+> **`recalc` needs a conversion engine** — bundled `dsoffice` first, then a local LibreOffice. If
+> neither exists, follow SKILL.md → *"Office conversion engine resolution order"*: probe and register
+> local `soffice` (never reinstall), then install **only with user consent** (large download —
+> preferred source the Tsinghua TUNA mirror `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/`;
+> `brew`/`apt`/`winget` fallbacks; register on `PATH` and re-verify `soffice --version` afterwards).
+> A recalculated pass through the user's Excel/WPS is a user-consented last resort (results may
+> differ). If nothing works, run the engine-free checks (audit/scan/validate) and report that
+> formula values may be stale — never silently skip recalculation.
 
 ---
 

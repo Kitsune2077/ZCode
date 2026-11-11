@@ -857,6 +857,20 @@ export default {
           },
         ]
       : []),
+    ...(existsSync(resolve(desktopPackageRoot, `bundled-tools/${targetPlatform.key}/libreoffice-kit`))
+      ? [
+          {
+            // dsoffice 转换引擎（@deepseek-ai/libreoffice-kit 预编译 LibreOffice，MPL-2.0）
+            // 随包内置：内网无外网时四个文档插件的转换/渲染/公式重算不再依赖现场下载
+            // LibreOffice。runtime/node_modules 位于子目录下，规避 electron-builder 过滤
+            // extraResources from 根目录 node_modules 的行为（koffi/sharp staging 同理）。
+            // 离线构建（ZCODE_SKIP_LIBREOFFICE_KIT=1）缺资产时宁可不带，不让打包失败。
+            from: `bundled-tools/${targetPlatform.key}/libreoffice-kit`,
+            to: "tools/libreoffice-kit",
+            filter: ["**/*"],
+          },
+        ]
+      : []),
   ],
   // pnpm 依赖图不完整时禁止仅记录警告并继续生成安装包；afterPack 只能补齐可解析依赖，
   // collector 已确认缺失的生产依赖必须在打包阶段停止。

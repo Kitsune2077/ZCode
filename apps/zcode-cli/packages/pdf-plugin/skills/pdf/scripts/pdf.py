@@ -264,6 +264,12 @@ def _probe_python() -> tuple[str, str]:
 
 
 def _probe_libreoffice() -> tuple[str, str]:
+    # Bundled dsoffice engine counts as a usable Office→PDF engine (see convert.office).
+    env_path = os.environ.get("ZCODE_DSOFFICE_BINARY", "").strip()
+    if env_path and (Path(env_path).is_file() or shutil.which(env_path)):
+        return ("ok", "bundled dsoffice")
+    if shutil.which("dsoffice"):
+        return ("ok", "bundled dsoffice")
     candidates = [
         "/Applications/LibreOffice.app/Contents/MacOS/soffice",
         os.path.expanduser("~/Applications/LibreOffice.app/Contents/MacOS/soffice"),
@@ -450,19 +456,21 @@ def env_check(argv: list):
         print(f"    (playwright-python: {s_pw_py[1]})")
 
     print("\n--- On demand: other ---")
-    show("libreoffice", s_lo, on_demand_required=True)
+    show("office engine (dsoffice/soffice)", s_lo)
     show("tectonic", s_tec, optional=True)
 
-    print("\n=== Install Commands (optional engines \u2014 install only when a route needs them, with the user's OK) ===")
+    print("\n=== Install Commands (optional engines — install only when a route needs them, with the user's OK) ===")
     print("  Core Python: pip install reportlab pypdf PyMuPDF pikepdf pdfplumber")
     print("  Node.js:     brew install node (macOS) / apt install nodejs (Ubuntu)")
     print("  Playwright:  npm install -g playwright && npx playwright install chromium   # large download, minutes")
-    print("  LibreOffice: PREFERRED \u2192 Tsinghua mirror https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/")
-    print("               (pick deb/rpm/mac/win subdir for your arch; newest version if 26.8.0 is gone)")
+    print("  Office→PDF:  bundled dsoffice engine first (convert.office uses it automatically).")
+    print("               Local LibreOffice fallback — install with USER CONSENT only (large download):")
+    print("               PREFERRED \u2192 Tsinghua mirror https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/")
+    print("               (pick deb/rpm/mac/win subdir for your arch; newest version)")
     print("               fallback: brew install --cask libreoffice (macOS) / sudo apt install libreoffice-core (Linux)")
-    print("               ↳ MUST be installed, never substituted. Using Word/WPS/Keynote instead")
-    print("                 is forbidden; a large download is NOT a reason to skip it. Explain the")
-    print("                 necessity to the user, then install. No install attempt = no substitute.")
+    print("               ↳ register soffice on PATH after install; local Word/WPS conversion is a")
+    print("                 user-consented last resort (fidelity may differ). If no engine exists,")
+    print("                 report Office→PDF as unavailable — never silently skip it.")
     print("  Tectonic:    curl -fsSL https://drop-sh.fullyjustified.net | sh            # downloads LaTeX packages on first run")
     raise SystemExit(rc)
 
@@ -1797,6 +1805,19 @@ _SOFFICE_CANDIDATES = [
 ]
 
 
+def _locate_dsoffice() -> str | None:
+    """Locate the bundled dsoffice engine (preferred over local soffice).
+
+    Search order:
+      1. ZCODE_DSOFFICE_BINARY (injected by the desktop runtime)
+      2. PATH (the desktop runtime appends the bundled tools dir)
+    """
+    env_path = os.environ.get("ZCODE_DSOFFICE_BINARY", "").strip()
+    if env_path and (Path(env_path).is_file() or shutil.which(env_path)):
+        return env_path
+    return shutil.which("dsoffice")
+
+
 def _locate_soffice() -> str | None:
     """Search for a working soffice binary."""
     for candidate in _SOFFICE_CANDIDATES:
@@ -1811,7 +1832,7 @@ def _locate_soffice() -> str | None:
 
 @cmd("convert.office")
 def convert_office(argv: list):
-    """Convert an office document to PDF via LibreOffice."""
+    """Convert an office document to PDF (bundled dsoffice engine, LibreOffice fallback)."""
     if not argv:
         Output.error("MissingArg", "input file required")
     src_path = argv.pop(0)
@@ -1827,28 +1848,58 @@ def convert_office(argv: list):
             hint=f"Supported formats: {', '.join(sorted(_CONVERTIBLE_EXTENSIONS))}",
         )
 
+    target_dir = Path(out_path).parent if out_path else src.parent
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    auto_name = target_dir / f"{src.stem}.pdf"
+    final = Path(out_path) if out_path else auto_name
+
+    # Bundled engine first: dsoffice takes explicit --output, no rename dance needed.
+    dsoffice = _locate_dsoffice()
+    if dsoffice is not None:
+        try:
+            proc = subprocess.run(
+                [dsoffice, "convert", "--input", str(src), "--output", str(final)],
+                capture_output=True, text=True, timeout=120,
+            )
+            if proc.returncode != 0:
+                Output.error(
+                    "ConvertError",
+                    f"Conversion failed: {proc.stderr.strip() or proc.stdout.strip() or 'Unknown error'}",
+                    code=4,
+                )
+        except subprocess.TimeoutExpired:
+            Output.error("Timeout", "Conversion timeout (>120s)", code=4)
+        except Exception as exc:
+            Output.error("ConvertError", f"Conversion failed: {exc}", code=4)
+
+        if not final.exists():
+            Output.error("ConvertError", "Converted PDF file was not generated", code=4)
+        Output.success({"input": str(src), "output": str(final), "format": ext, "engine": "dsoffice"})
+        return
+
     binary = _locate_soffice()
     if binary is None:
         Output.error(
             "DependencyMissing",
-            "LibreOffice not found — you MUST install it, not substitute it",
+            "No conversion engine available (neither bundled dsoffice nor local soffice)",
             hint=(
-                "FORBIDDEN: using Word / WPS / Keynote / Pages / any program already on this "
-                "machine INSTEAD of installing LibreOffice. FORBIDDEN: deciding the download is "
-                "too large to bother with — being large is NOT a reason to skip it. FORBIDDEN: "
-                "asking the user whether to use Word instead. "
-                "REQUIRED, in order: (1) explain to the user that LibreOffice is the engine that "
-                "preserves themes, layouts, master slides, fonts and pagination faithfully; "
-                "(2) tell them the package is large (several hundred MB) and may take a while — "
-                "this is information for them, not a decision point for you; "
-                "(3) install it NOW — PREFERRED source is the Tsinghua TUNA mirror 'https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/': pick the subdirectory for this platform/arch (deb/x86_64, deb/aarch64, rpm/x86_64, mac/aarch64, mac/x86_64, win/x86_64, win/aarch64) and install the main package from it; if 26.8.0 is gone, use the newest version under '.../libreoffice/stable/'. Package-manager FALLBACK only if the mirror is unreachable: macOS 'brew install --cask libreoffice'; Debian/Ubuntu 'sudo apt install libreoffice-core'; Windows 'winget install TheDocumentFoundation.LibreOffice'. "
-                "ONLY after that install has been attempted AND failed may you use another "
-                "program — report the failure. No install attempt = no substitute program."
+                "Follow SKILL.md 'Office conversion engine resolution order': "
+                "(1) bundled dsoffice is preferred — absent here; (2) probe local soffice on PATH "
+                "and common install locations, register off-PATH installs instead of reinstalling; "
+                "(3) with USER CONSENT and network, install LibreOffice (large download, several "
+                "hundred MB — preferred source is the Tsinghua TUNA mirror "
+                "'https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/', pick the "
+                "newest version and platform/arch subdirectory; package-manager fallbacks: macOS "
+                "'brew install --cask libreoffice', Debian/Ubuntu 'sudo apt install libreoffice-core', "
+                "Windows 'winget install TheDocumentFoundation.LibreOffice'); register it on PATH "
+                "and re-verify 'soffice --version' afterwards; (4) with user consent, converting "
+                "via local Word / WPS / Keynote / Pages is a last resort (fidelity may differ — "
+                "LibreOffice preserves themes, layouts, master slides, fonts and pagination "
+                "faithfully); (5) if nothing works, report the Office→PDF conversion as "
+                "unavailable and continue with text-level processing."
             ),
         )
-
-    target_dir = Path(out_path).parent if out_path else src.parent
-    target_dir.mkdir(parents=True, exist_ok=True)
 
     cmd_list = [binary, "--headless", "--convert-to", "pdf", "--outdir", str(target_dir), str(src)]
 
@@ -1860,9 +1911,6 @@ def convert_office(argv: list):
         Output.error("Timeout", "Conversion timeout (>120s)", code=4)
     except Exception as exc:
         Output.error("ConvertError", f"Conversion failed: {exc}", code=4)
-
-    auto_name = target_dir / f"{src.stem}.pdf"
-    final = Path(out_path) if out_path else auto_name
 
     if out_path and final.name != auto_name.name and auto_name.exists():
         auto_name.rename(final)

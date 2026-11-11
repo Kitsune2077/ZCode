@@ -23,16 +23,16 @@
 ## Step 0: Format Conversion
 
 ```bash
-# .doc → .docx
-libreoffice --headless --convert-to docx input.doc
+# .doc → .docx (bundled engine; dsoffice also preserves styles/layout for legacy .doc)
+dsoffice convert --input input.doc --output input.docx
 ```
 
-> 🔴 **If `libreoffice` is not installed, you MUST install it — do not substitute.** Using Word, WPS,
-> or Pages *instead of* installing is forbidden, and a large download is **not** a reason to skip it.
-> Required: explain the necessity to the user (only engine that converts legacy `.doc` while
-> preserving styles and layout), tell them the package is large, then install it **from the Tsinghua TUNA mirror** (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`, or the newest version under `.../libreoffice/stable/`; package-manager commands are the fallback). Only after an
-> install attempt has actually **failed** may you use another program. **No install attempt = no
-> substitute program.** See the HARD REQUIREMENT block in `SKILL.md`.
+> 🔴 **No conversion engine?** Follow the engine resolution order in `SKILL.md` →
+> *"Office conversion engine resolution order"*: bundled `dsoffice` first, then an existing local
+> LibreOffice (probe before installing — register off-`PATH` binaries instead of reinstalling),
+> then a user-consented install, and only with explicit user consent a conversion through local
+> Word/WPS (warn that fidelity may differ). When nothing is available, continue without this step
+> and say so — never silently skip a verification the task depends on.
 
 ## Step 1: Unpack
 
@@ -82,13 +82,13 @@ cd work_dir && zip -r "../${STEM}_updated.docx" . -x ".*"
 
 ```bash
 pandoc "${STEM}_updated.docx" -t plain -o /dev/stdout | head -50
-# or visual
-libreoffice --headless --convert-to pdf "${STEM}_updated.docx"
+# or visual (bundled engine renders page PNGs in one step)
+dsoffice render --input "${STEM}_updated.docx" --output-dir <work_dir> --pages 1
 ```
 
-> 🔴 **LibreOffice missing? You MUST install it — do not substitute.** Explain its necessity, say the
-> package is large (not a reason to skip), then install it **from the Tsinghua TUNA mirror** (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`, or the newest version under `.../libreoffice/stable/`; package-manager commands are the fallback). Word/WPS is permitted **only** after an
-> install attempt has failed. **No install attempt = no substitute program.** See `SKILL.md`.
+> 🔴 **No conversion engine?** Same resolution order as Step 0 (see `SKILL.md` →
+> *"Office conversion engine resolution order"*). If no engine can be resolved, deliver with the
+> text-level verification above and report that the visual check was unavailable.
 
 ---
 

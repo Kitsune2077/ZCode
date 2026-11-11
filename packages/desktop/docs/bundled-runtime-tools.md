@@ -10,6 +10,9 @@
 把这份原生二进制随包内置后，`command -v lark-cli` 直接命中内置副本，`setup` 自动跳过 npm 安装，
 用户**无需预装 Node.js**。
 
+后续随包工具按同一机制扩展（见下方各工具小节）：`dsoffice`（Office 转换引擎）的动机不同——
+它解决的是公司内网无外网时四个文档插件的转换/渲染/公式重算完全不可用的问题。
+
 ## 机制（谁负责什么）
 
 | 环节 | 所有者 | 说明 |
@@ -77,3 +80,75 @@
    工具清单、`apps/zcode-cli/packages/cli/src/sea-runtime-tools.ts` 的 SEA 工具集都是显式列表，
    本次未加入 lark-cli（不影响桌面安装包，属独立发行面）。
 3. **体积**：`lark-cli.exe` 未压缩约 47 MB，安装包从 142 MB 增至约 190 MB。
+
+---
+
+## dsoffice（Office 转换引擎）
+
+### 背景
+
+四个文档插件（documents/presentations/spreadsheets/pdf）的转换（`.doc`→`.docx`、Office→PDF）、
+渲染视觉验证与 xlsx 公式重算都依赖 LibreOffice。此前 skill 要求模型**运行时**从清华镜像/winget
+现场下载几百 MB 安装，公司内网无外网时整条质量验证闭环断裂（且受管终端的安装器拦截进一步放大
+失败面）。参照 DeepSeek Harness 桌面版的做法，把上游 `@deepseek-ai/libreoffice-kit`
+（[dsh-libreoffice-kit](https://github.com/deepseek-ai/dsh-libreoffice-kit)，MPL-2.0）预编译
+引擎随包内置，运行时零下载；skill 文案同步改写为引擎解析降级链（见 `docs/document-skills-plugin.md`
+→ "依赖边界"）。
+
+### 机制
+
+| 环节 | 所有者 | 说明 |
+| --- | --- | --- |
+| 取得引擎闭包 | `scripts/prepare-bundled-libreoffice-kit.mjs`（`prepare:libreoffice-kit`） | 钉死版本 `npm install --ignore-scripts --omit=dev` 到 `bundled-tools/<key>/libreoffice-kit/runtime/node_modules/`（kit + 平台引擎 + koffi 闭包），并生成 `dsoffice`/`dsoffice.cmd` shim 与 bundle 元数据 |
+| 打进安装包 | `packages/desktop/electron-builder.config.js` extraResources | `bundled-tools/<key>/libreoffice-kit` → `resources/tools/libreoffice-kit`（existsSync 条件，缺资产不让打包失败）。`runtime/node_modules` 故意嵌套一层子目录——electron-builder 会过滤 extraResources from 根目录的 node_modules（koffi/sharp staging 实证） |
+| 运行时解析 | `packages/services/src/runtime-tools/runtimeToolResolver.ts` | 工具 id `"dsoffice"`：`ZCODE_DSOFFICE_BINARY` → `resources/tools/libreoffice-kit/dsoffice.cmd|dsoffice` → PATH 兜底；命中后把该目录追加进 Agent PATH，skill 的 `command -v dsoffice` 即命中 |
+| 桌面侧预解析 | `packages/desktop/src/main/desktopRuntimeEnv.ts` | 注入 `ZCODE_DSOFFICE_BINARY`（shim 路径）与 `ZCODE_DSOFFICE_NODE_EXE`（app 自身 Electron 二进制，shim 用 `ELECTRON_RUN_AS_NODE` 复用它跑 kit 的 `lib/cli.js`，与 Host 执行 zcode.cjs 同一模式；Electron 44 = Node 24.21，满足 kit 的 `>=22.19.0`） |
+
+```
+构建期: prepare:libreoffice-kit ─▶ bundled-tools/<key>/libreoffice-kit/{dsoffice[.cmd], runtime/node_modules/…}
+                                       │ electron-builder extraResources
+                                       ▼
+运行期: resources/tools/libreoffice-kit/ ─▶ runtimeToolResolver ─▶ ZCODE_DSOFFICE_BINARY / ZCODE_DSOFFICE_NODE_EXE
+                                                              └─▶ PATH 追加该目录
+                                                                        ▼
+                            文档插件 skills / xlsx.py / pdf.py: `command -v dsoffice` 命中
+                            dsoffice convert|render|recalculate（本地 soffice 兜底，见 skill 降级链）
+```
+
+### 供应链
+
+- **版本钉死** `@deepseek-ai/libreoffice-kit@0.2.3`（`ZCODE_LIBREOFFICE_KIT_VERSION` 可覆盖）。
+  引擎是 199MB 级二进制，逐版本人工冒烟（convert/recalculate/render 各一例）后再升版。
+- **完整性**：npm 安装即按 registry `dist.integrity` sha512 校验每个 tarball；`--ignore-scripts`
+  下不执行任何包脚本——原生引擎路径只 spawn 引擎包自带的 helper exe，koffi 的预编译 `.node`
+  来自 registry 托管的 `@koromix/koffi-<platform>` 平台包（koffi 3.x loader 优先从兄弟包解析），
+  不依赖 install 脚本联网下载。
+- **registry 顺序**：`npm_config_registry` → npmjs.org → npmmirror.com（内网/国内构建可配镜像）。
+- **许可**：MPL-2.0。引擎包自带 `sources/` 与 `licenses/`（上游按 MPL 要求随包发布），**未裁剪**；
+  bundle 元数据 `libreoffice-kit-bundle.json` 记录 kit/engine/koffi 版本、registry 与上游仓库。
+- **平台**：win32-x64、darwin-x64、darwin-arm64 有原生引擎；Linux 上游走 wasm 包（152MB），
+  本仓库暂不 staging——脚本明确跳过并留日志，skill 走降级链。
+
+### 开关
+
+| 变量 | 作用 |
+| --- | --- |
+| `ZCODE_SKIP_LIBREOFFICE_KIT=1` | 跳过该步骤（离线构建）。缺资产时包内不带引擎，四个文档插件走 skill 降级链 |
+| `ZCODE_LIBREOFFICE_KIT_VERSION=<x.y.z>` | 钉死版本，替代内置默认值 |
+
+### 验收场景
+
+- A：`node scripts/prepare-bundled-libreoffice-kit.mjs` → `bundled-tools/<key>/libreoffice-kit/`
+  出现 shim 与 `runtime/node_modules/@deepseek-ai/libreoffice-kit-win32-x64/prebuilds.json`。
+- B：shim 冒烟——`dsoffice convert --input report.docx --output report.pdf` 返回 JSON
+  `{"backend":"native",...}` 且 PDF 以 `%PDF-` 开头；`dsoffice recalculate` 与
+  `dsoffice render --pages 1`（分页 PNG + manifest）同通过。
+- C：安装后的应用目录存在 `resources/tools/libreoffice-kit/dsoffice.cmd`；Agent 环境里
+  `ZCODE_DSOFFICE_BINARY` 指向它且 PATH 含其目录；`command -v dsoffice` 命中内置副本。
+- D：`ZCODE_SKIP_LIBREOFFICE_KIT=1` 打包 → 包内不含引擎、打包不失败，skill 降级链生效。
+- E：幂等——同版本二次执行直接 `[skip]`；删除部分产物后执行走 `[repair]` 重装。
+
+### 体积
+
+引擎解包约 192 MB（win32-x64，含 MPL sources/licenses），安装包压缩后预计 +60~90 MB。
+升级 lark-cli 时安装包从 142→190 MB；dsoffice 后预计 250~280 MB 量级，DMG 预算（3200m）足够。

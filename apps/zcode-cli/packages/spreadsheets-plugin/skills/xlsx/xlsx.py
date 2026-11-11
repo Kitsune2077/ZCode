@@ -3,7 +3,8 @@
 xlsx.py — Unified Excel Quality Assurance & Manipulation Tool
 
 Commands:
-  recalc       <xlsx> [timeout]       Recalculate formulas via LibreOffice + error scan
+  recalc       <xlsx> [timeout]       Recalculate formulas via bundled dsoffice engine
+                                        (local LibreOffice fallback) + error scan
   audit      <xlsx>                 Formula error + zero-value + implicit array detection
   scan     <xlsx>                 Reference anomaly detection
   inspect      <xlsx> [--pretty]      Structure analysis → JSON
@@ -169,6 +170,56 @@ def _find_soffice() -> Optional[str]:
     return None
 
 
+def _find_dsoffice() -> Optional[str]:
+    """Locate the bundled dsoffice engine (preferred over local soffice).
+
+    Search order:
+      1. ZCODE_DSOFFICE_BINARY (injected by the desktop runtime)
+      2. PATH (the desktop runtime appends the bundled tools dir)
+    Returns the absolute path, or None if not found.
+    """
+    env_path = os.environ.get("ZCODE_DSOFFICE_BINARY", "").strip()
+    if env_path and (os.path.isfile(env_path) or shutil.which(env_path)):
+        return env_path
+    return shutil.which("dsoffice")
+
+
+def _dsoffice_recalc_inplace(abs_path: str, timeout: int = 60) -> Optional[Dict[str, Any]]:
+    """Recalculate formulas in place via the bundled dsoffice engine.
+
+    Writes to a temp sibling and atomically replaces the original on success,
+    matching the LibreOffice macro's in-place semantics.
+
+    Returns None on success, or an error dict on failure.
+    """
+    dsoffice_bin = _find_dsoffice()
+    if not dsoffice_bin:
+        return None  # caller falls back to the local-soffice path
+
+    out_path = f"{abs_path}.recalc-tmp.xlsx"
+    try:
+        result = subprocess.run(
+            [dsoffice_bin, "recalculate", "--input", abs_path, "--output", out_path],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        if result.returncode != 0:
+            return {"error": f"dsoffice recalculate failed: {result.stderr.strip() or result.stdout.strip() or 'unknown error'}"}
+        if not os.path.isfile(out_path):
+            return {"error": "dsoffice recalculate produced no output file"}
+        os.replace(out_path, abs_path)
+        return None
+    except subprocess.TimeoutExpired:
+        return {"error": f"dsoffice recalculate timed out after {timeout}s"}
+    except FileNotFoundError:
+        return None  # engine vanished between probe and run; fall back
+    finally:
+        if os.path.exists(out_path):
+            try:
+                os.remove(out_path)
+            except OSError:
+                pass
+
+
 def _setup_libreoffice_macro() -> bool:
     """Setup LibreOffice macro for recalculation if not already configured."""
     if platform.system() == "Darwin":
@@ -226,59 +277,67 @@ def _libreoffice_recalc(filename: str, timeout: int = 30) -> Dict[str, Any]:
 
     abs_path = str(Path(filename).absolute())
 
-    if not _setup_libreoffice_macro():
-        return {"error": "Failed to setup LibreOffice macro"}
+    # Bundled engine first: dsoffice recalculate covers the same in-place semantics
+    # without needing the LibreOffice user-profile macro. Fall back to local soffice.
+    dsoffice_error = _dsoffice_recalc_inplace(abs_path, timeout=max(timeout, 60))
+    if dsoffice_error is None and _find_dsoffice():
+        pass  # recalculated in place; fall through to the shared error scan below
+    elif dsoffice_error is not None:
+        return dsoffice_error
+    else:
+        # No bundled engine — try local LibreOffice via the recalculation macro.
+        if not _setup_libreoffice_macro():
+            return {"error": "Failed to setup LibreOffice macro"}
 
-    # Locate soffice binary (cross-platform)
-    soffice_bin = _find_soffice()
-    if not soffice_bin:
-        return {"error": (
-            "LibreOffice not found — you MUST install it, not substitute it. "
-            "FORBIDDEN: using Excel / WPS / Numbers / any program already on this machine INSTEAD "
-            "of installing LibreOffice. FORBIDDEN: deciding the download is too large to bother "
-            "with — being large is NOT a reason to skip it. FORBIDDEN: skipping recalculation. "
-            "REQUIRED, in order: (1) explain to the user that LibreOffice is what actually "
-            "recalculates the formulas so errors surface; (2) tell them the package is large "
-            "(several hundred MB) and may take a while — information for them, not a decision "
-            "point for you; "
-            "(3) install it NOW — PREFERRED source is the Tsinghua TUNA mirror 'https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/': pick the subdirectory for this platform/arch (deb/x86_64, deb/aarch64, rpm/x86_64, mac/aarch64, mac/x86_64, win/x86_64, win/aarch64) and install the main package from it; if 26.8.0 is gone, use the newest version under '.../libreoffice/stable/'. Package-manager FALLBACK only if the mirror is unreachable: macOS 'brew install --cask libreoffice'; Debian/Ubuntu 'sudo apt install libreoffice-core'; Windows 'winget install TheDocumentFoundation.LibreOffice'. "
-            "ONLY after that install has been attempted AND failed may you use another program — "
-            "report the failure and which checks were skipped. "
-            "No install attempt = no substitute program."
-        )}
+        # Locate soffice binary (cross-platform)
+        soffice_bin = _find_soffice()
+        if not soffice_bin:
+            return {"error": (
+                "No conversion engine available (neither bundled dsoffice nor local soffice) — "
+                "formula recalculation cannot run. Follow SKILL.md 'Office conversion engine "
+                "resolution order': (1) bundled dsoffice is preferred — absent here; (2) probe "
+                "local soffice on PATH and common install locations, register off-PATH installs "
+                "instead of reinstalling; (3) with USER CONSENT and network, install LibreOffice "
+                "(large download, hundreds of MB — preferred source: Tsinghua TUNA mirror "
+                "'https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/', package "
+                "managers as fallback); (4) with user consent, recalculating via local Excel/WPS "
+                "is a last resort (results may differ); (5) if nothing works, deliver with "
+                "openpyxl-level checks and REPORT that formula values may be stale — never "
+                "silently skip recalculation."
+            )}
 
-    lo_cmd: List[str] = [
-        soffice_bin, "--headless", "--norestore",
-        "vnd.sun.star.script:Standard.Module1.RecalculateAndSave"
-        "?language=Basic&location=application",
-        abs_path,
-    ]
+        lo_cmd: List[str] = [
+            soffice_bin, "--headless", "--norestore",
+            "vnd.sun.star.script:Standard.Module1.RecalculateAndSave"
+            "?language=Basic&location=application",
+            abs_path,
+        ]
 
-    # Wrap with a timeout binary when available
-    if platform.system() != "Windows":
-        timeout_bin: Optional[str] = None
-        if platform.system() == "Linux":
-            timeout_bin = "timeout"
-        elif platform.system() == "Darwin":
-            try:
-                subprocess.run(
-                    ["gtimeout", "--version"],
-                    capture_output=True, timeout=1, check=False,
-                )
-                timeout_bin = "gtimeout"
-            except (FileNotFoundError, subprocess.TimeoutExpired):
-                pass
-        if timeout_bin:
-            lo_cmd = [timeout_bin, str(timeout)] + lo_cmd
+        # Wrap with a timeout binary when available
+        if platform.system() != "Windows":
+            timeout_bin: Optional[str] = None
+            if platform.system() == "Linux":
+                timeout_bin = "timeout"
+            elif platform.system() == "Darwin":
+                try:
+                    subprocess.run(
+                        ["gtimeout", "--version"],
+                        capture_output=True, timeout=1, check=False,
+                    )
+                    timeout_bin = "gtimeout"
+                except (FileNotFoundError, subprocess.TimeoutExpired):
+                    pass
+            if timeout_bin:
+                lo_cmd = [timeout_bin, str(timeout)] + lo_cmd
 
-    result = subprocess.run(lo_cmd, capture_output=True, text=True)
+        result = subprocess.run(lo_cmd, capture_output=True, text=True)
 
-    if result.returncode != 0 and result.returncode != 124:
-        error_msg = result.stderr or "Unknown error during recalculation"
-        if "Module1" in error_msg or "RecalculateAndSave" not in error_msg:
-            return {"error": "LibreOffice macro not configured properly"}
-        else:
-            return {"error": error_msg}
+        if result.returncode != 0 and result.returncode != 124:
+            error_msg = result.stderr or "Unknown error during recalculation"
+            if "Module1" in error_msg or "RecalculateAndSave" not in error_msg:
+                return {"error": "LibreOffice macro not configured properly"}
+            else:
+                return {"error": error_msg}
 
     # Scan recalculated file for Excel errors
     try:
@@ -1280,7 +1339,7 @@ xlsx.py — Unified Excel Quality Assurance & Manipulation Tool
 Usage: python3 xlsx.py <command> [args...]
 
 Commands:
-  recalc       <xlsx> [timeout]                  Recalculate formulas via LibreOffice + error scan
+  recalc       <xlsx> [timeout]                  Recalculate formulas via dsoffice/soffice + error scan
   audit      <xlsx>                            Formula error + zero-value + implicit array detection
   scan     <xlsx>                            Reference anomaly detection
   inspect      <xlsx> [--pretty]                 Structure analysis → JSON

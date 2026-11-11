@@ -232,24 +232,23 @@ else
 fi
 echo ""
 
-# ── Step 2h: LibreOffice (install-on-demand, NOT substitutable) ──
-echo "--- [8/10] LibreOffice (Office→PDF) ---"
-if command -v soffice &>/dev/null; then
+# ── Step 2h: Office→PDF engine (bundled dsoffice first, local LibreOffice second) ──
+echo "--- [8/10] Office→PDF engine ---"
+if command -v dsoffice &>/dev/null; then
+    ok "dsoffice (bundled engine)"
+elif command -v soffice &>/dev/null; then
     LO_VER=$(soffice --version 2>/dev/null | head -1)
     ok "libreoffice ($LO_VER)"
 else
-    warn "libreoffice not installed — REQUIRED for any .docx/.xlsx/.pptx→PDF task"
-    info "You MUST install it. FORBIDDEN: using Word/WPS/Keynote/Pages instead of"
-    info "installing. A large download is NOT a reason to skip -- it is expected to be"
-    info "large. REQUIRED: explain the necessity to the user, say the package is large,"
-    info "THEN install it."
+    warn "no Office→PDF engine (dsoffice / soffice) — needed for any .docx/.xlsx/.pptx→PDF task"
+    info "Follow SKILL.md 'Office conversion engine resolution order'. Local LibreOffice install"
+    info "(only with USER CONSENT after being told the download is large, hundreds of MB):"
     info "PREFERRED source (fast in China, current build): Tsinghua TUNA mirror"
-    info "  https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/"
-    info "  Pick the subdir for this platform/arch ($(uname -m)):"
+    info "  https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/"
+    info "  Pick the newest version, then the subdir for this platform/arch ($(uname -m)):"
     info "    Linux deb  -> deb/x86_64/ or deb/aarch64/   (tar -xzf, then dpkg -i */DEBS/*.deb)"
     info "    Linux rpm  -> rpm/x86_64/"
     info "    macOS      -> mac/aarch64/ (Apple Silicon) or mac/x86_64/ (Intel)  (.dmg)"
-    info "  If 26.8.0 is gone, pick the newest version under .../libreoffice/stable/"
     info "Package-manager FALLBACK (only if the mirror is unreachable):"
     case "$PLATFORM" in
         mac)   info "  brew install --cask libreoffice" ;;
@@ -262,10 +261,9 @@ else
         linux) info "  sudo ln -sf /opt/libreoffice*/program/soffice /usr/local/bin/soffice" ;;
     esac
     info "  then re-verify: soffice --version"
-    info "An install left off PATH looks 'not installed' next run and gets reinstalled"
-    info "needlessly. If soffice already exists on disk but is off PATH, just link it."
-    info "Another program is allowed ONLY after an install attempt has FAILED. Report it."
-    info "No install attempt = no substitute program."
+    info "If soffice already exists on disk but is off PATH, just link it (never reinstall)."
+    info "No network? With user consent, converting via local Word/WPS is a last resort"
+    info "(fidelity may differ). If nothing works, report Office→PDF as unavailable."
 fi
 echo ""
 
