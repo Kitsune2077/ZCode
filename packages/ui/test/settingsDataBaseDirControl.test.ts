@@ -210,6 +210,34 @@ async function renderGeneralSection(
   );
 }
 
+async function renderAgentBehaviorSection(
+  overrides: Partial<
+    Parameters<typeof import("../src/settingsPageHelpers.js").AgentBehaviorSectionContent>[0]
+  > = {},
+) {
+  const { AgentBehaviorSectionContent } = await import("../src/settingsPageHelpers.js");
+
+  return renderToStaticMarkup(
+    createElement(AgentBehaviorSectionContent, {
+      toolSearchMode: "off",
+      onToolSearchModeChange: vi.fn(async () => {}),
+      nativeSearchEnhancementsEnabled: true,
+      messageStreamShowReasoning: true,
+      messageStreamShowTodos: false,
+      zcodeInteractionBehavior: "queue",
+      askUserQuestionAutoResolutionEnabled: true,
+      modelIoFullRetentionEnabled: false,
+      onNativeSearchEnhancementsEnabledChange: vi.fn(async () => {}),
+      onMessageStreamShowReasoningChange: vi.fn(async () => {}),
+      onMessageStreamShowTodosChange: vi.fn(async () => {}),
+      onZCodeInteractionBehaviorChange: vi.fn(async () => {}),
+      onAskUserQuestionAutoResolutionEnabledChange: vi.fn(async () => {}),
+      onModelIoFullRetentionEnabledChange: vi.fn(async () => {}),
+      ...overrides,
+    }),
+  );
+}
+
 describe("GeneralSectionContent data directory control", () => {
   beforeEach(() => {
     capturedButtons.length = 0;
@@ -273,7 +301,7 @@ describe("GeneralSectionContent data directory control", () => {
   it("ModelIO 读取关闭值并通过标准设置开关提交", async () => {
     const onModelIoFullRetentionEnabledChange = vi.fn(async () => {});
 
-    await renderGeneralSection({ onModelIoFullRetentionEnabledChange });
+    await renderAgentBehaviorSection({ onModelIoFullRetentionEnabledChange });
 
     const modelIoSwitch = capturedSwitches.find(
       (entry) => entry["aria-label"] === "完整保留模型 I/O",
@@ -315,7 +343,7 @@ describe("GeneralSectionContent data directory control", () => {
   it("增强搜索读取持久值并写回用户切换", async () => {
     const onNativeSearchEnhancementsEnabledChange = vi.fn(async () => {});
 
-    await renderGeneralSection({
+    await renderAgentBehaviorSection({
       nativeSearchEnhancementsEnabled: false,
       onNativeSearchEnhancementsEnabledChange,
     });
@@ -354,7 +382,7 @@ describe("GeneralSectionContent data directory control", () => {
     const onMessageStreamShowReasoningChange = vi.fn(async () => {});
     const onMessageStreamShowTodosChange = vi.fn(async () => {});
 
-    await renderGeneralSection({
+    await renderAgentBehaviorSection({
       onMessageStreamShowReasoningChange,
       onMessageStreamShowTodosChange,
     });
@@ -372,38 +400,10 @@ describe("GeneralSectionContent data directory control", () => {
     expect(onMessageStreamShowTodosChange).toHaveBeenCalledWith(true);
   });
 
-  it("工具分组开关读取持久值，并把用户操作写回设置回调", async () => {
-    const onToolGroupingExploreEnabledChange = vi.fn(async () => {});
-    const onToolGroupingTerminalEnabledChange = vi.fn(async () => {});
-    const onToolGroupingChangesEnabledChange = vi.fn(async () => {});
-
-    await renderGeneralSection({
-      onToolGroupingExploreEnabledChange,
-      onToolGroupingTerminalEnabledChange,
-      onToolGroupingChangesEnabledChange,
-    });
-
-    const exploreSwitch = capturedSwitches.find((item) => item["aria-label"] === "分组探索工具");
-    const terminalSwitch = capturedSwitches.find((item) => item["aria-label"] === "分组终端命令");
-    const changesSwitch = capturedSwitches.find((item) => item["aria-label"] === "分组文件更改");
-
-    expect(exploreSwitch?.checked).toBe(true);
-    expect(terminalSwitch?.checked).toBe(true);
-    expect(changesSwitch?.checked).toBe(false);
-
-    (exploreSwitch?.onCheckedChange as ((checked: boolean) => void) | undefined)?.(false);
-    (terminalSwitch?.onCheckedChange as ((checked: boolean) => void) | undefined)?.(false);
-    (changesSwitch?.onCheckedChange as ((checked: boolean) => void) | undefined)?.(true);
-
-    expect(onToolGroupingExploreEnabledChange).toHaveBeenCalledWith(false);
-    expect(onToolGroupingTerminalEnabledChange).toHaveBeenCalledWith(false);
-    expect(onToolGroupingChangesEnabledChange).toHaveBeenCalledWith(true);
-  });
-
   it("提问自动继续开关读取持久值并写回选择", async () => {
     const onAskUserQuestionAutoResolutionEnabledChange = vi.fn(async () => {});
 
-    await renderGeneralSection({
+    await renderAgentBehaviorSection({
       askUserQuestionAutoResolutionEnabled: false,
       onAskUserQuestionAutoResolutionEnabledChange,
     });

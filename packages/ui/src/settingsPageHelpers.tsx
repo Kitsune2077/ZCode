@@ -819,6 +819,9 @@ export function GeneralSectionContent({
             <DataBaseDirControl
               dataBaseDir={dataBaseDir}
               defaultHomeDir={defaultHomeDir}
+              // fork 便携版：数据根只做进程内注入、不落 setting.json，必须把 host 上报的
+              // effectiveBaseDir 继续传给控件，否则设置页会把便携根误显示为主目录。
+              effectiveBaseDir={effectiveBaseDir}
               onDataBaseDirChange={onDataBaseDirChange}
               onSelectDataBaseDir={onSelectDataBaseDir}
             />
