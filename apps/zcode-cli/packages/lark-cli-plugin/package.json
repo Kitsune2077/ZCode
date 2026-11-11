@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@zcode/lark-cli-plugin",
+  "version": "0.1.2",
+  "private": true,
+  "license": "MIT",
+  "description": "Lark CLI workflows for docs, sheets, Base, calendar, messaging, and other SaaS resources with guided setup and OAuth login."
+}
