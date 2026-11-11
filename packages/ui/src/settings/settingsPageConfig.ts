@@ -1,10 +1,12 @@
 import {
   Archive,
+  Share2,
   Folders,
   Monitor,
   Moon,
   Settings,
   Settings2,
+  SlidersHorizontal,
   Package,
   Bot,
   Palette,
@@ -85,6 +87,12 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     id: "personalization",
     icon: User,
     titleId: "settings.personalization.title",
+    groupId: "agentCapabilities",
+  },
+  {
+    id: "agentBehavior",
+    icon: SlidersHorizontal,
+    titleId: "settings.agentBehavior.title",
     groupId: "agentCapabilities",
   },
   {
@@ -199,9 +207,16 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     titleId: "archives.nav",
     groupId: "dataAndStats",
   },
+  // 分享管理排在归档管理之后，仅桌面端（docs/conversation-share-v1.md「设置页分享管理」）。
+  {
+    id: "shares",
+    icon: Share2,
+    titleId: "conversationShare.manage.nav",
+    groupId: "dataAndStats",
+  },
   // 外部 Agent 历史迁移（Claude Code / OpenCode / DeepSeek Harness）。
-  // 上游曾把该入口注释隐藏（仅保留页面实现）；feat/opencode-session-import 特性
-  // 依赖侧栏导航触达迁移页，合并时按特性分支意图恢复为可见入口。
+  // 上游把该入口注释隐藏（仅保留页面实现）；fork 的会话导入特性
+  // 依赖侧栏导航触达迁移页，合并时按 fork 意图恢复为可见入口。
   {
     id: "migration",
     icon: ArrowLeftRight,
@@ -260,7 +275,11 @@ export const SETTINGS_SECTION_GROUPS = BASE_SETTINGS_SECTION_GROUPS.map((group) 
 export type { SettingsSectionId };
 
 /** 依赖本机 Source Server 管理与设备连接的设置页，Web 与手机远控不显示。 */
-const DESKTOP_ONLY_SETTINGS_SECTIONS = new Set<SettingsSectionId>(["remoteDevices", "dataSync"]);
+const DESKTOP_ONLY_SETTINGS_SECTIONS = new Set<SettingsSectionId>([
+  "remoteDevices",
+  "dataSync",
+  "shares",
+]);
 
 export function isSettingsSectionAvailable(
   section: SettingsSectionId,

@@ -39,6 +39,7 @@ const shouldPrepareMacosWindowBounds = target.os === "darwin";
 // ZCODE_SKIP_LIBREOFFICE_KIT=1 跳过；缺引擎时四个文档插件的转换/渲染/重算走 skill 降级链。
 const localRuntimeScripts = [
   "prepare:agent-bundle",
+  ...(target.os === "win32" ? ["prepare:windows-runtime-host"] : []),
   ...(shouldPrepareWindowsCuaHelper ? ["prepare:windows-cua-helper"] : []),
   ...(nativeSearchReleasePlan.enabled ? ["prepare:native-search"] : []),
   ...(process.env.ZCODE_SKIP_LARK_CLI === "1" ? [] : ["prepare:lark-cli"]),
