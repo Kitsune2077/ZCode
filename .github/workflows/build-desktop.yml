@@ -128,32 +128,43 @@ jobs:
         if: runner.os == 'Linux'
         # electron-builder 的 rpm / pacman 目标需要 rpm 与 bsdtar（libarchive-tools），
         # deb 需要 fakeroot；缺任何一个都会让整个 linux job 失败。
+        #
+        # GitHub runner 的 azure.archive.ubuntu.com 偶发 DNS 不可达（Temporary failure
+        # resolving），且此时 apt-get update 仍会以 0 退出、掩盖失败。策略：
+        #   1) 先用镜像自带索引直接安装（不走 update）；
+        #   2) 失败则探测可用的 Ubuntu 镜像，用独立的 sources.list 重跑（sourceparts 置空，
+        #      绕开 /etc/apt/apt-mirrors.txt 的 file: 间接层）。
         run: |
           set -euo pipefail
           packages=(rpm fakeroot libarchive-tools)
-          apt_install() {
-            sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 "${packages[@]}"
-          }
-          apt_update() {
-            sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
-          }
-          # GitHub 的 azure.archive.ubuntu.com 偶发不可达（大量 Ign + update exit 100）。
-          # runner 镜像自带 apt 索引，先直接安装；失败才更新索引（带重试与官方源回退）。
-          if apt_install; then
+          apt_install() { sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 "$@"; }
+
+          if apt_install "${packages[@]}"; then
             exit 0
           fi
-          echo "::warning::direct install failed; refreshing indexes"
-          updated=0
-          for attempt in 1 2 3; do
-            if apt_update; then updated=1; break; fi
-            echo "::warning::apt update attempt ${attempt} failed"
-            sleep $((attempt * 10))
+
+          echo "::warning::default apt sources unusable; probing mirrors"
+          sources=/etc/apt/zcode-sources.list
+          chosen=""
+          for mirror in             https://mirrors.tuna.tsinghua.edu.cn/ubuntu             https://mirrors.edge.kernel.org/ubuntu             https://mirror.math.princeton.edu/pub/ubuntu             http://archive.ubuntu.com/ubuntu; do
+            if curl -fsI --max-time 15 "$mirror/dists/jammy/Release" >/dev/null; then
+              chosen="$mirror"
+              break
+            fi
           done
-          if [ "$updated" -ne 1 ]; then
-            echo "::warning::falling back to archive.ubuntu.com"
-            sudo sed -i 's|azure\.archive\.ubuntu\.com|archive.ubuntu.com|g'               /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources /etc/apt/apt-mirrors.txt 2>/dev/null || true
+          if [ -z "$chosen" ]; then
+            echo "::error::all Ubuntu mirrors unreachable"
+            exit 1
           fi
-          apt_install
+          echo "::notice::using mirror $chosen"
+          {
+            echo "deb $chosen jammy main restricted universe multiverse"
+            echo "deb $chosen jammy-updates main restricted universe multiverse"
+            echo "deb $chosen jammy-security main restricted universe multiverse"
+          } | sudo tee "$sources" >/dev/null
+          apt_opts=(-o "Dir::Etc::sourcelist=$sources" -o "Dir::Etc::sourceparts=-" -o Acquire::Retries=3)
+          sudo apt-get "${apt_opts[@]}" update
+          sudo apt-get "${apt_opts[@]}" install -y --no-install-recommends "${packages[@]}"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
