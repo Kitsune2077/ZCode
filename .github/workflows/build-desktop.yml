@@ -47,7 +47,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: windows-latest
+          # 3.18 起 Windows 构建需要 CMake + MSVC 生成 Runtime Host；windows-latest
+          # 在 2026 的镜像里没有可用 VS 实例（CMake: could not find any instance of
+          # Visual Studio），固定 windows-2022（自带 VS 2022）避免构建环境漂移。
+          - runner: windows-2022
             label: Windows x64
             target_os: win
             arch: x64
