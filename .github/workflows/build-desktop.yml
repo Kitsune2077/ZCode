@@ -129,7 +129,21 @@ jobs:
         # electron-builder 的 rpm / pacman 目标需要 rpm 与 bsdtar（libarchive-tools），
         # deb 需要 fakeroot；缺任何一个都会让整个 linux job 失败。
         run: |
-          sudo apt-get update
+          set -euo pipefail
+          # GitHub 的 azure.archive.ubuntu.com 偶发不可达（日志表现为大量 Ign +
+          # apt-get update exit 100）。先带重试，仍失败则把源切到 archive.ubuntu.com。
+          apt_update() { sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update; }
+          updated=0
+          for attempt in 1 2 3; do
+            if apt_update; then updated=1; break; fi
+            echo "::warning::apt update attempt ${attempt} failed"
+            sleep $((attempt * 10))
+          done
+          if [ "$updated" -ne 1 ]; then
+            echo "::warning::falling back to archive.ubuntu.com"
+            sudo sed -i 's|azure\.archive\.ubuntu\.com|archive.ubuntu.com|g'               /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/apt-mirrors.txt 2>/dev/null || true
+            apt_update
+          fi
           sudo apt-get install -y --no-install-recommends rpm fakeroot libarchive-tools
 
       - name: Install dependencies
