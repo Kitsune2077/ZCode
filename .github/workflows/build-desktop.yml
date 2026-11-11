@@ -130,9 +130,19 @@ jobs:
         # deb 需要 fakeroot；缺任何一个都会让整个 linux job 失败。
         run: |
           set -euo pipefail
-          # GitHub 的 azure.archive.ubuntu.com 偶发不可达（日志表现为大量 Ign +
-          # apt-get update exit 100）。先带重试，仍失败则把源切到 archive.ubuntu.com。
-          apt_update() { sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update; }
+          packages=(rpm fakeroot libarchive-tools)
+          apt_install() {
+            sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 "${packages[@]}"
+          }
+          apt_update() {
+            sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
+          }
+          # GitHub 的 azure.archive.ubuntu.com 偶发不可达（大量 Ign + update exit 100）。
+          # runner 镜像自带 apt 索引，先直接安装；失败才更新索引（带重试与官方源回退）。
+          if apt_install; then
+            exit 0
+          fi
+          echo "::warning::direct install failed; refreshing indexes"
           updated=0
           for attempt in 1 2 3; do
             if apt_update; then updated=1; break; fi
@@ -141,10 +151,9 @@ jobs:
           done
           if [ "$updated" -ne 1 ]; then
             echo "::warning::falling back to archive.ubuntu.com"
-            sudo sed -i 's|azure\.archive\.ubuntu\.com|archive.ubuntu.com|g'               /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/apt-mirrors.txt 2>/dev/null || true
-            apt_update
+            sudo sed -i 's|azure\.archive\.ubuntu\.com|archive.ubuntu.com|g'               /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources /etc/apt/apt-mirrors.txt 2>/dev/null || true
           fi
-          sudo apt-get install -y --no-install-recommends rpm fakeroot libarchive-tools
+          apt_install
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
