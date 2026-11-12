@@ -159,9 +159,14 @@ export function V4ComposerUsageStatusBar({
   // ---- 权威快照：requestId 不变不刷新到达时间，handoff 才能分辨新旧 ----
   const [completed, setCompleted] = useState<CompletedUsage | null>(null);
   const [isRunning, setIsRunning] = useState(false);
+  const lastSessionIdRef = useRef(sessionId);
   useEffect(() => {
-    // 草稿态（无会话）才清空；查询失败时 hook 已保留旧 detail，这里同样不清空。
-    if (!sessionId) {
+    // 会话切换必须清空：新会话数据未到（以及切到无记录的新任务）时不能沿用
+    // 上一个任务的指标。“!latest 直接 return 保留旧值”只属于**同一会话**的轮询
+    // 失败防闪烁语义，两者必须分开（实测 bug：切换后指标停留在旧任务）。
+    const sessionChanged = lastSessionIdRef.current !== sessionId;
+    lastSessionIdRef.current = sessionId;
+    if (sessionChanged || !sessionId) {
       setCompleted(null);
       setIsRunning(false);
       return;

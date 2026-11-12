@@ -60,6 +60,13 @@ export function useUsageDetail({
   }, [sessionId, workspaceIdentity, workspacePath, zcodeTaskService]);
 
   useEffect(() => {
+    // 会话切换瞬间丢弃旧会话数据：refresh 是异步的，不清的话新数据到达前
+    // （以及切到无记录的新任务时）会一直显示上一个任务的指标（实测 bug）。
+    // 与“轮询失败保留旧值”不冲突：失败走 undefined 哨兵，不经过这里。
+    setDetail(null);
+  }, [sessionId]);
+
+  useEffect(() => {
     void refresh();
   }, [refresh, refreshKey]);
 
