@@ -16,8 +16,8 @@ export interface UseUsageDetailOptions {
 /**
  * 读取 v4/conversation/usageDetail（协议直达 agent SQLite）。
  *
- * 状态条与回复尾行共用同一份查询；查询失败只 warn 并返回 null，展示层如实降级，
- * 不阻塞输入区。
+ * 状态条与回复尾行共用同一份查询；查询失败只 warn 并**保留上一次成功值**——
+ * 轮询失败的瞬间把指标清空会让状态行闪烁消失（实测 bug），降级语义是冻结而不是清零。
  */
 export interface UseUsageDetailResult {
   detail: V4ConversationUsageDetailResult | null;
@@ -40,7 +40,8 @@ export function useUsageDetail({
     const requestSeq = requestSeqRef.current + 1;
     requestSeqRef.current = requestSeq;
 
-    const next: V4ConversationUsageDetailResult | null = sessionId
+    // undefined = 查询失败（保留旧值）；null = 权威无数据（草稿态等，正常清空）。
+    const next: V4ConversationUsageDetailResult | null | undefined = sessionId
       ? await zcodeTaskService
           .getTaskTokenUsageDetail({ taskId: sessionId, workspacePath, workspaceIdentity })
           .catch((error) => {
@@ -48,11 +49,11 @@ export function useUsageDetail({
               sessionId,
               error: error instanceof Error ? error.message : String(error),
             });
-            return null;
+            return undefined;
           })
       : null;
 
-    if (requestSeqRef.current !== requestSeq) {
+    if (requestSeqRef.current !== requestSeq || next === undefined) {
       return;
     }
     setDetail(next);

@@ -124,21 +124,35 @@ export function V4ComposerUsageStatusBar({
   const [completedSnapshot, setCompletedSnapshot] = useState<UsageStatusBarSnapshot | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   useEffect(() => {
-    const latest = model.latest;
-    if (!latest) {
+    // 草稿态（无会话）才清空；查询失败时 hook 已保留旧 detail，这里同样不清空，
+    // 否则轮询失败的瞬间状态行会闪烁消失（实测 bug）。
+    if (!sessionId) {
       setCompletedSnapshot(null);
       setIsRunning(false);
       return;
     }
+    const latest = model.latest;
+    if (!latest) return;
     setIsRunning(isUsageSnapshotRunning(latest));
     if (latest.tokensPerSecond === null && isUsageSnapshotRunning(latest)) {
       return; // 保留上一轮
     }
     setCompletedSnapshot(latest);
-  }, [model.latest]);
+  }, [model.latest, sessionId]);
 
-  const values = streamingRow
+  // 流结束到权威 usage 落库之间有一个空窗（refresh 是异步的）：保留最后一份本地估算，
+  // 冻结显示而不是把整行撤掉；权威数据到达后 completedSnapshot 自然接管。
+  const lastLiveRef = useRef<UsageRowValues | null>(null);
+  const liveValues = streamingRow
     ? buildLiveValues(streamingRow, liveAnchorRef.current)
+    : null;
+  if (liveValues) lastLiveRef.current = liveValues;
+  useEffect(() => {
+    if (!sessionId) lastLiveRef.current = null;
+  }, [sessionId]);
+
+  const values = liveValues
+    ? liveValues
     : completedSnapshot
       ? {
           tokensPerSecond: completedSnapshot.tokensPerSecond,
@@ -149,7 +163,7 @@ export function V4ComposerUsageStatusBar({
           modelId: completedSnapshot.modelId,
           running: isRunning,
         }
-      : null;
+      : lastLiveRef.current;
 
   if (!values) return null;
 
@@ -172,7 +186,7 @@ export function V4ComposerUsageStatusBar({
     <div
       data-testid={TID_V4_USAGE_STATUS_BAR}
       title={tooltip}
-      className="flex min-w-0 items-center gap-2.5 text-ui-xs text-foreground-subtle tabular-nums"
+      className="flex min-w-0 items-center justify-center gap-2.5 text-ui-xs text-foreground-subtle tabular-nums"
     >
       {/* 首 token 到达前不渲染速率段：避免闪一帧 "-- tok/s"；首 token 后 500ms 内也留空。 */}
       {values.tokensPerSecond != null ? (
