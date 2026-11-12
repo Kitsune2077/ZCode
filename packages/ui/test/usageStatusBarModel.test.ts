@@ -4,8 +4,12 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 import type { V4ConversationUsageDetailResult } from "@zcode/shared/zcode-protocol-v4";
 import {
+  advanceStreamingAnchor,
+  buildStreamingLiveValues,
   buildUsageStatusBarModel,
   estimateStreamingOutputTokens,
+  estimateTurnOutputTokens,
+  findLatestTurnActivity,
   findStreamingAssistantText,
   formatCompactTokenCount,
   formatDurationMs,
@@ -91,9 +95,100 @@ test("streaming row lookup takes the last streaming assistant text", () => {
   const found = findStreamingAssistantText(rows);
   assert.equal(found?.turnId, "t2");
   assert.equal(found?.rowId, 2);
-  assert.equal(found?.startedAt, 2);
   assert.equal(findStreamingAssistantText([]), null);
   assert.equal(findStreamingAssistantText(undefined), null);
+});
+
+test("streaming anchor resets speed per segment but keeps turn TTFT", () => {
+  const empty = advanceStreamingAnchor(null, { turnId: "t1", rowId: 1, text: "" }, 1_000);
+  assert.deepEqual(empty, {
+    turnId: "t1",
+    rowId: 1,
+    turnStartedAt: 1_000,
+    firstTokenAt: null,
+    segmentFirstTokenAt: null,
+  });
+  const firstText = advanceStreamingAnchor(empty, { turnId: "t1", rowId: 1, text: "你好" }, 1_200);
+  assert.equal(firstText.firstTokenAt, 1_200);
+  assert.equal(firstText.segmentFirstTokenAt, 1_200);
+  // 工具调用后同轮第二段：TTFT/本轮起点保留，速率起点按新段重置。
+  const secondSegment = advanceStreamingAnchor(
+    firstText,
+    { turnId: "t1", rowId: 5, text: "继续" },
+    9_000,
+  );
+  assert.equal(secondSegment.turnStartedAt, 1_000);
+  assert.equal(secondSegment.firstTokenAt, 1_200);
+  assert.equal(secondSegment.segmentFirstTokenAt, 9_000);
+  // 下一轮重建全部时刻，不继承上一轮任何时间。
+  const nextTurn = advanceStreamingAnchor(
+    secondSegment,
+    { turnId: "t2", rowId: 9, text: "新" },
+    20_000,
+  );
+  assert.equal(nextTurn.turnStartedAt, 20_000);
+  assert.equal(nextTurn.firstTokenAt, 20_000);
+  assert.equal(nextTurn.segmentFirstTokenAt, 20_000);
+});
+
+test("streaming live values use segment time for speed and turn total for output", () => {
+  const anchor = advanceStreamingAnchor(null, { turnId: "t1", rowId: 1, text: "x" }, 1_000);
+  const values = buildStreamingLiveValues({
+    text: "你好世界", // 当前段 4 token，生成 2s
+    turnOutputTokens: 100, // 本轮累计（含工具调用前的段落）
+    anchor,
+    now: 3_000,
+    minGenerationMs: 1_000,
+  });
+  assert.equal(values.tokensPerSecond, 2);
+  assert.equal(values.outputTokens, 100);
+  assert.equal(values.timeToFirstTokenMs, 0);
+  assert.equal(values.durationMs, 2_000);
+  assert.equal(values.generationMs, 2_000);
+  // 样本不足一个 tick：不给速率，避免数字剧烈跳动。
+  const tooShort = buildStreamingLiveValues({
+    text: "你好世界",
+    turnOutputTokens: 100,
+    anchor,
+    now: 1_400,
+    minGenerationMs: 1_000,
+  });
+  assert.equal(tooShort.tokensPerSecond, null);
+});
+
+test("turn output estimate accumulates every assistant text segment of the turn", () => {
+  const rows = [
+    { kind: "assistantText", state: "complete", text: "你好", turnId: "t1", rowId: 1, createdAt: 1 },
+    { kind: "toolCall", turnId: "t1", rowId: 2, createdAt: 2 },
+    { kind: "assistantText", state: "streaming", text: "世界", turnId: "t1", rowId: 3, createdAt: 3 },
+    { kind: "assistantText", state: "complete", text: "别人的", turnId: "t2", rowId: 4, createdAt: 4 },
+  ] as unknown as Parameters<typeof estimateTurnOutputTokens>[0];
+  assert.equal(estimateTurnOutputTokens(rows, "t1"), 4);
+  assert.equal(estimateTurnOutputTokens(rows, "t2"), 3);
+  assert.equal(estimateTurnOutputTokens(undefined, "t1"), 0);
+});
+
+test("latest turn activity comes from the last turn header", () => {
+  const rows = [
+    { kind: "turnHeader", turnId: "t1", rowId: 1, state: "completedSuccess", createdAt: 1 },
+    { kind: "userInput", turnId: "t2", rowId: 2, createdAt: 2 },
+    { kind: "turnHeader", turnId: "t2", rowId: 3, state: "running", createdAt: 3 },
+    { kind: "toolCall", turnId: "t2", rowId: 4, createdAt: 4 },
+  ] as unknown as Parameters<typeof findLatestTurnActivity>[0];
+  // 工具调用空窗期没有流式正文行，但 header 仍是 running：本轮未结束。
+  assert.deepEqual(findLatestTurnActivity(rows), { turnId: "t2", running: true });
+  const completed = [
+    ...rows,
+    { kind: "turnHeader", turnId: "t3", rowId: 5, state: "completedInterrupted", createdAt: 5 },
+  ] as unknown as Parameters<typeof findLatestTurnActivity>[0];
+  assert.deepEqual(findLatestTurnActivity(completed), { turnId: "t3", running: false });
+  // controlOnly 轮没有模型生成，不能因为 state=running 就展示生成中。
+  const controlOnly = [
+    { kind: "turnHeader", turnId: "t9", rowId: 9, state: "running", executionKind: "controlOnly" },
+  ] as unknown as Parameters<typeof findLatestTurnActivity>[0];
+  assert.deepEqual(findLatestTurnActivity(controlOnly), { turnId: "t9", running: false });
+  assert.equal(findLatestTurnActivity([]), null);
+  assert.equal(findLatestTurnActivity(undefined), null);
 });
 
 test("speed tiers split at 70 and 40 tokens per second", () => {

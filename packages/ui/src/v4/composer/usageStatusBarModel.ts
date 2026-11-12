@@ -90,8 +90,6 @@ export interface StreamingAssistantText {
   readonly turnId: string;
   readonly rowId: number;
   readonly text: string;
-  /** 行创建时间（= 本轮开始），作为 TTFT/耗时的锚点。 */
-  readonly startedAt: number;
 }
 
 /** 从 snapshot.rows.window 尾部找当前 streaming 的 assistantText 行。 */
@@ -102,9 +100,142 @@ export function findStreamingAssistantText(
   for (let index = rows.length - 1; index >= 0; index -= 1) {
     const row = rows[index];
     if (!row || row.kind !== "assistantText" || row.state !== "streaming") continue;
-    return { turnId: row.turnId, rowId: row.rowId, text: row.text, startedAt: row.createdAt };
+    return { turnId: row.turnId, rowId: row.rowId, text: row.text };
   }
   return null;
+}
+
+/**
+ * 最近一轮的生成状态（rows 升序，取尾部最后一个 turnHeader）。
+ *
+ * turnHeader 是 projection 的权威轮次边界：已终态的主轮不会被同轮后台工具/子代理行
+ * 重新推成 running。会话级 `control.phase` 还会被 goal verifier 等非本轮工作占住，
+ * 单独用它判断“本轮结束”会让上一轮估算长期停在「生成中」。
+ * executionKind=controlOnly 的轮次没有模型生成，恒为 false。
+ */
+export interface TurnActivity {
+  readonly turnId: string;
+  readonly running: boolean;
+}
+
+export function findLatestTurnActivity(
+  rows: readonly ConversationRow[] | undefined,
+): TurnActivity | null {
+  if (!rows) return null;
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const row = rows[index];
+    if (!row || row.kind !== "turnHeader") continue;
+    return {
+      turnId: row.turnId,
+      running: row.executionKind !== "controlOnly" && row.state === "running",
+    };
+  }
+  return null;
+}
+
+/**
+ * 生成中估算的时钟锚点，全部取渲染进程本地时钟（Date.now）。
+ *
+ * 不能用 row.createdAt：远程 workspace 的 row 时间来自 agent 侧时钟，与本地时钟存在
+ * 未知偏差；两边混用会把 TTFT 算成负数或巨大值（实测远程会话）。
+ */
+export interface StreamingLiveAnchor {
+  readonly turnId: string;
+  /** 当前正文段的 rowId：工具调用会把一轮切成多段，速率必须按段计算。 */
+  readonly rowId: number;
+  /** 本轮首次观察时刻：TTFT 与时长从这里起算。 */
+  readonly turnStartedAt: number;
+  /** 本轮首个 token 的本地时刻。 */
+  readonly firstTokenAt: number | null;
+  /** 当前段首个 token 的本地时刻：速率分母只含本段生成时间。 */
+  readonly segmentFirstTokenAt: number | null;
+}
+
+/**
+ * 推进流式锚点：新轮重建，同轮新段保留 TTFT 但重置速率起点，首个非空正文记录 token 时刻。
+ *
+ * 同轮多段是常态（正文 → 工具 → 正文）；若沿用上一段锚点，速率分子只含本段 token、
+ * 分母却跨过工具执行时间，数字会被系统性算低（实测多段轮次速率明显偏低）。
+ */
+export function advanceStreamingAnchor(
+  previous: StreamingLiveAnchor | null,
+  row: StreamingAssistantText,
+  now: number,
+): StreamingLiveAnchor {
+  const hasText = row.text.trim().length > 0;
+  if (!previous || previous.turnId !== row.turnId) {
+    return {
+      turnId: row.turnId,
+      rowId: row.rowId,
+      turnStartedAt: now,
+      firstTokenAt: hasText ? now : null,
+      segmentFirstTokenAt: hasText ? now : null,
+    };
+  }
+  const segmentFirstTokenAt =
+    previous.rowId === row.rowId
+      ? (previous.segmentFirstTokenAt ?? (hasText ? now : null))
+      : (hasText ? now : null);
+  return {
+    ...previous,
+    rowId: row.rowId,
+    firstTokenAt: previous.firstTokenAt ?? (hasText ? now : null),
+    segmentFirstTokenAt,
+  };
+}
+
+export interface StreamingLiveValues {
+  /** 当前段速率；首 token 后样本不足 minGenerationMs 时为 null（避免数字剧烈跳动）。 */
+  readonly tokensPerSecond: number | null;
+  /** 本轮累计输出估算（含已完成段），不会因工具调用回退。 */
+  readonly outputTokens: number;
+  readonly timeToFirstTokenMs: number | null;
+  readonly durationMs: number;
+  readonly generationMs: number | null;
+}
+
+export function buildStreamingLiveValues(input: {
+  text: string;
+  turnOutputTokens: number;
+  anchor: StreamingLiveAnchor;
+  now: number;
+  minGenerationMs: number;
+}): StreamingLiveValues {
+  const { text, turnOutputTokens, anchor, now, minGenerationMs } = input;
+  const segmentTokens = estimateStreamingOutputTokens(text);
+  const segmentGenerationMs =
+    anchor.segmentFirstTokenAt === null ? null : Math.max(0, now - anchor.segmentFirstTokenAt);
+  return {
+    tokensPerSecond:
+      segmentGenerationMs !== null && segmentGenerationMs >= minGenerationMs && segmentTokens > 0
+        ? segmentTokens / (segmentGenerationMs / 1000)
+        : null,
+    outputTokens: turnOutputTokens,
+    timeToFirstTokenMs:
+      anchor.firstTokenAt === null ? null : Math.max(0, anchor.firstTokenAt - anchor.turnStartedAt),
+    durationMs: Math.max(0, now - anchor.turnStartedAt),
+    generationMs: anchor.firstTokenAt === null ? null : Math.max(0, now - anchor.firstTokenAt),
+  };
+}
+
+/**
+ * 本轮累计输出估算：窗口内同 turnId 的 assistantText 全部计入。
+ *
+ * 输出量按轮累计而不是只看当前段，否则每次工具返回后数字会从 0 重新上涨（实测观感）；
+ * 窗口滚动导致更早的段不在 window 内时可能低估，完成后由权威 outputTokens 覆盖。
+ */
+export function estimateTurnOutputTokens(
+  rows: readonly ConversationRow[] | undefined,
+  turnId: string,
+): number {
+  if (!rows) return 0;
+  let total = 0;
+  for (const row of rows) {
+    if (row.kind === "assistantText" && row.turnId === turnId) {
+      total += estimateStreamingOutputTokens(row.text);
+    }
+  }
+  return total;
 }
 
 const CJK_PATTERN = /[぀-ヿ㐀-䶿一-鿿가-힯豈-﫿]/;

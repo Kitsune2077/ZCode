@@ -1632,6 +1632,7 @@ function ConversationTurnGroupImpl({
               // 回复末尾的用量统计行（仅最新轮，与输入框下方状态条同源）。
               <AssistantReplyUsageLine
                 workspacePath={context.workspacePath}
+                workspaceIdentity={context.workspaceIdentity}
                 sessionId={context.sessionId}
                 refreshKey={unit.turnId}
                 compactForRemoteControl={context.compactForRemoteControl}

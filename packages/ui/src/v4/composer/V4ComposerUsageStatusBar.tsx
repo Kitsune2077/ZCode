@@ -4,8 +4,11 @@ import type { ConversationSnapshot } from "@zcode/shared/zcode-protocol-v4";
 import { Clock, Hash, Timer, Zap } from "lucide-react";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import {
+  advanceStreamingAnchor,
+  buildStreamingLiveValues,
   buildUsageStatusBarModel,
-  estimateStreamingOutputTokens,
+  estimateTurnOutputTokens,
+  findLatestTurnActivity,
   findStreamingAssistantText,
   formatCompactTokenCount,
   formatDurationMs,
@@ -13,6 +16,8 @@ import {
   formatTokensPerSecond,
   isUsageSnapshotRunning,
   resolveGenerationSpeedTier,
+  type StreamingAssistantText,
+  type StreamingLiveAnchor,
   type UsageStatusBarSnapshot,
 } from "./usageStatusBarModel.js";
 import { useUsageDetail } from "./useUsageDetail.js";
@@ -49,8 +54,23 @@ interface UsageRowValues {
   running: boolean;
 }
 
+/** 生成中的本地估算：带会话/轮次归属，切换会话或进入下一轮时旧值立即失效。 */
+interface LiveUsage {
+  sessionId: string | null;
+  turnId: string;
+  values: UsageRowValues;
+}
+
+/** 本轮结束瞬间冻结的估算：保留最后数字但去掉「生成中」，等权威值接管。 */
+interface FrozenUsage {
+  sessionId: string | null;
+  values: UsageRowValues;
+  endedAt: number;
+}
+
 /** 权威快照 + 本地到达时间：handoff 期用它判断“新权威是否已接管”。 */
 interface CompletedUsage {
+  sessionId: string | null;
   snapshot: UsageStatusBarSnapshot;
   arrivedAt: number;
 }
@@ -68,10 +88,15 @@ interface V4ComposerUsageStatusBarProps {
  *
  * 数据源与节奏：
  * - 生成中：投影 snapshot 的 streaming assistantText 行做本地估算，**每 1s 快照进
- *   state**（流式 delta 只更新 ref，不驱动数字），避免显示频率过高。
- * - 流结束 handoff：估算值冻结显示（不带「生成中」标记），并按 1s/3s/8s 重试拉
- *   权威 usage；新请求落库（requestId 变化）即接管。只刷一次不够——落库常慢于
- *   流式行消失，冻结值会长时间停在「生成中」（实测 bug）。
+ *   state**（流式 delta 只更新 ref，不驱动数字），避免显示频率过高。时钟锚点全部
+ *   用渲染进程本地时间，不混用 row.createdAt（远程会话两侧时钟有偏差）。
+ * - 工具调用把一轮切成多段正文：输出量按轮累计，速率只按当前段计算；工具执行期间
+ *   沿用本轮最后一次估算并保持「生成中」，不冻结、不重复拉权威。
+ * - 本轮结束以本轮 turnHeader.state 离开 running 为准（header 不在窗口时退回会话
+ *   phase），而不是“流式行消失”（工具调用期间同样没有流式行）。
+ * - 结束后估算值冻结（不带「生成中」），并按 1s/3s/8s 重试拉权威 usage；新请求落库
+ *   （requestId 变化）即接管。只刷一次不够——落库常慢于流式行消失，冻结值会长时间
+ *   停在「生成中」（实测 bug）。
  * - 权威轮询失败时保留上一次成功值（见 useUsageDetail），不闪烁清空。
  * 无数据（草稿/新会话且未生成）时整行不渲染。
  * 产品规则见 packages/ui/docs/usage-status-bar.md。
@@ -91,125 +116,157 @@ export function V4ComposerUsageStatusBar({
   });
   const model = useMemo(() => buildUsageStatusBarModel({ detail }), [detail]);
 
-  const streamingRow = findStreamingAssistantText(conversationSnapshot?.rows.window);
+  const rows = conversationSnapshot?.rows.window;
+  const streamingRow = findStreamingAssistantText(rows);
   const isStreaming = streamingRow !== null;
 
-  // 每轮首次观察到的首 token 时间：TTFT 与生成速率的分母都从这里起算。
-  const liveAnchorRef = useRef<{
-    turnId: string;
-    startedAt: number;
-    firstTokenAt: number | null;
-  } | null>(null);
+  const liveAnchorRef = useRef<StreamingLiveAnchor | null>(null);
   if (streamingRow) {
-    const anchor = liveAnchorRef.current;
-    if (!anchor || anchor.turnId !== streamingRow.turnId) {
-      liveAnchorRef.current = {
-        turnId: streamingRow.turnId,
-        startedAt: streamingRow.startedAt,
-        firstTokenAt: null,
-      };
-    }
-    // 新锚点也要在同一轮渲染里记录首个 token，否则 TTFT 要等到下一次 tick。
-    const current = liveAnchorRef.current;
-    if (current && current.firstTokenAt === null && streamingRow.text.trim().length > 0) {
-      current.firstTokenAt = Date.now();
-    }
+    liveAnchorRef.current = advanceStreamingAnchor(liveAnchorRef.current, streamingRow, Date.now());
   }
+  // 工具调用空窗期沿用本轮的估算值；本轮结束时（freeze）锚点会被清空。
+  const activeTurnId = streamingRow?.turnId ?? liveAnchorRef.current?.turnId ?? null;
+
+  // 本轮是否仍在生成：优先用本轮 turnHeader（投影的轮次边界），header 不在窗口或
+  // 不属于当前轮时退回会话 phase。工具调用期间没有流式正文行、但 header 仍是 running。
+  const latestTurn = findLatestTurnActivity(rows);
+  const turnRunning =
+    latestTurn !== null && activeTurnId !== null && latestTurn.turnId === activeTurnId
+      ? latestTurn.running
+      : conversationSnapshot?.control.phase === "running";
 
   // ---- 生成中估算：ref 收集最新流式行，tick 时快照进 state ----
-  const streamingRowRef = useRef(streamingRow);
+  const streamingRowRef = useRef<StreamingAssistantText | null>(streamingRow);
   streamingRowRef.current = streamingRow;
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
   const lastLiveRef = useRef<UsageRowValues | null>(null);
-  const [liveValues, setLiveValues] = useState<UsageRowValues | null>(null);
+  const wasTurnActiveRef = useRef(false);
+  const [live, setLive] = useState<LiveUsage | null>(null);
+  const [frozen, setFrozen] = useState<FrozenUsage | null>(null);
+  const [completed, setCompleted] = useState<CompletedUsage | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const lastSessionIdRef = useRef(sessionId);
+
+  // ---- 会话切换：所有派生展示值同步失效，绝不沿用上一任务的指标 ----
+  // 必须先于 freeze/估算 effect 执行：否则会用上一会话的最后估算按新会话冻结一次。
+  useEffect(() => {
+    if (lastSessionIdRef.current === sessionId) return;
+    lastSessionIdRef.current = sessionId;
+    liveAnchorRef.current = null;
+    lastLiveRef.current = null;
+    wasTurnActiveRef.current = false;
+    setLive(null);
+    setFrozen(null);
+    setCompleted(null);
+    setIsRunning(false);
+  }, [sessionId]);
+
   useEffect(() => {
     if (!isStreaming) return;
     const compute = () => {
       const row = streamingRowRef.current;
-      if (!row) return;
-      const values = buildLiveValues(row, liveAnchorRef.current);
+      const anchor = liveAnchorRef.current;
+      if (!row || !anchor) return;
+      const next = buildStreamingLiveValues({
+        text: row.text,
+        turnOutputTokens: estimateTurnOutputTokens(rowsRef.current, row.turnId),
+        anchor,
+        now: Date.now(),
+        minGenerationMs: STREAMING_TICK_MS,
+      });
+      const values: UsageRowValues = {
+        ...next,
+        // 同一轮的新正文段首秒样本不足：沿用上一段最后速率，避免速率段闪空一下
+        // 导致整行宽度跳动。新段满 1s 后自然切换为本段实测值。
+        tokensPerSecond: next.tokensPerSecond ?? lastLiveRef.current?.tokensPerSecond ?? null,
+        modelId: "",
+        running: true,
+      };
       lastLiveRef.current = values;
-      setLiveValues(values);
+      setLive({ sessionId, turnId: row.turnId, values });
     };
     compute();
     const timer = window.setInterval(compute, STREAMING_TICK_MS);
     return () => window.clearInterval(timer);
-  }, [isStreaming]);
+  }, [isStreaming, sessionId]);
 
   // ---- 流结束 handoff：冻结估算（去掉「生成中」标记）+ 重试拉权威 ----
-  const [frozen, setFrozen] = useState<{ values: UsageRowValues; endedAt: number } | null>(null);
-  const wasStreamingRef = useRef(false);
   useEffect(() => {
-    if (wasStreamingRef.current && !isStreaming) {
+    const turnActive = isStreaming || turnRunning;
+    if (wasTurnActiveRef.current && !turnActive) {
       if (lastLiveRef.current) {
-        // 流式行已消失 = 生成已结束：冻结值不再标「生成中」。
-        setFrozen({ values: { ...lastLiveRef.current, running: false }, endedAt: Date.now() });
+        // 本轮结束：冻结值不再标「生成中」。
+        setFrozen({
+          sessionId,
+          values: { ...lastLiveRef.current, running: false },
+          endedAt: Date.now(),
+        });
       }
+      // 清掉锚点：下一轮若以工具调用开场（尚无正文行），不能复用上一轮的估算。
+      liveAnchorRef.current = null;
+      lastLiveRef.current = null;
       void refresh();
       const timers = HANDOFF_REFRESH_DELAYS_MS.map((delay) =>
         window.setTimeout(() => void refresh(), delay),
       );
-      wasStreamingRef.current = isStreaming;
+      wasTurnActiveRef.current = false;
       return () => {
         for (const timer of timers) window.clearTimeout(timer);
       };
     }
-    wasStreamingRef.current = isStreaming;
-  }, [isStreaming, refresh]);
+    wasTurnActiveRef.current = turnActive;
+  }, [isStreaming, turnRunning, refresh, sessionId]);
 
   // ---- 权威快照：requestId 不变不刷新到达时间，handoff 才能分辨新旧 ----
-  const [completed, setCompleted] = useState<CompletedUsage | null>(null);
-  const [isRunning, setIsRunning] = useState(false);
-  const lastSessionIdRef = useRef(sessionId);
   useEffect(() => {
-    // 会话切换必须清空：新会话数据未到（以及切到无记录的新任务）时不能沿用
-    // 上一个任务的指标。“!latest 直接 return 保留旧值”只属于**同一会话**的轮询
-    // 失败防闪烁语义，两者必须分开（实测 bug：切换后指标停留在旧任务）。
-    const sessionChanged = lastSessionIdRef.current !== sessionId;
-    lastSessionIdRef.current = sessionId;
-    if (sessionChanged || !sessionId) {
-      setCompleted(null);
+    const latest = model.latest;
+    if (!latest) {
       setIsRunning(false);
       return;
     }
-    const latest = model.latest;
-    if (!latest) return;
     setIsRunning(isUsageSnapshotRunning(latest));
     if (latest.tokensPerSecond === null && isUsageSnapshotRunning(latest)) {
       return; // 请求进行中且速率不可算：保留上一份权威
     }
     setCompleted((prev) =>
-      prev?.snapshot.requestId === latest.requestId
+      prev?.sessionId === sessionId && prev.snapshot.requestId === latest.requestId
         ? prev
-        : { snapshot: latest, arrivedAt: Date.now() },
+        : { sessionId, snapshot: latest, arrivedAt: Date.now() },
     );
   }, [model.latest, sessionId]);
 
-  // 会话切换：清掉上一会话的估算与冻结值。
-  useEffect(() => {
-    setLiveValues(null);
-    setFrozen(null);
-    lastLiveRef.current = null;
-  }, [sessionId]);
-
   // ---- 合成展示值 ----
-  const authorityValues = completed
+  const ownedLive =
+    live && live.sessionId === sessionId && activeTurnId !== null && live.turnId === activeTurnId
+      ? live.values
+      : null;
+  const liveValues = ownedLive && (isStreaming || turnRunning) ? ownedLive : null;
+
+  const ownedFrozen = frozen && frozen.sessionId === sessionId ? frozen : null;
+  const ownedCompleted = completed && completed.sessionId === sessionId ? completed : null;
+  const authorityValues: UsageRowValues | null = ownedCompleted
     ? {
-        tokensPerSecond: completed.snapshot.tokensPerSecond,
-        outputTokens: completed.snapshot.outputTokens,
-        timeToFirstTokenMs: completed.snapshot.timeToFirstTokenMs,
-        durationMs: completed.snapshot.durationMs,
-        generationMs: completed.snapshot.generationMs,
-        modelId: completed.snapshot.modelId,
-        running: isRunning,
+        tokensPerSecond: ownedCompleted.snapshot.tokensPerSecond,
+        outputTokens: ownedCompleted.snapshot.outputTokens,
+        timeToFirstTokenMs: ownedCompleted.snapshot.timeToFirstTokenMs,
+        durationMs: ownedCompleted.snapshot.durationMs,
+        generationMs: ownedCompleted.snapshot.generationMs,
+        modelId: ownedCompleted.snapshot.modelId,
+        // 会话已不在 running 时，即便权威记录里仍是 running 也不再标「生成中」
+        // （落库滞后会把「生成完毕仍提示生成中」重现）。
+        running: isRunning && turnRunning,
       }
     : null;
-  const values = isStreaming
-    ? liveValues
-    : frozen && completed && completed.arrivedAt >= frozen.endedAt
-      ? authorityValues
-      : frozen
-        ? frozen.values
-        : authorityValues;
+
+  let values: UsageRowValues | null;
+  if (liveValues) {
+    values = liveValues;
+  } else if (ownedFrozen && (!ownedCompleted || ownedCompleted.arrivedAt < ownedFrozen.endedAt)) {
+    values = ownedFrozen.values;
+  } else {
+    values = authorityValues ?? ownedFrozen?.values ?? null;
+  }
 
   if (!values) return null;
 
@@ -289,29 +346,4 @@ export function V4ComposerUsageStatusBar({
       ) : null}
     </div>
   );
-}
-
-/** 生成中的本地估算：token 由正文长度推算，速率从首个 token 起算。 */
-function buildLiveValues(
-  row: { text: string; startedAt: number },
-  anchor: { startedAt: number; firstTokenAt: number | null } | null,
-): UsageRowValues {
-  const now = Date.now();
-  const outputTokens = estimateStreamingOutputTokens(row.text);
-  const startedAt = anchor?.startedAt ?? row.startedAt;
-  const firstTokenAt = anchor?.firstTokenAt ?? null;
-  const generationMs = firstTokenAt === null ? null : Math.max(0, now - firstTokenAt);
-  return {
-    // 首 token 后不足一个 tick 时样本太短，先不显示速率，避免数字剧烈跳动。
-    tokensPerSecond:
-      generationMs !== null && generationMs >= STREAMING_TICK_MS
-        ? outputTokens / (generationMs / 1000)
-        : null,
-    outputTokens,
-    timeToFirstTokenMs: firstTokenAt === null ? null : Math.max(0, firstTokenAt - startedAt),
-    durationMs: Math.max(0, now - startedAt),
-    generationMs,
-    modelId: "",
-    running: true,
-  };
 }

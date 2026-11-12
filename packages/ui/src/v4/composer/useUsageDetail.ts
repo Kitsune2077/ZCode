@@ -33,7 +33,12 @@ export function useUsageDetail({
   refreshKey,
 }: UseUsageDetailOptions): UseUsageDetailResult {
   const { zcodeTaskService } = useServices();
-  const [detail, setDetail] = useState<V4ConversationUsageDetailResult | null>(null);
+  // 会话 id 与数据一起存：切换会话瞬间就返回 null，而不是等 effect 清空后的一帧——
+  // 那一帧会把上一任务的指标显示在新会话上（实测切换残留）。
+  const [state, setState] = useState<{
+    sessionId: string | null;
+    detail: V4ConversationUsageDetailResult | null;
+  }>({ sessionId: sessionId ?? null, detail: null });
   const requestSeqRef = useRef(0);
 
   const refresh = useCallback(async () => {
@@ -56,15 +61,8 @@ export function useUsageDetail({
     if (requestSeqRef.current !== requestSeq || next === undefined) {
       return;
     }
-    setDetail(next);
+    setState({ sessionId: sessionId ?? null, detail: next });
   }, [sessionId, workspaceIdentity, workspacePath, zcodeTaskService]);
-
-  useEffect(() => {
-    // 会话切换瞬间丢弃旧会话数据：refresh 是异步的，不清的话新数据到达前
-    // （以及切到无记录的新任务时）会一直显示上一个任务的指标（实测 bug）。
-    // 与“轮询失败保留旧值”不冲突：失败走 undefined 哨兵，不经过这里。
-    setDetail(null);
-  }, [sessionId]);
 
   useEffect(() => {
     void refresh();
@@ -81,5 +79,5 @@ export function useUsageDetail({
     return () => window.clearInterval(timer);
   }, [pollIntervalMs, refresh]);
 
-  return { detail, refresh };
+  return { detail: state.sessionId === (sessionId ?? null) ? state.detail : null, refresh };
 }
