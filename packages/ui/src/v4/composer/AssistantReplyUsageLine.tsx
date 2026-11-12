@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { TID_ASSISTANT_USAGE_LINE } from "@zcode/shared";
-import { Separator } from "@/components/ui/separator.js";
+import { Zap } from "lucide-react";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import {
   buildUsageStatusBarModel,
@@ -18,6 +18,15 @@ const SPEED_TIER_CLASS: Record<ReturnType<typeof resolveGenerationSpeedTier>, st
   slow: "text-destructive",
 };
 
+/** 与插件回答末尾统计行同款弱分隔：中文用 ·，保持单行轻量。 */
+function Dot() {
+  return (
+    <span aria-hidden="true" className="text-foreground-subtlest">
+      ·
+    </span>
+  );
+}
+
 interface AssistantReplyUsageLineProps {
   workspacePath: string;
   workspaceIdentity?: string;
@@ -30,9 +39,10 @@ interface AssistantReplyUsageLineProps {
 /**
  * 回复末尾的用量统计行（仅最新轮）。
  *
- * 与输入框下方的状态条同源（v4/conversation/usageDetail），不额外引入协议字段；
- * 只在终态渲染，避免把进行中的半成品数字当成结论。产品规则见
- * packages/ui/docs/usage-status-bar.md。
+ * 对齐社区插件的「回答末尾速率行」：⚡ 速率（本轮）· 首字 · 输出 token · 生成时长。
+ * 与输入卡底部的状态条同源（v4/conversation/usageDetail），不引入新协议字段；
+ * 只在终态渲染，避免把进行中的半成品数字当成结论。
+ * 产品规则见 packages/ui/docs/usage-status-bar.md。
  */
 export function AssistantReplyUsageLine({
   workspacePath,
@@ -60,26 +70,36 @@ export function AssistantReplyUsageLine({
     snapshot.tokensPerSecond != null
       ? formatTokensPerSecond(locale, snapshot.tokensPerSecond)
       : null;
-  const ttft = formatDurationMs(locale, snapshot.timeToFirstTokenMs);
-  const duration = formatDurationMs(locale, snapshot.durationMs);
 
   return (
     <div
       data-testid={TID_ASSISTANT_USAGE_LINE}
       className={
         compactForRemoteControl
-          ? "mt-1 flex flex-wrap items-center gap-2 text-ui-xs text-foreground-subtle tabular-nums"
-          : "mt-1 flex flex-wrap items-center gap-2 text-ui-xs text-foreground-subtle tabular-nums opacity-80"
+          ? "mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-ui-xs text-foreground-subtle tabular-nums"
+          : "mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-ui-xs text-foreground-subtle tabular-nums opacity-85"
       }
     >
+      <Zap className="size-3 shrink-0 text-foreground-subtlest" aria-hidden="true" />
       {speed !== null ? (
         <span className={speedTier ? SPEED_TIER_CLASS[speedTier] : undefined}>
-          {intl.formatMessage({ id: "chat.message.usage.speed" }, { value: speed })}
+          {intl.formatMessage({ id: "chat.message.usage.speedInTurn" }, { value: speed })}
         </span>
+      ) : null}
+      {snapshot.timeToFirstTokenMs != null ? (
+        <>
+          <Dot />
+          <span>
+            {intl.formatMessage(
+              { id: "chat.message.usage.ttft" },
+              { value: formatDurationMs(locale, snapshot.timeToFirstTokenMs) ?? "--" },
+            )}
+          </span>
+        </>
       ) : null}
       {snapshot.outputTokens > 0 ? (
         <>
-          <Separator orientation="vertical" className="h-3" />
+          <Dot />
           <span>
             {intl.formatMessage(
               { id: "chat.message.usage.tokens" },
@@ -88,17 +108,14 @@ export function AssistantReplyUsageLine({
           </span>
         </>
       ) : null}
-      {ttft !== null ? (
+      {snapshot.durationMs != null ? (
         <>
-          <Separator orientation="vertical" className="h-3" />
-          <span>{intl.formatMessage({ id: "chat.message.usage.ttft" }, { value: ttft })}</span>
-        </>
-      ) : null}
-      {duration !== null ? (
-        <>
-          <Separator orientation="vertical" className="h-3" />
+          <Dot />
           <span>
-            {intl.formatMessage({ id: "chat.message.usage.duration" }, { value: duration })}
+            {intl.formatMessage(
+              { id: "chat.message.usage.duration" },
+              { value: formatDurationMs(locale, snapshot.durationMs) ?? "--" },
+            )}
           </span>
         </>
       ) : null}

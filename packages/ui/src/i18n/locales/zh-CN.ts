@@ -5091,6 +5091,7 @@ const zhCN: Record<string, string> = {
   "composer.usage.statusBar.tooltip":
     "最近一次请求：{model} · 输出 {output} tokens · 首字 {ttft} · 总耗时 {duration} · 生成耗时 {generation}",
   "chat.message.usage.speed": "{value} tok/s",
+  "chat.message.usage.speedInTurn": "{value} tok/s（本轮）",
   "chat.message.usage.tokens": "{value} tokens",
   "chat.message.usage.ttft": "TTFT {value}",
   "chat.message.usage.duration": "{value}",

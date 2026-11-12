@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { TID_V4_USAGE_STATUS_BAR } from "@zcode/shared";
-import { Separator } from "@/components/ui/separator.js";
+import { Clock, Hash, Timer, Zap } from "lucide-react";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import {
   buildUsageStatusBarModel,
@@ -23,19 +23,23 @@ const SPEED_TIER_CLASS: Record<ReturnType<typeof resolveGenerationSpeedTier>, st
   slow: "text-destructive",
 };
 
+/** 段间分隔：与插件一致用细分隔线，而不是圆点/竖线字符。 */
+function SegmentDivider() {
+  return <span aria-hidden="true" className="h-3 w-px shrink-0 self-center bg-border/70" />;
+}
+
 interface V4ComposerUsageStatusBarProps {
   workspacePath: string;
   workspaceIdentity?: string;
-  /** 草稿态为 null：无会话时保留占位，不隐藏。 */
   sessionId: string | null;
 }
 
 /**
- * 输入框下方的常驻用量状态条（药丸形态）。
+ * 嵌在输入卡底部的用量状态行（与社区插件形态对齐）。
  *
- * 指标：速率（首 token → 完成口径）/ 输出 token / TTFT / 生成时长。会话与今日等累计
- * 刻意不在这里展示——左侧 ChatContextUsage 圆环与设置 → 用量页已承担该职责。
- * 请求进行中保留上一轮已完成指标并标注「生成中」，不会闪退成空。
+ * 指标：速率（首 token → 完成口径）/ 输出 token / TTFT / 生成时长，每段带弱化
+ * 图标；无快照（草稿态、新会话）时整行不渲染，避免出现 `-- tok/s | -- | --` 的噪声。
+ * 请求进行中保留上一轮已完成指标并标注「生成中」。
  * 产品规则见 packages/ui/docs/usage-status-bar.md。
  */
 export function V4ComposerUsageStatusBar({
@@ -69,75 +73,86 @@ export function V4ComposerUsageStatusBar({
     setSnapshot(latest);
   }, [model.latest]);
 
+  if (!snapshot) return null;
+
   const speedTier =
-    snapshot?.tokensPerSecond != null
+    snapshot.tokensPerSecond != null
       ? resolveGenerationSpeedTier(snapshot.tokensPerSecond)
       : null;
-  const empty = intl.formatMessage({ id: "composer.usage.statusBar.empty" });
-  const speedText =
-    snapshot?.tokensPerSecond != null
-      ? formatTokensPerSecond(locale, snapshot.tokensPerSecond)
-      : empty;
-  const tokenText =
-    snapshot && snapshot.outputTokens > 0
-      ? intl.formatMessage(
-          { id: "composer.usage.statusBar.tokens" },
-          { value: formatCompactTokenCount(locale, snapshot.outputTokens) },
-        )
-      : empty;
-  const ttftText =
-    snapshot?.timeToFirstTokenMs != null
-      ? intl.formatMessage(
-          { id: "composer.usage.statusBar.ttft" },
-          { value: formatDurationMs(locale, snapshot.timeToFirstTokenMs) ?? empty },
-        )
-      : empty;
-  const durationText =
-    snapshot?.durationMs != null
-      ? intl.formatMessage(
-          { id: "composer.usage.statusBar.duration" },
-          { value: formatDurationMs(locale, snapshot.durationMs) ?? empty },
-        )
-      : empty;
-
-  const tooltip = snapshot
-    ? intl.formatMessage(
-        { id: "composer.usage.statusBar.tooltip" },
-        {
-          model: snapshot.modelId,
-          output: formatFullTokenCount(locale, snapshot.outputTokens),
-          ttft: formatDurationMs(locale, snapshot.timeToFirstTokenMs) ?? empty,
-          duration: formatDurationMs(locale, snapshot.durationMs) ?? empty,
-          generation: formatDurationMs(locale, snapshot.generationMs) ?? empty,
-        },
-      )
-    : undefined;
+  const speed = formatTokensPerSecond(locale, snapshot.tokensPerSecond ?? 0);
+  const tooltip = intl.formatMessage(
+    { id: "composer.usage.statusBar.tooltip" },
+    {
+      model: snapshot.modelId,
+      output: formatFullTokenCount(locale, snapshot.outputTokens),
+      ttft: formatDurationMs(locale, snapshot.timeToFirstTokenMs) ?? "--",
+      duration: formatDurationMs(locale, snapshot.durationMs) ?? "--",
+      generation: formatDurationMs(locale, snapshot.generationMs) ?? "--",
+    },
+  );
 
   return (
     <div
       data-testid={TID_V4_USAGE_STATUS_BAR}
-      className="mt-1.5 flex w-full justify-center"
       title={tooltip}
+      className="flex min-w-0 items-center gap-2.5 text-ui-xs text-foreground-subtle tabular-nums"
     >
-      <div className="inline-flex h-6 max-w-full items-center gap-2 overflow-hidden rounded-full border border-border/70 bg-surface/60 px-3 text-ui-xs text-foreground-subtle tabular-nums">
-        <span className={speedTier ? SPEED_TIER_CLASS[speedTier] : undefined}>
-          {speedText}
-          <span className="ml-1 text-foreground-subtlest">
+      {snapshot.tokensPerSecond != null ? (
+        <span
+          className={`flex shrink-0 items-center gap-1 ${SPEED_TIER_CLASS[speedTier!]}`}
+        >
+          <Zap className="size-3 shrink-0" aria-hidden="true" />
+          <span>{speed}</span>
+          <span className="text-foreground-subtlest">
             {intl.formatMessage({ id: "composer.usage.speedUnit" })}
           </span>
         </span>
-        <Separator orientation="vertical" className="h-3" />
-        <span className="shrink-0">{ttftText}</span>
-        <Separator orientation="vertical" className="hidden h-3 sm:block" />
-        <span className="hidden shrink-0 sm:inline">{tokenText}</span>
-        <Separator orientation="vertical" className="hidden h-3 md:block" />
-        <span className="hidden shrink-0 md:inline">{durationText}</span>
-        {isRunning ? (
-          <span className="shrink-0 text-foreground-subtlest">
-            {intl.formatMessage({ id: "composer.usage.statusBar.running" })}
-          </span>
-        ) : null}
-      </div>
+      ) : (
+        <span className="flex shrink-0 items-center gap-1 text-foreground-subtlest">
+          <Zap className="size-3 shrink-0" aria-hidden="true" />
+          <span>{intl.formatMessage({ id: "composer.usage.statusBar.empty" })}</span>
+        </span>
+      )}
+
+      <SegmentDivider />
+      <span className="flex shrink-0 items-center gap-1">
+        <Hash className="size-3 shrink-0 text-foreground-subtlest" aria-hidden="true" />
+        <span>
+          {intl.formatMessage(
+            { id: "composer.usage.statusBar.tokens" },
+            { value: formatCompactTokenCount(locale, snapshot.outputTokens) },
+          )}
+        </span>
+      </span>
+
+      <SegmentDivider />
+      <span className="flex shrink-0 items-center gap-1">
+        <Timer className="size-3 shrink-0 text-foreground-subtlest" aria-hidden="true" />
+        <span>
+          {intl.formatMessage(
+            { id: "composer.usage.statusBar.ttft" },
+            { value: formatDurationMs(locale, snapshot.timeToFirstTokenMs) ?? "--" },
+          )}
+        </span>
+      </span>
+
+      <SegmentDivider />
+      <span className="flex shrink-0 items-center gap-1">
+        <Clock className="size-3 shrink-0 text-foreground-subtlest" aria-hidden="true" />
+        <span>
+          {intl.formatMessage(
+            { id: "composer.usage.statusBar.duration" },
+            { value: formatDurationMs(locale, snapshot.durationMs) ?? "--" },
+          )}
+        </span>
+      </span>
+
+      {isRunning ? (
+        <span className="ml-0.5 flex shrink-0 items-center gap-1 text-foreground-subtlest">
+          <span className="size-1.5 animate-pulse rounded-full bg-current" aria-hidden="true" />
+          {intl.formatMessage({ id: "composer.usage.statusBar.running" })}
+        </span>
+      ) : null}
     </div>
   );
 }

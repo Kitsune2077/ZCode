@@ -67,6 +67,7 @@ export function ChatPromptEditor({
   attachmentAction,
   betweenCancelAndSubmitAction,
   submitControl,
+  statusBar,
   inputTestId,
   submitTestId,
   cancelTestId,
@@ -132,6 +133,8 @@ export function ChatPromptEditor({
   /** 行内编辑专用：固定插在取消与主提交之间的第二动作。 */
   betweenCancelAndSubmitAction?: ReactNode;
   submitControl?: ReactNode;
+  /** 嵌在输入卡底部的状态行（用量统计等）；为空时不占位。 */
+  statusBar?: ReactNode;
   inputTestId?: string;
   submitTestId?: string;
   cancelTestId?: string;
@@ -503,6 +506,18 @@ export function ChatPromptEditor({
             )}
           </div>
         </div>
+        {statusBar ? (
+          // 底行状态条与插件一致：卡片圆角内、工具行之下，不加分隔线；
+          // 负外边距抵消卡片 p-3，让统计行与输入区左右对齐。
+          <div
+            className={cn(
+              "composer-status-bar",
+              isInline ? "basis-full pt-1.5" : "-mx-3 -mb-3 px-3 pb-1.5 pt-1",
+            )}
+          >
+            {statusBar}
+          </div>
+        ) : null}
       </div>
     </form>
   );

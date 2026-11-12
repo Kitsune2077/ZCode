@@ -5418,6 +5418,7 @@ const enUS: Record<string, string> = {
   "composer.usage.statusBar.tooltip":
     "Latest request: {model} · {output} output tokens · TTFT {ttft} · total {duration} · generation {generation}",
   "chat.message.usage.speed": "{value} tok/s",
+  "chat.message.usage.speedInTurn": "{value} tok/s (this turn)",
   "chat.message.usage.tokens": "{value} tokens",
   "chat.message.usage.ttft": "TTFT {value}",
   "chat.message.usage.duration": "{value}",
