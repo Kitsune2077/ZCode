@@ -3057,6 +3057,7 @@ function ConversationComposerImpl({
               workspacePath={workspacePath}
               workspaceIdentity={workspaceIdentity}
               sessionId={sessionId}
+              snapshot={snapshot}
             />
           }
           layout={layout}

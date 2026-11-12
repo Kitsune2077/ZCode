@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { TID_ASSISTANT_USAGE_LINE } from "@zcode/shared";
 import { Zap } from "lucide-react";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -52,12 +52,23 @@ export function AssistantReplyUsageLine({
   compactForRemoteControl = false,
 }: AssistantReplyUsageLineProps) {
   const { intl, locale } = useZCodeIntl();
-  const detail = useUsageDetail({
+  const { detail, refresh } = useUsageDetail({
     sessionId,
     workspacePath,
     workspaceIdentity,
     refreshKey,
   });
+
+  // 轮次刚结束时 usage 行可能还在落库：首屏没拿到就短重试几次，避免整行永远不出现。
+  useEffect(() => {
+    if (detail?.latestRequest) return;
+    const timers = [1_000, 3_000, 8_000].map((delay) =>
+      window.setTimeout(() => void refresh(), delay),
+    );
+    return () => {
+      for (const timer of timers) window.clearTimeout(timer);
+    };
+  }, [detail, refresh]);
   const model = useMemo(() => buildUsageStatusBarModel({ detail }), [detail]);
   const snapshot = model.latest;
   if (!snapshot || isUsageSnapshotRunning(snapshot)) return null;

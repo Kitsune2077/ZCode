@@ -19,13 +19,19 @@ export interface UseUsageDetailOptions {
  * 状态条与回复尾行共用同一份查询；查询失败只 warn 并返回 null，展示层如实降级，
  * 不阻塞输入区。
  */
+export interface UseUsageDetailResult {
+  detail: V4ConversationUsageDetailResult | null;
+  /** 立即重取一次（生成结束、权威 usage 刚落库时用，避免等下一个轮询窗口）。 */
+  refresh: () => Promise<void>;
+}
+
 export function useUsageDetail({
   sessionId,
   workspacePath,
   workspaceIdentity,
   pollIntervalMs = 0,
   refreshKey,
-}: UseUsageDetailOptions): V4ConversationUsageDetailResult | null {
+}: UseUsageDetailOptions): UseUsageDetailResult {
   const { zcodeTaskService } = useServices();
   const [detail, setDetail] = useState<V4ConversationUsageDetailResult | null>(null);
   const requestSeqRef = useRef(0);
@@ -67,5 +73,5 @@ export function useUsageDetail({
     return () => window.clearInterval(timer);
   }, [pollIntervalMs, refresh]);
 
-  return detail;
+  return { detail, refresh };
 }

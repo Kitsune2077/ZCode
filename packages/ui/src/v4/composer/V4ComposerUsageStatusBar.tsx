@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TID_V4_USAGE_STATUS_BAR } from "@zcode/shared";
+import type { ConversationSnapshot } from "@zcode/shared/zcode-protocol-v4";
 import { Clock, Hash, Timer, Zap } from "lucide-react";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import {
   buildUsageStatusBarModel,
+  estimateStreamingOutputTokens,
+  findStreamingAssistantText,
   formatCompactTokenCount,
   formatDurationMs,
   formatFullTokenCount,
@@ -16,6 +19,8 @@ import { useUsageDetail } from "./useUsageDetail.js";
 
 /** 轮询间隔：轮次结束后聚合落库通常在秒级，10s 足够“常驻但不吵”。 */
 const USAGE_STATUS_BAR_POLL_INTERVAL_MS = 10_000;
+/** 生成中的刷新节奏：只驱动本地估算，不额外请求后端。 */
+const STREAMING_TICK_MS = 500;
 
 const SPEED_TIER_CLASS: Record<ReturnType<typeof resolveGenerationSpeedTier>, string> = {
   fast: "text-success",
@@ -28,27 +33,44 @@ function SegmentDivider() {
   return <span aria-hidden="true" className="h-3 w-px shrink-0 self-center bg-border/70" />;
 }
 
+/** 状态行展示值；来源可以是“完成后的权威 value”或“生成中的本地估算”。 */
+interface UsageRowValues {
+  tokensPerSecond: number | null;
+  outputTokens: number;
+  timeToFirstTokenMs: number | null;
+  durationMs: number | null;
+  generationMs: number | null;
+  modelId: string;
+  running: boolean;
+}
+
 interface V4ComposerUsageStatusBarProps {
   workspacePath: string;
   workspaceIdentity?: string;
   sessionId: string | null;
+  /** v4 投影快照：生成中的 assistantText 行用于实时估算（只读，不写事实）。 */
+  snapshot?: ConversationSnapshot | null;
 }
 
 /**
  * 嵌在输入卡底部的用量状态行（与社区插件形态对齐）。
  *
- * 指标：速率（首 token → 完成口径）/ 输出 token / TTFT / 生成时长，每段带弱化
- * 图标；无快照（草稿态、新会话）时整行不渲染，避免出现 `-- tok/s | -- | --` 的噪声。
- * 请求进行中保留上一轮已完成指标并标注「生成中」。
+ * 两段数据源：
+ * - 生成中：从投影 snapshot 的 streaming assistantText 行做本地估算（CJK 1 字≈1 token，
+ *   其余 4 字符≈1 token），每 500ms 刷新一次；不含思考/工具 token。
+ * - 完成后：切到 usageDetail 的权威值（outputTokens/generationMs/TTFT），并在流结束后
+ *   立即触发一次刷新，避免等 10s 轮询。
+ * 无数据（草稿/新会话且未生成）时整行不渲染。
  * 产品规则见 packages/ui/docs/usage-status-bar.md。
  */
 export function V4ComposerUsageStatusBar({
   workspacePath,
   workspaceIdentity,
   sessionId,
+  snapshot: conversationSnapshot,
 }: V4ComposerUsageStatusBarProps) {
   const { intl, locale } = useZCodeIntl();
-  const detail = useUsageDetail({
+  const { detail, refresh } = useUsageDetail({
     sessionId,
     workspacePath,
     workspaceIdentity,
@@ -56,13 +78,55 @@ export function V4ComposerUsageStatusBar({
   });
   const model = useMemo(() => buildUsageStatusBarModel({ detail }), [detail]);
 
-  // 进行中的请求没有生成时长（速率不可算）：保留上一轮已完成快照，避免状态条抖动。
-  const [snapshot, setSnapshot] = useState<UsageStatusBarSnapshot | null>(null);
+  const streamingRow = findStreamingAssistantText(conversationSnapshot?.rows.window);
+  const isStreaming = streamingRow !== null;
+
+  // 生成中每 500ms 重渲染一次，驱动速率/耗时走表；仅本地计算。
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!isStreaming) return;
+    const timer = window.setInterval(() => setTick((tick) => tick + 1), STREAMING_TICK_MS);
+    return () => window.clearInterval(timer);
+  }, [isStreaming]);
+
+  // 每轮首次观察到的首 token 时间：TTFT 与生成速率的分母都从这里起算。
+  const liveAnchorRef = useRef<{
+    turnId: string;
+    startedAt: number;
+    firstTokenAt: number | null;
+  } | null>(null);
+  if (streamingRow) {
+    const anchor = liveAnchorRef.current;
+    if (!anchor || anchor.turnId !== streamingRow.turnId) {
+      liveAnchorRef.current = {
+        turnId: streamingRow.turnId,
+        startedAt: streamingRow.startedAt,
+        firstTokenAt: null,
+      };
+    }
+    // 新锚点也要在同一轮渲染里记录首个 token，否则 TTFT 要等到下一次 tick。
+    const current = liveAnchorRef.current;
+    if (current && current.firstTokenAt === null && streamingRow.text.trim().length > 0) {
+      current.firstTokenAt = Date.now();
+    }
+  }
+
+  // 流结束立刻取一次权威用量，避免“刚完成时行消失、10s 后才回来”。
+  const wasStreamingRef = useRef(false);
+  useEffect(() => {
+    if (wasStreamingRef.current && !isStreaming) {
+      void refresh();
+    }
+    wasStreamingRef.current = isStreaming;
+  }, [isStreaming, refresh]);
+
+  // 完成后的权威快照：进行中的请求没有 generationMs，保留上一轮避免抖动。
+  const [completedSnapshot, setCompletedSnapshot] = useState<UsageStatusBarSnapshot | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   useEffect(() => {
     const latest = model.latest;
     if (!latest) {
-      setSnapshot(null);
+      setCompletedSnapshot(null);
       setIsRunning(false);
       return;
     }
@@ -70,24 +134,37 @@ export function V4ComposerUsageStatusBar({
     if (latest.tokensPerSecond === null && isUsageSnapshotRunning(latest)) {
       return; // 保留上一轮
     }
-    setSnapshot(latest);
+    setCompletedSnapshot(latest);
   }, [model.latest]);
 
-  if (!snapshot) return null;
+  const values = streamingRow
+    ? buildLiveValues(streamingRow, liveAnchorRef.current)
+    : completedSnapshot
+      ? {
+          tokensPerSecond: completedSnapshot.tokensPerSecond,
+          outputTokens: completedSnapshot.outputTokens,
+          timeToFirstTokenMs: completedSnapshot.timeToFirstTokenMs,
+          durationMs: completedSnapshot.durationMs,
+          generationMs: completedSnapshot.generationMs,
+          modelId: completedSnapshot.modelId,
+          running: isRunning,
+        }
+      : null;
+
+  if (!values) return null;
 
   const speedTier =
-    snapshot.tokensPerSecond != null
-      ? resolveGenerationSpeedTier(snapshot.tokensPerSecond)
+    values.tokensPerSecond != null
+      ? resolveGenerationSpeedTier(values.tokensPerSecond)
       : null;
-  const speed = formatTokensPerSecond(locale, snapshot.tokensPerSecond ?? 0);
   const tooltip = intl.formatMessage(
     { id: "composer.usage.statusBar.tooltip" },
     {
-      model: snapshot.modelId,
-      output: formatFullTokenCount(locale, snapshot.outputTokens),
-      ttft: formatDurationMs(locale, snapshot.timeToFirstTokenMs) ?? "--",
-      duration: formatDurationMs(locale, snapshot.durationMs) ?? "--",
-      generation: formatDurationMs(locale, snapshot.generationMs) ?? "--",
+      model: values.modelId || "--",
+      output: formatFullTokenCount(locale, values.outputTokens),
+      ttft: formatDurationMs(locale, values.timeToFirstTokenMs) ?? "--",
+      duration: formatDurationMs(locale, values.durationMs) ?? "--",
+      generation: formatDurationMs(locale, values.generationMs) ?? "--",
     },
   );
 
@@ -97,30 +174,27 @@ export function V4ComposerUsageStatusBar({
       title={tooltip}
       className="flex min-w-0 items-center gap-2.5 text-ui-xs text-foreground-subtle tabular-nums"
     >
-      {snapshot.tokensPerSecond != null ? (
-        <span
-          className={`flex shrink-0 items-center gap-1 ${SPEED_TIER_CLASS[speedTier!]}`}
-        >
-          <Zap className="size-3 shrink-0" aria-hidden="true" />
-          <span>{speed}</span>
-          <span className="text-foreground-subtlest">
-            {intl.formatMessage({ id: "composer.usage.speedUnit" })}
+      {/* 首 token 到达前不渲染速率段：避免闪一帧 "-- tok/s"；首 token 后 500ms 内也留空。 */}
+      {values.tokensPerSecond != null ? (
+        <>
+          <span
+            className={`flex shrink-0 items-center gap-1 ${speedTier ? SPEED_TIER_CLASS[speedTier] : "text-foreground-subtlest"}`}
+          >
+            <Zap className="size-3 shrink-0" aria-hidden="true" />
+            <span>{formatTokensPerSecond(locale, values.tokensPerSecond)}</span>
+            <span className="text-foreground-subtlest">
+              {intl.formatMessage({ id: "composer.usage.speedUnit" })}
+            </span>
           </span>
-        </span>
-      ) : (
-        <span className="flex shrink-0 items-center gap-1 text-foreground-subtlest">
-          <Zap className="size-3 shrink-0" aria-hidden="true" />
-          <span>{intl.formatMessage({ id: "composer.usage.statusBar.empty" })}</span>
-        </span>
-      )}
-
-      <SegmentDivider />
+          <SegmentDivider />
+        </>
+      ) : null}
       <span className="flex shrink-0 items-center gap-1">
         <Hash className="size-3 shrink-0 text-foreground-subtlest" aria-hidden="true" />
         <span>
           {intl.formatMessage(
             { id: "composer.usage.statusBar.tokens" },
-            { value: formatCompactTokenCount(locale, snapshot.outputTokens) },
+            { value: formatCompactTokenCount(locale, values.outputTokens) },
           )}
         </span>
       </span>
@@ -131,7 +205,7 @@ export function V4ComposerUsageStatusBar({
         <span>
           {intl.formatMessage(
             { id: "composer.usage.statusBar.ttft" },
-            { value: formatDurationMs(locale, snapshot.timeToFirstTokenMs) ?? "--" },
+            { value: formatDurationMs(locale, values.timeToFirstTokenMs) ?? "--" },
           )}
         </span>
       </span>
@@ -142,12 +216,12 @@ export function V4ComposerUsageStatusBar({
         <span>
           {intl.formatMessage(
             { id: "composer.usage.statusBar.duration" },
-            { value: formatDurationMs(locale, snapshot.durationMs) ?? "--" },
+            { value: formatDurationMs(locale, values.durationMs) ?? "--" },
           )}
         </span>
       </span>
 
-      {isRunning ? (
+      {values.running ? (
         <span className="ml-0.5 flex shrink-0 items-center gap-1 text-foreground-subtlest">
           <span className="size-1.5 animate-pulse rounded-full bg-current" aria-hidden="true" />
           {intl.formatMessage({ id: "composer.usage.statusBar.running" })}
@@ -155,4 +229,27 @@ export function V4ComposerUsageStatusBar({
       ) : null}
     </div>
   );
+}
+
+/** 生成中的本地估算：token 由正文长度推算，速率从首个 token 起算。 */
+function buildLiveValues(
+  row: { text: string; startedAt: number },
+  anchor: { startedAt: number; firstTokenAt: number | null } | null,
+): UsageRowValues {
+  const now = Date.now();
+  const outputTokens = estimateStreamingOutputTokens(row.text);
+  const startedAt = anchor?.startedAt ?? row.startedAt;
+  const firstTokenAt = anchor?.firstTokenAt ?? null;
+  const generationMs = firstTokenAt === null ? null : Math.max(0, now - firstTokenAt);
+  return {
+    // 首 token 后不足 500ms 时样本太短，先不显示速率，避免数字剧烈跳动。
+    tokensPerSecond:
+      generationMs !== null && generationMs >= 500 ? outputTokens / (generationMs / 1000) : null,
+    outputTokens,
+    timeToFirstTokenMs: firstTokenAt === null ? null : Math.max(0, firstTokenAt - startedAt),
+    durationMs: Math.max(0, now - startedAt),
+    generationMs,
+    modelId: "",
+    running: true,
+  };
 }

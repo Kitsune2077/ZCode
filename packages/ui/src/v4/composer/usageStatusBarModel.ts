@@ -1,4 +1,7 @@
-import type { V4ConversationUsageDetailResult } from "@zcode/shared/zcode-protocol-v4";
+import type {
+  ConversationRow,
+  V4ConversationUsageDetailResult,
+} from "@zcode/shared/zcode-protocol-v4";
 
 /**
  * Composer 用量状态条的纯派生逻辑（组件只做 IO 与渲染）。
@@ -76,6 +79,47 @@ export function hasUsageStatusBarContent(model: UsageStatusBarModel): boolean {
 /** 请求仍在进行中：状态条保留上一轮已完成指标并标注「生成中」。 */
 export function isUsageSnapshotRunning(snapshot: UsageStatusBarSnapshot): boolean {
   return snapshot.status === "running";
+}
+
+
+/** 生成中的流式行（投影 snapshot 尾部），用于实时估算，不写入任何事实。 */
+export interface StreamingAssistantText {
+  readonly turnId: string;
+  readonly rowId: number;
+  readonly text: string;
+  /** 行创建时间（= 本轮开始），作为 TTFT/耗时的锚点。 */
+  readonly startedAt: number;
+}
+
+/** 从 snapshot.rows.window 尾部找当前 streaming 的 assistantText 行。 */
+export function findStreamingAssistantText(
+  rows: readonly ConversationRow[] | undefined,
+): StreamingAssistantText | null {
+  if (!rows || rows.length === 0) return null;
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const row = rows[index];
+    if (!row || row.kind !== "assistantText" || row.state !== "streaming") continue;
+    return { turnId: row.turnId, rowId: row.rowId, text: row.text, startedAt: row.createdAt };
+  }
+  return null;
+}
+
+const CJK_PATTERN = /[぀-ヿ㐀-䶿一-鿿가-힯豈-﫿]/;
+
+/**
+ * 由流式正文估算输出 token（仅用于生成中的实时展示）。
+ *
+ * 口径：CJK 约 1 字 1 token，其余非空白字符约 4 字符 1 token——启发式估算，
+ * 不含思考 token 与工具调用；完成后由 usageDetail 的真实 outputTokens 覆盖。
+ */
+export function estimateStreamingOutputTokens(text: string): number {
+  let cjk = 0;
+  let other = 0;
+  for (const char of text) {
+    if (CJK_PATTERN.test(char)) cjk += 1;
+    else if (!/\s/.test(char)) other += 1;
+  }
+  return cjk + Math.ceil(other / 4);
 }
 
 /** tooltip 用完整值。 */
