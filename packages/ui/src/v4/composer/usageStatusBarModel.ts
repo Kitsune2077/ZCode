@@ -17,6 +17,8 @@ import type {
  */
 
 export interface UsageStatusBarSnapshot {
+  /** 请求唯一标识：handoff 期用它分辨“新权威是否已落库接管”。 */
+  readonly requestId: string;
   /** tokens/秒；生成时长缺失、为 0 或请求仍在跑时为 null。 */
   readonly tokensPerSecond: number | null;
   readonly outputTokens: number;
@@ -50,6 +52,7 @@ function deriveSnapshot(
   // 生成时长缺失（进行中请求）时速率不可算，但其它指标仍是有效事实，不能整条丢弃。
   const hasGenerationWindow = request.generationMs !== null && request.generationMs > 0;
   return {
+    requestId: request.requestId,
     tokensPerSecond: hasGenerationWindow
       ? request.outputTokens / (request.generationMs! / 1000)
       : null,
