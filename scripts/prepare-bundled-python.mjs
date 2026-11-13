@@ -232,6 +232,11 @@ function buildRequirements({ platformWheels, requirementsPath }) {
 }
 
 function stageWheels({ pipPython, pipPlatform, platformWheels, requirementsPath, wheelsDir }) {
+  // PyPI 索引默认走清华镜像：runner（国内、无代理）直连 pypi.org /
+  // files.pythonhosted.org 下载 win_amd64 wheel 会间歇性失败
+  // （Gitea run 61 实测：pip download 78 秒后失败，且 stdio: pipe 把
+  // pip 的真实报错吞了）。镜像可用 ZCODE_PYPI_INDEX 覆盖。
+  const index = process.env.ZCODE_PYPI_INDEX?.trim() || "https://pypi.tuna.tsinghua.edu.cn/simple";
   runCommand(
     pipPython,
     [
@@ -244,9 +249,13 @@ function stageWheels({ pipPython, pipPlatform, platformWheels, requirementsPath,
       "--require-hashes",
       "--no-cache-dir",
       "--dest", wheelsDir,
+      // 与 --require-hashes 组合使用时 pip 要求索引声明走 -i；
+      // 镜像完整镜像了 pypi.org 的 wheel 与元数据。
+      "--index-url", index,
       "-r", requirementsPath,
     ],
-    { stdio: "pipe" },
+    // stdio: inherit——pip 的报错必须原样进 job 日志；pipe 会吞掉失败原因。
+    { stdio: "inherit" },
   );
   // 下载结果的摘要必须与锁文件一致；不一致说明上游重发或解析跑偏，必须失败。
   const downloaded = readdirSync(wheelsDir).filter((file) => file.endsWith(".whl"));
@@ -265,7 +274,7 @@ function stageWheels({ pipPython, pipPlatform, platformWheels, requirementsPath,
   console.log(`    wheels  : ${downloaded.length} 个（sha256 全部匹配）`);
 }
 
-function installWheels({ pipPython, wheelsDir, sitePackages }) {
+function installWheels({ pipPython, pipPlatform, wheelsDir, sitePackages }) {
   mkdirSync(sitePackages, { recursive: true });
   const wheels = readdirSync(wheelsDir)
     .filter((file) => file.endsWith(".whl"))
@@ -279,10 +288,20 @@ function installWheels({ pipPython, wheelsDir, sitePackages }) {
       "--no-compile",
       "--no-cache-dir",
       "--disable-pip-version-check",
+      // 交叉打包必须显式声明目标平台：宿主 python3 装异平台 wheel 会被 pip 判
+      // "is not a supported wheel on this platform"（Gitea run 62 实测，Linux
+      // 宿主装 win_amd64 轮子；本机 A/B 对照实验：不加 --platform 失败、加上成功）。
+      // --platform 与 --target/--no-deps 组合受支持；轮子已本地下载，--no-index 不触网。
+      "--only-binary=:all:",
+      "--platform", pipPlatform,
+      "--python-version", "3.12",
+      "--implementation", "cp",
+      "--abi", "cp312",
       "--target", sitePackages,
       ...wheels,
     ],
-    { stdio: "pipe" },
+    // stdio: inherit——pip 的报错必须原样进 job 日志；pipe 会吞掉失败原因。
+    { stdio: "inherit" },
   );
   console.log(`    [install] ${wheels.length} wheels -> ${sitePackages}`);
 }
@@ -308,7 +327,45 @@ function trimRuntime(runtimeDir) {
   removePycache(runtimeDir);
 }
 
-function verifyImports(interpreter, sitePackages) {
+/**
+ * 静态校验：site-packages 下每个必需模块的顶层条目存在（目录含 __init__.py，
+ * 或 <name>.py / <name>*.pyd / <name>*.so）。
+ * 交叉构建用——目标平台的解释器在宿主上无法执行（Windows PE 在 Linux 上
+ * 报 "MZ...: not found"），只能核对 wheel 是否真的装进了正确目录。
+ */
+function verifyImportsStatically(sitePackages) {
+  const entries = readdirSync(sitePackages);
+  const missing = [];
+  for (const name of REQUIRED_IMPORTS) {
+    const found =
+      entries.includes(name) ||
+      entries.includes(`${name}.py`) ||
+      entries.some(
+        (entry) =>
+          (entry.startsWith(`${name}.`) || entry.startsWith(`${name}-`)) &&
+          /\.(pyd|so)$/u.test(entry),
+      );
+    if (!found) missing.push(name);
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `[prepare-python] 静态校验缺模块：${missing.join(", ")}` +
+        `\n  sitePackages=${sitePackages}\n  entries: ${entries.slice(0, 30).join(", ")}`,
+    );
+  }
+  console.log(
+    `    [verify] 交叉构建：跳过运行时 import 探针，静态校验通过（${REQUIRED_IMPORTS.length} 个模块目录存在）`,
+  );
+}
+
+function verifyImports({ interpreter, sitePackages, target }) {
+  // 交叉构建时内置解释器是目标平台的二进制（Linux 宿主上跑 win32 的 python.exe
+  // 会报 "MZ...: not found"，Gitea run 63 实测），只能做静态校验；
+  // 同平台构建（Windows/macOS 开发机）仍跑真实 import，覆盖 DLL/重定位问题。
+  if (target.os !== process.platform) {
+    verifyImportsStatically(sitePackages);
+    return;
+  }
   // 逐模块校验：合并成一条 import 时，任一失败只会得到 "code 1"，无法定位是哪个包、
   // 也不会显示 stderr（macOS 首跑就因此只看到 failed with code 1）。这里单独跑并回传 stderr。
   for (const name of REQUIRED_IMPORTS) {
@@ -456,9 +513,9 @@ async function main() {
     const wheelsDir = join(workDir, "wheels");
     mkdirSync(wheelsDir, { recursive: true });
     stageWheels({ pipPython, pipPlatform, platformWheels, requirementsPath, wheelsDir });
-    installWheels({ pipPython, wheelsDir, sitePackages });
+    installWheels({ pipPython, pipPlatform, wheelsDir, sitePackages });
     trimRuntime(runtimeDir);
-    verifyImports(interpreter, sitePackages);
+    verifyImports({ interpreter, sitePackages, target });
 
     const licenseRecords = stageLicenses({ runtimeDir, sitePackages, outputDir });
     writeBundleMeta({ metaPath, lock, target, licenseRecords, wheels: Object.keys(platformWheels) });

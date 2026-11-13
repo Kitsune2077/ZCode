@@ -164,14 +164,37 @@ jobs:
         # GitHub ubuntu-latest 镜像预装了 cmake 与 mingw-w64，所以 fork 侧从未暴露；
         # Gitea runner 是精简环境，缺 cmake 时 spawn 直接 ENOENT（2026-11-13 实测）。
         # g++-mingw-w64-x86-64 提供 x86_64-w64-mingw32-g++；winpthreads 随包分发。
+        # apt 加重试：archive.ubuntu.com 做镜像同步期间会返回
+        # "File has unexpected size ... Mirror sync in progress?" 导致 update 失败
+        # （run 64 实测，纯外部瞬时错误），重试即可跨过。
         run: |
           set -euo pipefail
           SUDO=""
           if [ "$(id -u)" != "0" ]; then
             SUDO="sudo"
           fi
-          $SUDO apt-get update -qq
-          $SUDO apt-get install -y --no-install-recommends cmake g++-mingw-w64-x86-64
+          for attempt in 1 2 3; do
+            if $SUDO apt-get update -qq; then
+              break
+            fi
+            echo "::warning::apt-get update 第 ${attempt} 次失败（多为镜像同步中），10s 后重试"
+            sleep 10
+            if [ "$attempt" = 3 ]; then
+              echo "::error::apt-get update 连续 3 次失败"
+              exit 1
+            fi
+          done
+          for attempt in 1 2 3; do
+            if $SUDO apt-get install -y --no-install-recommends cmake g++-mingw-w64-x86-64; then
+              break
+            fi
+            echo "::warning::apt-get install 第 ${attempt} 次失败，10s 后重试"
+            sleep 10
+            if [ "$attempt" = 3 ]; then
+              echo "::error::cmake / mingw-w64 安装连续 3 次失败"
+              exit 1
+            fi
+          done
           cmake --version | head -1
           x86_64-w64-mingw32-g++ --version | head -1
 

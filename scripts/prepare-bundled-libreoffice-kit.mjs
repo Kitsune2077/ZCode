@@ -84,7 +84,7 @@ function resolveNpmInvocation() {
   return { command: "npm", args: [] };
 }
 
-function installWithRegistryFallback({ installSpecs, registryBases, runtimeDir, cacheDir }) {
+function installWithRegistryFallback({ installSpecs, registryBases, runtimeDir, cacheDir, os, cpu }) {
   const npm = resolveNpmInvocation();
   const failures = [];
   for (const registryBase of registryBases) {
@@ -94,6 +94,12 @@ function installWithRegistryFallback({ installSpecs, registryBases, runtimeDir, 
       "--prefix", runtimeDir,
       "--ignore-scripts",
       "--omit=dev",
+      // 交叉构建（Linux runner 出 Windows 包）时必须钉目标平台：引擎/koffi 是
+      // optionalDependencies，npm 按当前宿主 os/cpu 选择平台包——Linux 上不钉
+      // 会静默跳过 win32 引擎，staging 校验才发现"缺平台引擎包目录"
+      // （Gitea run 58 实测）。--os/--cpu 需要 npm >= 8.3，node 24 内置 npm 11 满足。
+      ...(os ? ["--os", os] : []),
+      ...(cpu ? ["--cpu", cpu] : []),
       "--no-audit",
       "--no-fund",
       "--loglevel=warn",
@@ -279,6 +285,9 @@ async function main() {
     installSpecs: [`${KIT_PACKAGE}@${requestedVersion}`],
     registryBases: resolveRegistryBases(process.env),
     runtimeDir,
+    // target.key 形如 "win32-x64" / "darwin-arm64"，拆出 npm 的 os/cpu 值。
+    os: target.key.split("-")[0],
+    cpu: target.key.split("-")[1],
   });
 
   const staged = assertStagedClosure({ enginePackage, koromixPackage, runtimeDir });
