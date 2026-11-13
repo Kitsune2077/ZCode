@@ -130,6 +130,24 @@ jobs:
           fi
           wine --version || wine64 --version
 
+      - name: Install cmake and mingw-w64 cross compiler
+        # prepare:windows-runtime-host（方案 C 自定义卸载器的宿主进程）在 Linux 上
+        # 交叉编译 Windows PE：cmake 配置 + x86_64-w64-mingw32-g++ 编译
+        # （scripts/build-windows-runtime-host.mjs 固定调用这两个工具）。
+        # GitHub ubuntu-latest 镜像预装了 cmake 与 mingw-w64，所以 fork 侧从未暴露；
+        # Gitea runner 是精简环境，缺 cmake 时 spawn 直接 ENOENT（2026-11-13 实测）。
+        # g++-mingw-w64-x86-64 提供 x86_64-w64-mingw32-g++；winpthreads 随包分发。
+        run: |
+          set -euo pipefail
+          SUDO=""
+          if [ "$(id -u)" != "0" ]; then
+            SUDO="sudo"
+          fi
+          $SUDO apt-get update -qq
+          $SUDO apt-get install -y --no-install-recommends cmake g++-mingw-w64-x86-64
+          cmake --version | head -1
+          x86_64-w64-mingw32-g++ --version | head -1
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
