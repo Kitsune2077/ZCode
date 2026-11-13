@@ -162,12 +162,60 @@ endlocal & exit /b %ERRORLEVEL%
 `;
 }
 
+// CPython 归档来自 GitHub Releases（astral-sh/python-build-standalone）。Gitea runner
+// 在国内网络环境直连 github.com 会超时（实测 60s 超时失败），因此按镜像前缀回退链
+// 逐个尝试：gh 系加速代理（前缀拼接形态）优先，github.com 原始地址兜底。
+// 归档内容一律用 lock 里的 sha256 验真（verifyPrebuiltArchiveSha256），镜像返回
+// 任何不符内容都会被拒，因此第三方镜像不引入可信性风险。
+const ARCHIVE_MIRROR_PREFIXES = [
+  "https://gh-proxy.com/",
+  "https://ghproxy.net/",
+  "https://ghfast.top/",
+  "https://github.moeyy.xyz/",
+  "",
+];
+// 单源超时：CPython install_only 归档数十 MB，慢链路下 60s 会误判失败。
+const ARCHIVE_TIMEOUT_MS = Number(process.env.ZCODE_PYTHON_ARCHIVE_TIMEOUT_MS) || 600_000;
+
+/** 解析本次尝试的归档 URL 列表：env 覆盖（逗号分隔前缀，空串代表原始地址）。 */
+function resolveArchiveMirrorUrls(assetUrl) {
+  const configured = process.env.ZCODE_PYTHON_ARCHIVE_MIRRORS?.trim();
+  const prefixes = configured
+    ? configured.split(",").map((entry) => entry.trim())
+    : ARCHIVE_MIRROR_PREFIXES;
+  const seen = new Set();
+  return prefixes
+    .map((prefix) => (prefix ? `${prefix}${assetUrl}` : assetUrl))
+    .filter((url) => !seen.has(url) && seen.add(url));
+}
+
+/** 按镜像回退链下载 CPython 归档；全部源失败时汇总每个源的失败原因。 */
+async function downloadCpythonArchive(assetUrl, archivePath) {
+  const failures = [];
+  for (const url of resolveArchiveMirrorUrls(assetUrl)) {
+    try {
+      await downloadPrebuiltArchive(url, archivePath, { timeoutMs: ARCHIVE_TIMEOUT_MS });
+      return url;
+    } catch (error) {
+      failures.push(`${url}: ${error instanceof Error ? error.message : String(error)}`);
+      console.log(`    [warn] 归档下载失败，尝试下一个源：${failures.at(-1)}`);
+    }
+  }
+  throw new Error(
+    `[prepare-python] CPython 归档所有下载源均失败：\n  ${failures.join("\n  ")}` +
+      `\n  可用 ZCODE_PYTHON_ARCHIVE_MIRRORS 指定镜像前缀（逗号分隔，空串代表原始地址）`,
+  );
+}
+
 /** 下载并解包 CPython；返回解包出的 python 目录（install_only 归档内层为 python/）。 */
 async function stageInterpreter({ asset, release, workDir, runtimeDir, target }) {
   const assetUrl = `${RELEASE_BASE}/${release}/${asset.name}`;
   const archivePath = join(workDir, asset.name);
   console.log(`    cpython : ${asset.name}`);
-  await downloadPrebuiltArchive(assetUrl, archivePath);
+  const usedUrl = await downloadCpythonArchive(assetUrl, archivePath);
+  if (usedUrl !== assetUrl) {
+    console.log(`    [mirror] ${usedUrl}`);
+  }
   verifyPrebuiltArchiveSha256(archivePath, asset.sha256);
   const extractDir = join(workDir, "cpython");
   mkdirSync(extractDir, { recursive: true });

@@ -30,7 +30,14 @@ export function shouldUsePrebuiltDownloadProxy(rawUrl) {
   return PROXY_DOWNLOAD_HOSTS.has(hostname) || hostname.endsWith(".githubusercontent.com");
 }
 
-export async function downloadPrebuiltArchive(url, destinationPath) {
+export async function downloadPrebuiltArchive(url, destinationPath, options = {}) {
+  // 超时可按调用方覆盖：GitHub Releases 上的归档体积差异很大（ripgrep 几 MB、
+  // CPython install_only 数十 MB），慢链路下 60s 固定值会把正常下载判失败
+  // （Gitea runner 实测 CPython 归档 60s 超时）。默认值保持不变以兼容既有调用方。
+  const timeoutMs =
+    Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
+      ? options.timeoutMs
+      : DOWNLOAD_TIMEOUT_MS;
   return new Promise((resolvePromise, rejectPromise) => {
     const client = url.startsWith("https:") ? https : http;
     const file = createWriteStream(destinationPath);
@@ -69,7 +76,7 @@ export async function downloadPrebuiltArchive(url, destinationPath) {
           response.resume();
           file.close(() => {
             rmSync(destinationPath, { force: true });
-            downloadPrebuiltArchive(response.headers.location, destinationPath).then(
+            downloadPrebuiltArchive(response.headers.location, destinationPath, options).then(
               resolvePromise,
               rejectPromise,
             );
@@ -101,8 +108,8 @@ export async function downloadPrebuiltArchive(url, destinationPath) {
       })
       .on("error", cleanupAndReject);
 
-    request.setTimeout(DOWNLOAD_TIMEOUT_MS, () => {
-      request.destroy(new Error(`Download timed out after ${DOWNLOAD_TIMEOUT_MS}ms (${url})`));
+    request.setTimeout(timeoutMs, () => {
+      request.destroy(new Error(`Download timed out after ${timeoutMs}ms (${url})`));
     });
 
     file.on("error", cleanupAndReject);
