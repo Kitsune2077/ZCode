@@ -245,10 +245,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24.14.0
+      - name: Setup Node (npmmirror 镜像)
+        # 与 build job 同因：actions/setup-node 从 github.com 拉 Node 分发包，
+        # Gitea runner（国内、无代理）慢到 7 分钟或直接超时。本 job 的 node
+        # 只用于 JSON 处理（渲染说明、解析 Release id），镜像直下即可。
+        env:
+          NODE_VERSION: 24.14.0
+          NODE_DIST_MIRROR: https://npmmirror.com/mirrors/node
+        run: |
+          set -euo pipefail
+          dest="$RUNNER_TEMP/node-v${NODE_VERSION}-linux-x64"
+          mkdir -p "$dest"
+          curl -fsSL --retry 3 --connect-timeout 15 \
+            "$NODE_DIST_MIRROR/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz" \
+            -o "$RUNNER_TEMP/node.tar.gz"
+          tar -xzf "$RUNNER_TEMP/node.tar.gz" -C "$dest" --strip-components=1
+          echo "$dest/bin" >> "$GITHUB_PATH"
+          "$dest/bin/node" --version
 
       - name: Download installers
         # v3 同因（见 Upload installers）。单一 artifact 不需要 v4 的 merge-multiple，
