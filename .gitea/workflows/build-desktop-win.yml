@@ -69,6 +69,10 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=8192
       ZCODE_LARK_CLI_VERSION: ${{ inputs.lark_cli_version }}
 
+      # node-gyp 编译 node-pty/ssh2/cpu-features 时下载 node 头文件也走 npmmirror
+      # （nodejs.org 直连慢，run 56 实测头文件来自本地缓存前耗时数分钟）。
+      npm_config_disturl: https://npmmirror.com/mirrors/node/
+
     steps:
       - uses: actions/checkout@v4
 
@@ -78,12 +82,35 @@ jobs:
           # 与 mise.toml / package.json 的 packageManager 保持一致。
           version: 10.33.2
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Node (npmmirror 镜像)
+        # 弃用 actions/setup-node：它从 github.com/actions/node-versions 下载 Node
+        # 分发包，Gitea runner（国内、无代理）实测耗时 7 分钟（run 56：01:41→01:48）。
+        # 改从 npmmirror 的 node 镜像下载官方同款 tar.gz（数秒），解压后经 GITHUB_PATH
+        # 注入 PATH 供后续步骤（pnpm install 的 node-gyp 生命周期脚本等）使用；
+        # pnpm 本身由上一步的独立二进制提供，不依赖本步骤。
+        env:
+          NODE_VERSION: 24.14.0
+          NODE_DIST_MIRROR: https://npmmirror.com/mirrors/node
+        run: |
+          set -euo pipefail
+          dest="$RUNNER_TEMP/node-v${NODE_VERSION}-linux-x64"
+          mkdir -p "$dest"
+          curl -fsSL --retry 3 --connect-timeout 15 \
+            "$NODE_DIST_MIRROR/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz" \
+            -o "$RUNNER_TEMP/node.tar.gz"
+          tar -xzf "$RUNNER_TEMP/node.tar.gz" -C "$dest" --strip-components=1
+          echo "$dest/bin" >> "$GITHUB_PATH"
+          "$dest/bin/node" --version
+
+      - name: Cache pnpm store
+        # 原 actions/setup-node 的 cache: pnpm 改为显式声明（该 runner 上
+        # actions/cache 可用，electron 缓存查找已验证）。
+        uses: actions/cache@v4
         with:
-          # 与 mise.toml 的 node 版本保持一致；npm 缓存交给 pnpm store。
-          node-version: 24.14.0
-          cache: pnpm
+          path: ~/.local/share/pnpm/store
+          key: pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-
 
       - name: Cache Electron and electron-builder binaries
         uses: actions/cache@v4
