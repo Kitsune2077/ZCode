@@ -46,12 +46,6 @@ import {
 } from "./scripts/desktop-native-package-policy.mjs";
 import { replaceAppAsarFromStaging } from "./scripts/app-asar-repack.mjs";
 import {
-  injectZusageIntoStaging,
-  isZusageOverlayDisabled,
-  resolveVendoredRuntimeDir,
-  stageZusageRuntime,
-} from "./scripts/inject-zusage-overlay.mjs";
-import {
   patchNsisInstallSectionFile,
   patchNsisInstallUtilFile,
   restoreNsisInstallSectionFileSync,
@@ -495,21 +489,7 @@ async function stripPackagedSourcemapReferences(context) {
       process.env.ZCODE_PRUNE_PACKAGED_PLATFORM_DEPENDENCIES === "1"
         ? (stagingDir) => pruneIncompatiblePlatformPackages(stagingDir, targetPlatform)
         : null,
-    // 第三方 zusage 悬浮条：在 asar 入口追加动态 loader 行（与 sourcemap 清理共用同一次重打）。
-    // runtime 由 stageZusageRuntime 复制到 resources/zusage/（见 afterPack 调用方）。
-    extraStagingTransforms: isZusageOverlayDisabled()
-      ? []
-      : [({ stagingDir }) => injectZusageIntoStaging({ stagingDir })],
   });
-
-  // runtime 必须随包分发到 resources/zusage/，否则注入行运行时找不到 loader。
-  if (!isZusageOverlayDisabled()) {
-    const staged = await stageZusageRuntime({
-      runtimeSourceDir: resolveVendoredRuntimeDir(desktopPackageRoot),
-      resourcesDir: resolvePackagedResourcesDir(context),
-    });
-    console.log(`[afterPack] staged zusage overlay runtime -> ${staged}`);
-  }
 }
 
 function assertPackagedNativeResourcePolicy(context) {

@@ -2430,9 +2430,3 @@ exceptions:
     paths:
       - packages/ui/src/root/GlobalDatabaseStartupLoading.tsx
     reason: 启动失败页在现有复制诊断/重试/退出旁增加导出日志按钮（docs/desktop/database-migration-startup-gate-plan.md）。只扩展既有失败页交互，不新增文件、不改变启动状态 owner 或模块边界；接管 packages/ui/src/root 不在本次范围内。
-  - id: zusage-overlay-vendored-runtime
-    rule: unmanaged-new-file
-    paths:
-      - packages/desktop/third-party/zusage/
-    reason: 第三方（ByteRax/zcode-token-usage-statusbar，MIT）用量悬浮条 runtime 整组 vendored：上游要求改 app.asar 注入 loader，插件体系没有等价的常驻悬浮条能力位，故在构建期注入（scripts/inject-zusage-overlay.mjs）。版本与逐文件 sha256 见 VERSION.json，升级整组替换；不启用其 engine-patch（锚点按上游引擎版本硬编码）。这组文件是外部源码快照（vendor 资产），不参与本项目模块边界治理；纳入 managed 模块需先设计 vendored-asset 规则。
-

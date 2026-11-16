@@ -84,9 +84,6 @@ export async function cleanupPackagedSourcemaps({
   runTimedAsync,
   replaceAppAsarFromStaging,
   pruneStagingDirectory = null,
-  // staging 目录的额外变换（如第三方悬浮条注入）：返回 true 表示内容有变更，
-  // 计入“是否需要重打 asar”的判定——与 sourcemap 清理共用同一次重打，避免重复打包。
-  extraStagingTransforms = [],
   logger = console,
 }) {
   if (existsSync(appAsarPath)) {
@@ -99,15 +96,10 @@ export async function cleanupPackagedSourcemaps({
       const stripSummary = stripSourceMappingUrlCommentsInDirectory(stagingDir);
       const mapSummary = removeSourceMapFilesInDirectory(stagingDir);
       const pruneSummary = pruneStagingDirectory ? await pruneStagingDirectory(stagingDir) : null;
-      let extraChanged = false;
-      for (const transform of extraStagingTransforms) {
-        if (await transform({ stagingDir, resourcesDir })) extraChanged = true;
-      }
       if (
         stripSummary.referencesRemoved > 0 ||
         mapSummary.filesRemoved > 0 ||
-        (pruneSummary?.packagesRemoved ?? 0) > 0 ||
-        extraChanged
+        (pruneSummary?.packagesRemoved ?? 0) > 0
       ) {
         if (pruneSummary?.packagesRemoved > 0) {
           logger.log(
