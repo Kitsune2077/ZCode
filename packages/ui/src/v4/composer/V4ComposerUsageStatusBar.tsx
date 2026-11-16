@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { TID_V4_USAGE_STATUS_BAR } from "@zcode/shared";
 import type { ConversationSnapshot } from "@zcode/shared/zcode-protocol-v4";
 import { Clock, Hash, Timer, Zap } from "lucide-react";
+import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import {
   advanceStreamingAnchor,
@@ -26,9 +27,10 @@ import { useUsageDetail } from "./useUsageDetail.js";
 const USAGE_STATUS_BAR_POLL_INTERVAL_MS = 10_000;
 /**
  * 生成中的走表节奏：数字只按该节奏更新（进入 state），流式 delta 不驱动显示——
- * 否则每个文本 chunk 都重算一次，视觉上“每秒刷很多次”。
+ * 否则每个文本 chunk 都重算一次，视觉上“每秒刷很多次”。取 1.5s：既落在
+ * 「每秒最多更新一到两次」的区间，也避免 1s 整数节拍与 token 计数同频造成的闪动感。
  */
-const STREAMING_TICK_MS = 1_000;
+const STREAMING_TICK_MS = 1_500;
 /** 流结束后等待权威落库的重试节奏；全部失败则由 10s 轮询兜底。 */
 const HANDOFF_REFRESH_DELAYS_MS = [1_000, 3_000, 8_000] as const;
 
@@ -39,8 +41,13 @@ const SPEED_TIER_CLASS: Record<ReturnType<typeof resolveGenerationSpeedTier>, st
 };
 
 /** 段间分隔：与插件一致用细分隔线，而不是圆点/竖线字符。 */
-function SegmentDivider() {
-  return <span aria-hidden="true" className="h-3 w-px shrink-0 self-center bg-border/70" />;
+function SegmentDivider({ className }: { className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn("h-3 w-px shrink-0 self-center bg-border/70", className)}
+    />
+  );
 }
 
 /** 状态行展示值；来源可以是“完成后的权威 value”或“生成中的本地估算”。 */
@@ -121,9 +128,16 @@ export function V4ComposerUsageStatusBar({
   const isStreaming = streamingRow !== null;
 
   const liveAnchorRef = useRef<StreamingLiveAnchor | null>(null);
-  if (streamingRow) {
-    liveAnchorRef.current = advanceStreamingAnchor(liveAnchorRef.current, streamingRow, Date.now());
-  }
+  // 锚点推进是**写入副作用**，必须放 effect：render 阶段写 ref 在 React 严格模式下
+  // 会被双渲染重复推进（锚点时间戳被推两次 → 速率分母偏小、数字虚高）。
+  useEffect(() => {
+    if (!streamingRow) return;
+    liveAnchorRef.current = advanceStreamingAnchor(
+      liveAnchorRef.current,
+      streamingRow,
+      Date.now(),
+    );
+  }, [streamingRow]);
   // 工具调用空窗期沿用本轮的估算值；本轮结束时（freeze）锚点会被清空。
   const activeTurnId = streamingRow?.turnId ?? liveAnchorRef.current?.turnId ?? null;
 
@@ -289,7 +303,7 @@ export function V4ComposerUsageStatusBar({
     <div
       data-testid={TID_V4_USAGE_STATUS_BAR}
       title={tooltip}
-      className="flex min-w-0 items-center justify-center gap-2.5 text-ui-xs text-foreground-subtle tabular-nums"
+      className="@container/usage-status flex min-w-0 items-center justify-end gap-2.5 overflow-hidden text-ui-xs text-foreground-subtle tabular-nums"
     >
       {/* 首 token 到达前不渲染速率段：避免闪一帧 "-- tok/s"；首 token 后 500ms 内也留空。 */}
       {values.tokensPerSecond != null ? (
@@ -303,10 +317,12 @@ export function V4ComposerUsageStatusBar({
               {intl.formatMessage({ id: "composer.usage.speedUnit" })}
             </span>
           </span>
-          <SegmentDivider />
+          <SegmentDivider className="hidden @[14rem]/usage-status:block" />
         </>
       ) : null}
-      <span className="flex shrink-0 items-center gap-1">
+      {/* 窄空间逐段收起（速率始终保留）：token → TTFT → 时长 → 生成中 依次出现，
+          与 spec 的「时长 → token → TTFT 先收」一致；分隔线跟随它左边的段。 */}
+      <span className="hidden shrink-0 items-center gap-1 @[14rem]/usage-status:flex">
         <Hash className="size-3 shrink-0 text-foreground-subtlest" aria-hidden="true" />
         <span>
           {intl.formatMessage(
@@ -316,8 +332,8 @@ export function V4ComposerUsageStatusBar({
         </span>
       </span>
 
-      <SegmentDivider />
-      <span className="flex shrink-0 items-center gap-1">
+      <SegmentDivider className="hidden @[19rem]/usage-status:block" />
+      <span className="hidden shrink-0 items-center gap-1 @[19rem]/usage-status:flex">
         <Timer className="size-3 shrink-0 text-foreground-subtlest" aria-hidden="true" />
         <span>
           {intl.formatMessage(
@@ -327,8 +343,8 @@ export function V4ComposerUsageStatusBar({
         </span>
       </span>
 
-      <SegmentDivider />
-      <span className="flex shrink-0 items-center gap-1">
+      <SegmentDivider className="hidden @[24rem]/usage-status:block" />
+      <span className="hidden shrink-0 items-center gap-1 @[24rem]/usage-status:flex">
         <Clock className="size-3 shrink-0 text-foreground-subtlest" aria-hidden="true" />
         <span>
           {intl.formatMessage(
@@ -339,7 +355,7 @@ export function V4ComposerUsageStatusBar({
       </span>
 
       {values.running ? (
-        <span className="ml-0.5 flex shrink-0 items-center gap-1 text-foreground-subtlest">
+        <span className="ml-0.5 hidden shrink-0 items-center gap-1 text-foreground-subtlest @[28rem]/usage-status:flex">
           <span className="size-1.5 animate-pulse rounded-full bg-current" aria-hidden="true" />
           {intl.formatMessage({ id: "composer.usage.statusBar.running" })}
         </span>

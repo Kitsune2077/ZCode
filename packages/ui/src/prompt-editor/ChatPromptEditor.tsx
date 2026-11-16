@@ -467,6 +467,14 @@ export function ChatPromptEditor({
                 <span ref={onModeSwitchContainerChange} className="flex shrink-0 items-center" />
               ) : null}
             </div>
+            {statusBar && !isInline ? (
+              // 用量状态条放在工具行内、靠右对齐到 trailing 控件簇之前（即用量圆环左侧的
+              // 空白区）。min-w-0 + shrink 留着收缩余地：空间不足时先裁这段，不挤压模型
+              // 选择与发送按钮。窄布局（inline）空间不足，退回卡底整行（见下方 statusBar 块）。
+              <div className="ml-auto min-w-0 shrink pl-3" data-composer-usage-status>
+                {statusBar}
+              </div>
+            ) : null}
           </div>
           <div
             className="ml-auto flex shrink-0 items-center justify-end gap-1.5"
@@ -506,15 +514,10 @@ export function ChatPromptEditor({
             )}
           </div>
         </div>
-        {statusBar ? (
-          // 底行状态条与插件一致：卡片圆角内、工具行之下，不加分隔线；
-          // 负外边距抵消卡片 p-3，让统计行与输入区左右对齐。
-          <div
-            className={cn(
-              "composer-status-bar",
-              isInline ? "basis-full pt-1.5" : "-mx-3 -mb-3 px-3 pb-1.5 pt-1",
-            )}
-          >
+        {statusBar && isInline ? (
+          // 窄布局（inline）工具行没有横向余量，状态条退回卡底整行；
+          // 负外边距抵消卡片内边距，让统计行与输入区左右对齐。
+          <div className={cn("composer-status-bar", "basis-full pt-1.5")}>
             {statusBar}
           </div>
         ) : null}
