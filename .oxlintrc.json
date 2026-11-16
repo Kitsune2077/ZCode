@@ -218,6 +218,7 @@
     "packages/formal-proof",
     "apps/zcode-cli",
     "packages/zcode-cua",
-    "docs/electron"
+    "docs/electron",
+    "packages/desktop/third-party/zusage/runtime"
   ]
 }

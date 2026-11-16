@@ -29,3 +29,7 @@ apps/zcode-cli/packages/visualize-plugin/skills/visualize/assets/vendor/** -text
 apps/zcode-cli/packages/design-plugin/skills/design/design-resources/** -text -whitespace linguist-vendored=true
 apps/zcode-cli/packages/design-plugin/hooks/design-rules text eol=lf
 apps/zcode-cli/packages/design-plugin/hooks/run-hook.cmd text eol=lf
+
+# zusage 第三方 runtime 按字节保真：VERSION.json 的 sha256 按 LF 计算，autocrlf 转换会让清单失真。
+# 与 visualize vendor 快照同理，构建期直接复制到产物 resources/zusage/。
+packages/desktop/third-party/zusage/runtime/** -text -whitespace

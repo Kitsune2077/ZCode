@@ -1,0 +1,94 @@
+{
+  "source": "https://github.com/ByteRax/zcode-token-usage-statusbar",
+  "upstreamCommit": "ac3678dc40b84397b894db974fa673f4c7ff968f",
+  "pluginVersion": "1.5.19",
+  "license": "MIT",
+  "fetchedAt": "2026-11-16",
+  "note": "vendored runtime（inject-main.cjs 及其 peer 文件）。构建期注入 app.asar 的 out/main/index.js 尾部并随包分发到 resources/zusage/；不启用 engine-patch（anchor 按上游引擎版本硬编码）。升级须整组替换并更新本文件与 NOTE.md 的 sha256 清单。",
+  "files": {
+    "engine-patch.cjs": {
+      "sha256": "5d5d15f809484ff9185d8f31ab5060e9953496b5d01524ea06ced6bb7b1f539a",
+      "bytes": 17458
+    },
+    "inject-main.cjs": {
+      "sha256": "6af07d756c9af23104ba503563af2e39d0e36e926d8c47e2d849638f6b03df6a",
+      "bytes": 143547
+    },
+    "install_monitor.py": {
+      "sha256": "8cd8dfd9845a520b20715bfa5b616dd4140160ac1fb9c0fe63d6d79562541bfa",
+      "bytes": 25353
+    },
+    "model-puller.cjs": {
+      "sha256": "6bc48150b1a470de15e550e839e660075863f38ca5dbfcecb535bd97c6b59f50",
+      "bytes": 113248
+    },
+    "overlay.js": {
+      "sha256": "1beb82d4d7c88def9703f3d11881e8d06bd65d848ec2cd3e2ea4f3a27e536b3f",
+      "bytes": 1908496
+    },
+    "patch_install.py": {
+      "sha256": "22bc7b9d613f43bed3efb716a5ed883fc46bc198387e25b17ec1ee777f2111dd",
+      "bytes": 66526
+    },
+    "pending_zip_patch.py": {
+      "sha256": "4abd6ccd7d35db1ffec0a20a4597bc3919cf96db183477fe9f9bbe4a1d80672c",
+      "bytes": 8473
+    },
+    "plugin-release.cjs": {
+      "sha256": "f70b5a9c0bc761b1ace8e7d60781b01766d421a686ddc0106692b9d09760fe4d",
+      "bytes": 47447
+    },
+    "plugin-storage.cjs": {
+      "sha256": "d760841095bf732b201e712e2f4ab44086dc2be83f15dee81d7388be7cb3e563",
+      "bytes": 2749
+    },
+    "plugin-updater.cjs": {
+      "sha256": "64563a63c6ec02723971c33b769e3268562d4de597f815c3f9e668face4b4fac",
+      "bytes": 63812
+    },
+    "quota-client.cjs": {
+      "sha256": "bdd678f3abf89cc832889c17abcb36c0bcb1072c4bf48f1ec9ed21db1b0d2ee3",
+      "bytes": 147852
+    },
+    "release_unpack.py": {
+      "sha256": "57a1565af935aca43f28129e4762163ff27a76ee02c48159bf5aab69f5a6e717",
+      "bytes": 18123
+    },
+    "renderer_bridge.py": {
+      "sha256": "ca18795c48460f9b32ddfabcace4158dd93403e0af28c3034409e02f97ee5452",
+      "bytes": 60366
+    },
+    "runtime_lock.py": {
+      "sha256": "e34f7a8ff82d57cff771c9a549b8eea9c8ece498da71d30bf52f403ac05864c0",
+      "bytes": 16754
+    },
+    "sysmon-client.cjs": {
+      "sha256": "430a4175b0229a1f753c03108bac623ae171a751c742fb628d7d0a16cb94071f",
+      "bytes": 24537
+    },
+    "token_pricing.py": {
+      "sha256": "27ba014c00631d506da7e45c164d730f986882ccb3fcc7bf01c6d69457818e4f",
+      "bytes": 51169
+    },
+    "token_rate.py": {
+      "sha256": "35581cee151b56ab8d58fad667cb3339c87cd3627bada91c8241d73364eb5699",
+      "bytes": 27919
+    },
+    "turn-stats.js": {
+      "sha256": "e410a829c9554abd40eac3593708b50a52b89c51584831bdbc85f8ba457b952a",
+      "bytes": 34640
+    },
+    "usage_mcp.py": {
+      "sha256": "9153c0347b4a1834ce448b1b40f0280cdfa0edef5b3e699f13e663f86faa499a",
+      "bytes": 16236
+    },
+    "usage_stats.py": {
+      "sha256": "aee15c7b13f35c4aa479c7addbec480649b43322ab508fb8d6a01ace34ee5d7b",
+      "bytes": 5647
+    },
+    "zusage.py": {
+      "sha256": "5f8dd5a74361fa5874afcde81a211525d47a1ab76ae3548f79deba55ce12d829",
+      "bytes": 226184
+    }
+  }
+}
