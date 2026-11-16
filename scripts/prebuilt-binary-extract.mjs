@@ -36,20 +36,32 @@ function resolveTarArchiveArg(archivePath, cwd) {
 }
 
 export function extractPrebuiltArchive({ archivePath, archiveExt, extractDir, cwd }) {
+  if (archiveExt === "zip" && process.platform === "win32") {
+    // Bugfix: 不用 Expand-Archive。某些 runner 的 powershell.exe 实际解析到
+    // PowerShell 7，其 Microsoft.PowerShell.Archive 模块把 -Force 实现为
+    // [ZipFileExtensions]::ExtractToDirectory(3 args)，该重载在目标 .NET 上不存在
+    // → 解包静默失败、随后报 "Failed to locate ugrep.exe"（2026-11-16 Windows CI）。
+    // 这里改用 .NET 的 2 参数 ZipFile.ExtractToDirectory(src, dst)：它在 PowerShell
+    // 5.1 与 7.x 下都可用（本地双版本实测），但要求 dst 不存在——
+    // 因此先清空目标目录（等价于 -Force 的覆盖语义）。
+    const psLiteral = (value) => `'${value.replaceAll("'", "''")}'`;
+    rmSync(extractDir, { force: true, recursive: true });
+    runCommand("powershell.exe", [
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      [
+        "Add-Type -AssemblyName System.IO.Compression.FileSystem",
+        `[System.IO.Compression.ZipFile]::ExtractToDirectory(${psLiteral(archivePath)}, ${psLiteral(extractDir)})`,
+      ].join("; "),
+    ]);
+    return;
+  }
+
   mkdirSync(extractDir, { recursive: true });
   if (archiveExt === "zip") {
-    if (process.platform === "win32") {
-      runCommand("powershell.exe", [
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        `Expand-Archive -LiteralPath '${archivePath.replaceAll("'", "''")}' -DestinationPath '${extractDir.replaceAll("'", "''")}' -Force`,
-      ]);
-      return;
-    }
-
     runCommand("unzip", ["-q", archivePath, "-d", extractDir], { cwd });
     return;
   }
