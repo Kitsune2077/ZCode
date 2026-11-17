@@ -303,7 +303,7 @@ export function V4ComposerUsageStatusBar({
     <div
       data-testid={TID_V4_USAGE_STATUS_BAR}
       title={tooltip}
-      className="@container/usage-status flex min-w-0 items-center justify-end gap-2.5 overflow-hidden text-ui-xs text-foreground-subtle tabular-nums"
+      className="flex min-w-0 items-center justify-end gap-2.5 text-ui-xs text-foreground-subtle tabular-nums"
     >
       {/* 首 token 到达前不渲染速率段：避免闪一帧 "-- tok/s"；首 token 后 500ms 内也留空。 */}
       {values.tokensPerSecond != null ? (
@@ -317,12 +317,13 @@ export function V4ComposerUsageStatusBar({
               {intl.formatMessage({ id: "composer.usage.speedUnit" })}
             </span>
           </span>
-          <SegmentDivider className="hidden @[14rem]/usage-status:block" />
+          <SegmentDivider className="hidden min-[400px]:flex" />
         </>
       ) : null}
-      {/* 窄空间逐段收起（速率始终保留）：token → TTFT → 时长 → 生成中 依次出现，
-          与 spec 的「时长 → token → TTFT 先收」一致；分隔线跟随它左边的段。 */}
-      <span className="hidden shrink-0 items-center gap-1 @[14rem]/usage-status:flex">
+      {/* 窄视口逐段收起（速率与 TTFT 始终保留，时长先收、token 次之），与 spec 一致。
+          用视口断点而不是容器查询：容器宽度由内容决定时，内容默认隐藏会让容器
+          塌缩成 0 宽，查询永不命中 → 整条永久消失（实测踩坑）。 */}
+      <span className="hidden shrink-0 items-center gap-1 min-[400px]:flex">
         <Hash className="size-3 shrink-0 text-foreground-subtlest" aria-hidden="true" />
         <span>
           {intl.formatMessage(
@@ -332,8 +333,8 @@ export function V4ComposerUsageStatusBar({
         </span>
       </span>
 
-      <SegmentDivider className="hidden @[19rem]/usage-status:block" />
-      <span className="hidden shrink-0 items-center gap-1 @[19rem]/usage-status:flex">
+      <SegmentDivider className="hidden min-[400px]:flex" />
+      <span className="flex shrink-0 items-center gap-1">
         <Timer className="size-3 shrink-0 text-foreground-subtlest" aria-hidden="true" />
         <span>
           {intl.formatMessage(
@@ -343,8 +344,8 @@ export function V4ComposerUsageStatusBar({
         </span>
       </span>
 
-      <SegmentDivider className="hidden @[24rem]/usage-status:block" />
-      <span className="hidden shrink-0 items-center gap-1 @[24rem]/usage-status:flex">
+      <SegmentDivider className="hidden min-[480px]:flex" />
+      <span className="hidden shrink-0 items-center gap-1 min-[480px]:flex">
         <Clock className="size-3 shrink-0 text-foreground-subtlest" aria-hidden="true" />
         <span>
           {intl.formatMessage(
@@ -355,7 +356,7 @@ export function V4ComposerUsageStatusBar({
       </span>
 
       {values.running ? (
-        <span className="ml-0.5 hidden shrink-0 items-center gap-1 text-foreground-subtlest @[28rem]/usage-status:flex">
+        <span className="ml-0.5 flex shrink-0 items-center gap-1 text-foreground-subtlest">
           <span className="size-1.5 animate-pulse rounded-full bg-current" aria-hidden="true" />
           {intl.formatMessage({ id: "composer.usage.statusBar.running" })}
         </span>
