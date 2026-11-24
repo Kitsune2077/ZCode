@@ -11,7 +11,8 @@
 用户**无需预装 Node.js**。
 
 后续随包工具按同一机制扩展（见下方各工具小节）：`dsoffice`（Office 转换引擎）的动机不同——
-它解决的是公司内网无外网时四个文档插件的转换/渲染/公式重算完全不可用的问题。
+它解决的是公司内网无外网时四个文档插件的转换/渲染/公式重算完全不可用的问题
+（该问题目前并未由 dsoffice 解决，见该小节开头的「现状」）。
 
 ## 机制（谁负责什么）
 
@@ -92,8 +93,15 @@
 现场下载几百 MB 安装，公司内网无外网时整条质量验证闭环断裂（且受管终端的安装器拦截进一步放大
 失败面）。参照 DeepSeek Harness 桌面版的做法，把上游 `@deepseek-ai/libreoffice-kit`
 （[dsh-libreoffice-kit](https://github.com/deepseek-ai/dsh-libreoffice-kit)，MPL-2.0）预编译
-引擎随包内置，运行时零下载；skill 文案同步改写为引擎解析降级链（见 `docs/document-skills-plugin.md`
-→ "依赖边界"）。
+引擎随包内置，运行时零下载；当时同步把四个文档插件的 skill 文案改写成了引擎解析降级链。
+
+> **现状（同步上游 4.0.0 之后）**：四个文档插件已整体回到上游内容（与上游逐字节一致），skill 只经
+> 统一入口 `scripts/zcode_libreoffice.py` 查找 `zcode-soffice` 与系统 `soffice`，**不再调用
+> `dsoffice`**（四个插件目录内零引用）。引擎仍随包打进安装包（`resources/tools/libreoffice-kit`），
+> 但目前没有 skill 消费者：在没有系统 LibreOffice 的机器上，公式重算、Office→PDF 转换与视觉验证
+> 会按上游文案提示安装 LibreOffice。上游同期自带「预装工具」机制（启动时联网下载真实 LibreOffice
+> 等五个工具，提供 `zcode-soffice` / `zcode-python` 入口，见 `docs/preinstalled-tools/README.md`）。
+> 让上游入口接入本引擎、还是改用上游的预装工具，**尚未决定**；在那之前本节描述的调用链不生效。
 
 ### 机制
 
@@ -101,7 +109,7 @@
 | --- | --- | --- |
 | 取得引擎闭包 | `scripts/prepare-bundled-libreoffice-kit.mjs`（`prepare:libreoffice-kit`） | 钉死版本 `npm install --ignore-scripts --omit=dev` 到 `bundled-tools/<key>/libreoffice-kit/runtime/node_modules/`（kit + 平台引擎 + koffi 闭包），并生成 `dsoffice`/`dsoffice.cmd` shim 与 bundle 元数据 |
 | 打进安装包 | `packages/desktop/electron-builder.config.js` extraResources | `bundled-tools/<key>/libreoffice-kit` → `resources/tools/libreoffice-kit`（existsSync 条件，缺资产不让打包失败）。`runtime/node_modules` 故意嵌套一层子目录——electron-builder 会过滤 extraResources from 根目录的 node_modules（koffi/sharp staging 实证） |
-| 运行时解析 | `packages/services/src/runtime-tools/runtimeToolResolver.ts` | 工具 id `"dsoffice"`：`ZCODE_DSOFFICE_BINARY` → `resources/tools/libreoffice-kit/dsoffice.cmd|dsoffice` → PATH 兜底；命中后把该目录追加进 Agent PATH，skill 的 `command -v dsoffice` 即命中 |
+| 运行时解析 | `packages/services/src/runtime-tools/runtimeToolResolver.ts` | 工具 id `"dsoffice"`：`ZCODE_DSOFFICE_BINARY` → `resources/tools/libreoffice-kit/dsoffice.cmd|dsoffice` → PATH 兜底；命中后把该目录追加进 Agent PATH（`command -v dsoffice` 可命中，但当前没有 skill 调用它，见上文「现状」） |
 | 桌面侧预解析 | `packages/desktop/src/main/desktopRuntimeEnv.ts` | 注入 `ZCODE_DSOFFICE_BINARY`（shim 路径）与 `ZCODE_DSOFFICE_NODE_EXE`（app 自身 Electron 二进制，shim 用 `ELECTRON_RUN_AS_NODE` 复用它跑 kit 的 `lib/cli.js`，与 Host 执行 zcode.cjs 同一模式；Electron 44 = Node 24.21，满足 kit 的 `>=22.19.0`） |
 
 ```
@@ -109,10 +117,10 @@
                                        │ electron-builder extraResources
                                        ▼
 运行期: resources/tools/libreoffice-kit/ ─▶ runtimeToolResolver ─▶ ZCODE_DSOFFICE_BINARY / ZCODE_DSOFFICE_NODE_EXE
-                                                              └─▶ PATH 追加该目录
-                                                                        ▼
-                            文档插件 skills / xlsx.py / pdf.py: `command -v dsoffice` 命中
-                            dsoffice convert|render|recalculate（本地 soffice 兜底，见 skill 降级链）
+                                                            └─▶ PATH 追加该目录
+                                                                      ▼
+                                          （当前无调用方：上游 4.0.0 的 skill 不调用 dsoffice，
+                                            dsoffice convert|render|recalculate 仅在直接调用时可用）
 ```
 
 ### 供应链
@@ -162,7 +170,8 @@
 四个文档插件的创作脚本依赖 `python3` 与一批 pip 包（python-docx / python-pptx / openpyxl 等）。
 此前只靠系统 Python：公司内网无外网时 pip 装不了包，创建/编辑/校验链路直接断。参照
 DeepSeek Harness 的"锁定运行时 + 锁定库 + 校验 + 可离线预置"思路，把 CPython 与库随包分发，
-运行时零下载。与 dsoffice 的分工：**dsoffice 负责转换/渲染/公式重算，python 负责创作与解析**。
+运行时零下载。原设计与 dsoffice 的分工是：**dsoffice 负责转换/渲染/公式重算，python 负责创作与解析**
+（dsoffice 目前没有 skill 调用方，见上文「现状」）。
 
 ### 机制
 
@@ -173,7 +182,7 @@ DeepSeek Harness 的"锁定运行时 + 锁定库 + 校验 + 可离线预置"思�
 | 打进安装包 | `electron-builder.config.js` extraResources | `bundled-tools/<key>/python` → `resources/tools/python`（existsSync 条件） |
 | 运行时解析 | `packages/services/src/runtime-tools/runtimeToolResolver.ts` | 工具 id `"python"`：`ZCODE_PYTHON_BINARY` → `resources/tools/python/python3[.cmd]` → PATH 兜底；命中后把工具根追加进 Agent PATH |
 | 桌面侧注入 | `packages/desktop/src/main/desktopRuntimeEnv.ts` | 提前解析并注入 `ZCODE_PYTHON_BINARY`（Preview/生产不必猜路径） |
-| 消费方 | 四个插件的 `env_check.sh` / `setup.sh` | 裸 `command -v python3` 与 `python3 -c "import openpyxl"` 命中内置副本；PATH 为**追加**语义，用户自带 python3 优先 |
+| 消费方 | 四个插件的 `env_check.sh` / `setup.sh` / `*.py`（上游 4.0.0 起统一写成 `"$(command -v zcode-python || command -v python3)"`） | 没有上游预装的 `zcode-python` 时落到 `python3`，命中内置副本；PATH 为**追加**语义，用户自带 python3 优先 |
 
 ### 供应链
 
@@ -182,8 +191,9 @@ DeepSeek Harness 的"锁定运行时 + 锁定库 + 校验 + 可离线预置"思�
 - **wheel**：包名 + 版本 + 每平台 sha256 全部锁定（含传递依赖，约 20~22 个/平台）；
   `pip download --require-hashes` 下载后逐字节复核，`pip install --no-deps` 安装锁定文件，
   不做运行时版本解析。
-- **排除 PyMuPDF（AGPL-3.0）**：PDF 页面渲染由 `dsoffice render` 承担；pdf skill 的
-  `fitz` 检查为 optional。
+- **排除 PyMuPDF（AGPL-3.0）**：上游同样不预装它（法务结论见 `docs/preinstalled-tools/README.md`）。
+  上游 4.0.0 的 pdf skill 把 PyMuPDF 列为核心依赖、要求按需 pip 安装；仅内置环境下
+  pdf 的 `env_check.sh` 会报告 `MISSING (core): PyMuPDF`。
 - **许可**：CPython 与各 wheel 的许可原文随包放在 `resources/tools/python/licenses/`；
   仓库级声明登记在 `third-party/runtime/sources.json`（生成器逐字节校验并写入 notices）。
 
@@ -200,7 +210,11 @@ DeepSeek Harness 的"锁定运行时 + 锁定库 + 校验 + 可离线预置"思�
   `python3`/`python3.cmd`、`runtime/`、`licenses/`、`python-runtime-bundle.json`。
 - B：Git Bash 中 `command -v python3` 命中工具根 shim；cmd/PowerShell 命中 `.cmd`；
   `python3 -c "import sys; print(sys.prefix)"` 指向 `resources/tools/python/runtime`。
-- C：仅内置解释器在 PATH 时，docx/xlsx/pdf 三个 `env_check.sh` 退出码为 0。
+- C：仅内置解释器在 PATH 时，上游写法 `"$(command -v zcode-python || command -v python3)"` 解析到
+  内置 shim，`openpyxl` / `xlsxwriter` / `docx` / `pptx` 等导入通过（Windows x64 实测，2026-11-23）。
+  上游 4.0.0 的 `env_check.sh` 整体退出码不保证为 0：同一次实测 docx=1（缺 node、LibreOffice）、
+  pdf=1（PyMuPDF 为上游核心依赖）、xlsx=0（LibreOffice 只提示）——这几项与 Python 环境无关，
+  见上文 dsoffice「现状」。
 - D：`ZCODE_SKIP_PYTHON=1` 打包 → 包内不含 python、打包不失败，skill 回落系统 Python。
 - E：幂等——同版本二次执行 `[skip]`；删元数据后 `[repair]`。
 

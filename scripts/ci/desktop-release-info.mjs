@@ -296,7 +296,7 @@ function render() {
   }
   if (dsoffice) {
     lines.push(
-      `- 内置 Office 转换引擎 \`${dsoffice.version}\`（dsoffice，无需安装 LibreOffice）。来源：${dsoffice.sourceUrl}。`,
+      `- 内置 Office 转换引擎 \`${dsoffice.version}\`（dsoffice）。来源：${dsoffice.sourceUrl}。`,
     );
   }
   if (pythonRuntime) {
