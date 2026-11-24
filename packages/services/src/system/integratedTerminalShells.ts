@@ -1,27 +1,30 @@
-import { accessSync, constants as fsConstants } from "node:fs";
+import { constants } from "node:fs";
+import { access, stat } from "node:fs/promises";
 import { win32 } from "node:path";
 import type { IntegratedTerminalShellOption } from "@zcode/shared";
+import { discoverWindowsGitBash, type WindowsGitBashDiscoveryOptions } from "@zcode/shared/node";
 
-type ExecutableCheck = (path: string) => boolean;
-
-const WINDOWS_GIT_BASH_PATHS = [
-  "C:\\Program Files\\Git\\bin\\bash.exe",
-  "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
-] as const;
-
+// 本仓库定制：PowerShell 7 集成终端选项（上游只列出 CMD 与 Git Bash）。
 const WINDOWS_PWSH_PATH_SEGMENTS = ["PowerShell", "7", "pwsh.exe"] as const;
 
-export function listIntegratedTerminalShellOptions(options: {
+export async function listIntegratedTerminalShellOptions(options: {
   env: NodeJS.ProcessEnv;
-  isExecutable?: ExecutableCheck;
+  gitBashDiscovery?: Omit<WindowsGitBashDiscoveryOptions, "env" | "platform" | "isExecutable">;
+  isExecutable?: WindowsGitBashDiscoveryOptions["isExecutable"];
   platform: NodeJS.Platform;
-}): IntegratedTerminalShellOption[] {
+}): Promise<IntegratedTerminalShellOption[]> {
   if (options.platform !== "win32") {
     return [];
   }
 
   const shellOptions: IntegratedTerminalShellOption[] = [createCommandPromptOption(options.env)];
-  const gitBash = resolveWindowsGitBash(options.env, options.isExecutable);
+  // 原来重复的固定目录/PATH 发现会漏掉非标准安装；共享发现修复漏检，选择与来源映射保持不变。
+  const gitBash = await discoverWindowsGitBash({
+    ...options.gitBashDiscovery,
+    env: options.env,
+    isExecutable: options.isExecutable,
+    platform: options.platform,
+  });
   if (gitBash) {
     shellOptions.push({
       dialect: "git-bash",
@@ -31,7 +34,8 @@ export function listIntegratedTerminalShellOptions(options: {
       source: gitBash.source,
     });
   }
-  const powershell = resolveWindowsPowerShell(options.env, options.isExecutable);
+  // 本仓库定制：追加 PowerShell 7 选项。
+  const powershell = await resolveWindowsPowerShell(options.env, options.isExecutable);
   if (powershell) {
     shellOptions.push({
       dialect: "powershell",
@@ -56,51 +60,25 @@ function createCommandPromptOption(env: NodeJS.ProcessEnv): IntegratedTerminalSh
   };
 }
 
-function resolveWindowsGitBash(
+// 本仓库定制：PowerShell 7 发现。上游 4.0 把 Git Bash 的固定目录 / PATH / PATHEXT 辅助函数
+// 收进了 @zcode/shared/node 的 discoverWindowsGitBash 并从本文件删除；pwsh 不在其职责内，
+// 因此保留一份只服务 PowerShell 的最小实现。isExecutable 与共享发现同契约（可同步可异步）。
+async function resolveWindowsPowerShell(
   env: NodeJS.ProcessEnv,
-  isExecutable?: ExecutableCheck,
-): { path: string; source: "system" | "path" } | undefined {
-  for (const candidate of WINDOWS_GIT_BASH_PATHS) {
-    if (isExecutableCandidate(candidate, isExecutable)) {
-      return { path: candidate, source: "system" };
-    }
-  }
-
-  const gitExe = windowsExecutableCandidates("git", env).find((candidate) =>
-    isExecutableCandidate(candidate, isExecutable),
-  );
-  if (!gitExe) {
-    return undefined;
-  }
-
-  const inferred = inferWindowsGitBashPathsFromGitExe(gitExe).find((candidate) =>
-    isExecutableCandidate(candidate, isExecutable),
-  );
-  return inferred ? { path: inferred, source: "path" } : undefined;
-}
-
-function inferWindowsGitBashPathsFromGitExe(gitExe: string): string[] {
-  const gitDir = win32.dirname(gitExe);
-  return [
-    win32.normalize(win32.join(gitDir, "..", "bin", "bash.exe")),
-    win32.normalize(win32.join(gitDir, "..", "..", "bin", "bash.exe")),
-  ];
-}
-
-function resolveWindowsPowerShell(
-  env: NodeJS.ProcessEnv,
-  isExecutable?: ExecutableCheck,
-): { path: string; source: "system" | "path" } | undefined {
+  isExecutable?: WindowsGitBashDiscoveryOptions["isExecutable"],
+): Promise<{ path: string; source: "system" | "path" } | undefined> {
   for (const candidate of windowsPowerShellCandidatePaths(env)) {
-    if (isExecutableCandidate(candidate, isExecutable)) {
+    if (await isExecutableCandidate(candidate, isExecutable)) {
       return { path: candidate, source: "system" };
     }
   }
 
-  const pwshExe = windowsExecutableCandidates("pwsh", env).find((candidate) =>
-    isExecutableCandidate(candidate, isExecutable),
-  );
-  return pwshExe ? { path: pwshExe, source: "path" } : undefined;
+  for (const candidate of windowsExecutableCandidates("pwsh", env)) {
+    if (await isExecutableCandidate(candidate, isExecutable)) {
+      return { path: candidate, source: "path" };
+    }
+  }
+  return undefined;
 }
 
 function windowsPowerShellCandidatePaths(env: NodeJS.ProcessEnv): string[] {
@@ -149,15 +127,19 @@ function getWindowsEnvValue(env: NodeJS.ProcessEnv, key: string): string | undef
   return match ? env[match] : undefined;
 }
 
-function isExecutableCandidate(path: string, isExecutable?: ExecutableCheck): boolean {
-  if (isExecutable) {
-    return isExecutable(path);
-  }
-
+async function isExecutableCandidate(
+  path: string,
+  isExecutable?: WindowsGitBashDiscoveryOptions["isExecutable"],
+): Promise<boolean> {
   try {
-    accessSync(path, fsConstants.X_OK);
-    return true;
+    return await (isExecutable ?? isExecutableFile)(path);
   } catch {
     return false;
   }
+}
+
+// 默认探测与共享发现同语义：可执行权限 + 普通文件。
+async function isExecutableFile(path: string): Promise<boolean> {
+  await access(path, constants.X_OK);
+  return (await stat(path)).isFile();
 }

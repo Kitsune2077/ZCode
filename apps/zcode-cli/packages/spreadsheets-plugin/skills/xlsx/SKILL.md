@@ -9,6 +9,13 @@ license: Proprietary. LICENSE.txt has complete terms
 
 # XLSX — Scene-Driven Spreadsheet Workbench
 
+## LibreOffice preflight
+
+Before the first Python command, if neither `zcode-python` nor a system Python is available, follow [Python setup](env_setup/setup.md#python-interpreter-selection). On desktop, report that preinstalled Python is not ready or is disabled and let the user choose waiting, enabling it, or system installation. The same setup guide covers a selected preinstalled interpreter or package installation failure.
+
+Set `XLSX_SKILL_DIR` to this Skill's returned base directory. Run `"$(command -v zcode-python || command -v python3)" "$XLSX_SKILL_DIR/../../scripts/zcode_libreoffice.py" check` before a conversion or recalculation.
+The [launcher contract](../../scripts/README.md) defines managed/system lookup, isolated profiles and failure handling. Report a managed failure and use any available system version. If neither is usable on desktop, preserve completed files and let the user choose waiting or Agent installation using [setup guidance](env_setup/libreoffice-unmanaged.md). The launcher discovers the preinstalled entry on PATH; desktop availability only selects the installation guidance. Keep using the unified launcher after installation so later managed readiness takes priority. Other dependency setup remains unchanged.
+
 ## Environment Setup
 
 **Quick check** — run this first. If it exits 0, skip to [Pre-Flight](#pre-flight-intent-gate):
@@ -21,11 +28,7 @@ This auto-detects and exports `XLSX_SKILL_DIR` and `FONT_DIR`. No manual variabl
 
 **Only if the check fails**, read [`env_setup/setup.md`](env_setup/setup.md) for full platform-specific installation instructions (dependencies, fonts, China mirrors).
 
-> **Conversion engine.** Formula recalculation (`recalc`) needs an engine. ZCode bundles a prebuilt
-> LibreOffice engine as the `dsoffice` CLI — `xlsx.py recalc` uses it automatically when present and
-> falls back to a local LibreOffice. If neither exists, follow the resolution order under
-> [Quality Gate](#quality-gate-1) — with user consent at each fallback, and honest reporting when
-> recalculation cannot run.
+> **LibreOffice:** use the unified launcher whenever recalculation or Office conversion is required. Report managed failures and use any working system version. If none is available on desktop, let the user choose waiting or Agent installation; then continue through the launcher and perform required validation.
 
 | Variable | Auto-set by env_check.sh | Description |
 |----------|--------------------------|-------------|
@@ -185,9 +188,9 @@ All CLI tools live relative to this skill's directory. Before calling any script
 XLSX_SKILL_DIR="<skill_directory>"   # ← parent directory of this SKILL.md
 
 # Then all commands use absolute paths:
-python3 "$XLSX_SKILL_DIR/xlsx.py" inspect data.xlsx --pretty
-python3 "$XLSX_SKILL_DIR/xlsx.py" pivot data.xlsx output.xlsx --rows Region --values Revenue
-python3 "$XLSX_SKILL_DIR/xlsx.py" validate output.xlsx
+"$(command -v zcode-python || command -v python3)" "$XLSX_SKILL_DIR/xlsx.py" inspect data.xlsx --pretty
+"$(command -v zcode-python || command -v python3)" "$XLSX_SKILL_DIR/xlsx.py" pivot data.xlsx output.xlsx --rows Region --values Revenue
+"$(command -v zcode-python || command -v python3)" "$XLSX_SKILL_DIR/xlsx.py" validate output.xlsx
 ```
 
 **For Python imports** (when generation code needs to import skill modules):
@@ -200,7 +203,7 @@ for sub in [XLSX_SKILL_DIR, os.path.join(XLSX_SKILL_DIR, "templates")]:
         sys.path.insert(0, sub)
 ```
 
-**⚠️ NEVER use bare `python3 xlsx.py ...`** — it only works if cwd happens to be the skill directory. Always use the absolute path.
+**⚠️ NEVER use bare `"$(command -v zcode-python || command -v python3)" xlsx.py ...`** — it only works if cwd happens to be the skill directory. Always use the absolute path.
 
 ### Tool Reference
 
@@ -230,40 +233,11 @@ Quick reference:
 Blueprint → Build & Self-check (per-sheet) → Inspect → Pivot (if needed) → Release
 ```
 
-### Office conversion engine resolution order
+### LibreOffice execution
 
-`recalc` (formula recalculation), `.xlsx` → PDF, and `.csv` → `.xlsx` all need a conversion engine.
-ZCode bundles a prebuilt LibreOffice engine as the `dsoffice` CLI — `xlsx.py recalc` uses it
-automatically when present. Resolve the engine top-down and stop at the first entry that works —
-never silently skip recalculation:
-
-1. **`dsoffice` — bundled engine, preferred.** `command -v dsoffice` (also honor
-   `$ZCODE_DSOFFICE_BINARY`). `xlsx.py recalc` picks it up automatically; direct use:
-   `dsoffice recalculate --input book.xlsx --output recalced.xlsx`. LibreOffice is what actually
-   recalculates the formulas so errors (`#REF!`, `#DIV/0!`, `#VALUE!`) surface before delivery —
-   the bundled engine provides the same recalculation without any install.
-2. **Existing local LibreOffice.** Probe `soffice` on PATH and common install locations (Windows:
-   `C:\Program Files\LibreOffice\program\soffice.exe`; macOS:
-   `/Applications/LibreOffice.app/Contents/MacOS/soffice`; Linux: `/opt/libreoffice*/program/soffice`).
-   Found off PATH? Register it (Linux/macOS: symlink into `/usr/local/bin`; Windows: `setx` the
-   program dir onto the user `PATH`) and re-verify `soffice --version` — never reinstall.
-3. **Install with user consent (needs network).** Only when no engine exists AND the user agrees
-   after being told the download is large (hundreds of MB). Preferred source — Tsinghua TUNA mirror:
-   `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/` — pick the newest version,
-   then the platform/arch subdirectory. Full per-platform commands:
-   [`env_setup/setup.md`](env_setup/setup.md) → *"LibreOffice — Recommended Download Source"*.
-   Package-manager fallback, only if the mirror is unreachable: macOS
-   `brew install --cask libreoffice`; Linux (Debian/Ubuntu) `sudo apt install libreoffice-core`;
-   Windows `winget install TheDocumentFoundation.LibreOffice`. Register the binary on `PATH`
-   afterwards and re-verify `soffice --version`.
-4. **Local Office as last resort (user consent).** If installing is impossible (no network),
-   recalculating through Excel / WPS / Numbers already on the user's machine is acceptable — tell
-   the user first and warn that results may differ from LibreOffice.
-5. **Report honestly when nothing works.** Deliver with openpyxl-level checks (audit/scan/validate
-   still run without an engine), and state clearly that formula values may be stale because
-   recalculation could not run — the Live Formula Guarantee is not honored, and the user must know.
-
----
+Use the [unified launcher](../../scripts/README.md) for all LibreOffice steps. Its lookup order is the managed installation, then any system version (including older and development builds). Report its version and why the managed program was not used. A managed execution failure retries once on the system program after cleanup; cancellation never retries.
+If neither program is usable, keep existing files and report the reason. On desktop, first explain that preparation is unavailable, point to Help → Preinstalled Tools, and let the user choose waiting or Agent installation. Do not skip required validation.
+When installation is chosen, follow [installation guidance](env_setup/libreoffice-unmanaged.md), then retry the unified launcher. Remote workspaces, standalone CLI and containers keep their existing installation flow. Always use the launcher after installation; it rechecks for a managed program on every call.
 
 ## Capability Matrix
 

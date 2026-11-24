@@ -68,18 +68,18 @@ for para in paras:
 ## Method 3: Convert to Images (Visual Analysis)
 
 ```bash
-# Bundled engine — renders page PNGs in one step (page-0001.png, page-0002.png, ...)
-dsoffice render --input input.docx --output-dir <dir> --pages all
+# Convert to PDF first
+"$(command -v zcode-python || command -v python3)" "$DOCX_SKILL_DIR/../../scripts/zcode_libreoffice.py" run -- --convert-to pdf input.docx
+
+# Then to images
+pdftoppm -png -r 200 input.pdf page
+
+# Generates page-1.png, page-2.png, etc.
 ```
 
 **Best for**: Visual layout analysis, comparing formatting, generating previews, when user asks "what does it look like".
 
-> 🔴 **No conversion engine?** Follow the engine resolution order in `SKILL.md` →
-> *"Office conversion engine resolution order"*: bundled `dsoffice` first, then an existing local
-> LibreOffice (`soffice --headless --convert-to pdf` + `pdftoppm -png -r 200`), then a user-consented
-> install, and only with explicit user consent a preview through local Word/WPS (warn that fidelity
-> may differ). If nothing is available, say the visual preview was not produced — never fabricate
-> layout claims without rendering.
+> **LibreOffice:** use the [unified launcher](../../../scripts/README.md). The launcher prefers managed LibreOffice, then any installed system version, and reports the fallback reason. If neither is available, retain existing files and follow setup.md. On desktop, first report the unavailable preparation state and ask the user to wait or let the Agent install. After installation, keep using the unified launcher so a later managed installation takes priority.
 
 ## Method 4: python-docx Reading
 

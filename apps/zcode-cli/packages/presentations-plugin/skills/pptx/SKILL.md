@@ -3,10 +3,17 @@ name: pptx
 metadata:
   author: Z.AI
   version: "1.1"
-description: "Use this skill any time a presentation file is the primary input or output. Covers: creating new .pptx decks from scratch or from an outline/document (pptxgenjs / python-pptx); editing and restyling an existing .pptx; reading and extracting text/structure from a deck (markitdown); and rendering a deck to PDF or to per-slide PNG images (bundled dsoffice engine, local LibreOffice fallback) for previews, thumbnails, or visual review. Trigger when the user references a .pptx file by name or path, says 'make/build a deck, slides, presentation, PPT, 幻灯片, 演示文稿, 汇报/路演材料', or asks to convert, export, render, or preview slides as PDF or images (e.g. 'PPT转PDF', 'ppt导出图片', 'turn these slides into a PDF')."
+description: "Use this skill any time a presentation file is the primary input or output. Covers: creating new .pptx decks from scratch or from an outline/document (pptxgenjs / python-pptx); editing and restyling an existing .pptx; reading and extracting text/structure from a deck (markitdown); and rendering a deck to PDF (LibreOffice) or to per-slide PNG images (pdftoppm) for previews, thumbnails, or visual review. Trigger when the user references a .pptx file by name or path, says 'make/build a deck, slides, presentation, PPT, 幻灯片, 演示文稿, 汇报/路演材料', or asks to convert, export, render, or preview slides as PDF or images (e.g. 'PPT转PDF', 'ppt导出图片', 'turn these slides into a PDF')."
 license: Proprietary. LICENSE.txt has complete terms
 ---
 # Part 1 · Slide Design Best Practices
+
+## LibreOffice preflight
+
+Before the first Python command, if neither `zcode-python` nor a system Python is available, follow [Python setup](env_setup/setup.md#python-interpreter-selection). On desktop, report that preinstalled Python is not ready or is disabled and let the user choose waiting, enabling it, or system installation. The same setup guide covers a selected preinstalled interpreter or package installation failure.
+
+Set `PPTX_SKILL_DIR` to this Skill's returned base directory. Run `"$(command -v zcode-python || command -v python3)" "$PPTX_SKILL_DIR/../../scripts/zcode_libreoffice.py" check` before a conversion or recalculation.
+The [launcher contract](../../scripts/README.md) defines managed/system lookup, isolated profiles and failure handling. Report a managed failure and use any available system version. If neither is usable on desktop, preserve completed files and let the user choose waiting or Agent installation using [setup guidance](env_setup/libreoffice-unmanaged.md). The launcher discovers the preinstalled entry on PATH; desktop availability only selects the installation guidance. Keep using the unified launcher after installation so later managed readiness takes priority. Other dependency setup remains unchanged.
 
 In one sentence: **don't make boring slides.** Bullet points on a white background are forgettable.
 
@@ -155,44 +162,23 @@ Build the palette on the **BACKGROUND → PRIMARY → ACCENT** model, and reuse 
 
 **Code QA:** run a short `python-pptx` script over the finished deck to flag text overflow (estimated text height/width vs. the shape box, plus boxes outside the slide) and overlap (bounding-box intersection between two text-bearing shapes), then fix the real hits and re-run.
 
-**Visual QA** once only: render the deck to images and use the visual-judge subagent (if not present, check it yourself) when necessary. Do not call an external VLM to check slides for visual QA.
+**Visual QA** once only, when necessary: render the deck to images and look at the slide images yourself. Do not dispatch a subagent or call an external VLM to check slides for visual QA.
 
 **Output QA (before handing the deck over):** the user's original input file is untouched at its original path (unless the user explicitly asked for in-place editing); any backup you created stays next to it — these are NOT temp/retry artifacts. The deliverable is a new file (`<stem>_updated.pptx`), and intermediate renders (the PDF and per-slide PNGs from the commands below) are cleaned up.
 
-PPTX → images is **one step with the bundled engine** (or two steps on the local-LibreOffice
-fallback — `pdftoppm` reads PDF, not `.pptx`):
+PPTX → images is **two steps** — `pdftoppm` reads PDF, not `.pptx`, so LibreOffice must convert first:
 
 ```bash
-# Bundled engine (preferred): PPTX → PDF + per-slide PNGs in one call
-dsoffice render --input deck.pptx --output-dir <out_dir> --pages all
-# Generates <out_dir>/page-0001.png, page-0002.png, ... (also reports missingFonts)
+# Step 1: PPTX → PDF (LibreOffice; also the command for any "export deck as PDF" request)
+"$(command -v zcode-python || command -v python3)" "$PPTX_SKILL_DIR/../../scripts/zcode_libreoffice.py" run -- --convert-to pdf --outdir <out_dir> deck.pptx
 
-# "export deck as PDF" request:
-dsoffice convert --input deck.pptx --output <out_dir>/deck.pdf
+# Step 2: PDF → per-slide PNGs
+pdftoppm -png -r 150 <out_dir>/deck.pdf <out_dir>/slide
+# Generates slide-1.png, slide-2.png, ...
 ```
 
-> Local-LibreOffice fallback (bundled engine absent, see the resolution order below):
->
-> ```bash
-> # Step 1: PPTX → PDF (also the command for any "export deck as PDF" request)
-> soffice --headless --convert-to pdf --outdir <out_dir> deck.pptx
-> # Step 2: PDF → per-slide PNGs
-> pdftoppm -png -r 150 <out_dir>/deck.pdf <out_dir>/slide
-> # Generates slide-1.png, slide-2.png, ...
-> ```
->
-> If `soffice` is only available under a full path (macOS:
-> `/Applications/LibreOffice.app/Contents/MacOS/soffice`), call it there. Only one LibreOffice
-> instance may run at a time — if a conversion hangs, add
-> `--env:UserInstallation=file:///tmp/libreoffice_tmp`.
->
-> 🔴 **No conversion engine?** Follow the engine resolution order at the bottom of this file →
-> *"Office conversion engine resolution order"*: bundled `dsoffice` first, then an existing local
-> LibreOffice (register off-`PATH` installs and re-verify `soffice --version` — never reinstall),
-> then a user-consented install, and only with explicit user consent a render through local
-> PowerPoint/Keynote/WPS (say so and warn the preview may differ). If nothing is available, deliver
-> with the code QA above and report the visual QA as unavailable — never fabricate rendering
-> verdicts.
+> The unified launcher resolves the executable and creates a separate profile for every invocation.
+
 
 ---
 
@@ -686,53 +672,23 @@ Skip `word_wrap = False`: it makes text overflow the box invisibly in PowerPoint
 
 Required dependencies (should already be installed):
 
-- **markitdown**: `pip install "markitdown[pptx]"` (text extraction)
+- **markitdown**: `"$(command -v zcode-python || command -v python3)" -m pip install "markitdown[pptx]"` (text extraction)
 - **pptxgenjs**: `npm install -g pptxgenjs` (creating presentations)
 - **playwright**: `npm install -g playwright@1.50.0` (HTML rendering)
 - **sharp**: `npm install -g sharp` (SVG rasterization and image processing)
-- **dsoffice**: bundled LibreOffice conversion engine (preferred) — PPTX → PDF and slide rendering,
-  see the resolution order below; falls back to a local LibreOffice
-- **Poppler**: `sudo apt-get install poppler-utils` (pdftoppm — local-`soffice` fallback path only)
-- **defusedxml**: `pip install defusedxml` (secure XML parsing)
+- **LibreOffice**: PDF conversion through the unified launcher; see the execution modes below.
+- **Poppler**: `sudo apt-get install poppler-utils` (pdftoppm)
+- **defusedxml**: `"$(command -v zcode-python || command -v python3)" -m pip install defusedxml` (secure XML parsing)
 
-### Office conversion engine resolution order
+### Poppler
 
-Every PPTX → PDF conversion and every rendered preview/thumbnail step needs a conversion engine.
-ZCode bundles a prebuilt LibreOffice engine as the `dsoffice` CLI. Resolve the engine top-down and
-stop at the first entry that works — never silently ship an unverified deck:
+The Poppler command `pdftoppm` keeps its usual name; on desktop the preinstalled version comes first on PATH. If `ZCODE_PREINSTALLED_TOOLS_AVAILABLE` is set and `pdftoppm` is not found, stop before installing anything. Explain: “预装版本未就绪或已关闭，请在 帮助 → 预装工具 中查看” (the preinstalled version is not ready or is disabled; check **Help → Preinstalled tools**). Let the user choose waiting for it (or enabling it there), or continuing the original way: install it as listed above. Without that variable, keep the existing guidance.
 
-1. **`dsoffice` — bundled engine, preferred.** `command -v dsoffice` (also honor
-   `$ZCODE_DSOFFICE_BINARY` when set). `dsoffice render --input deck.pptx --output-dir <dir>
-   --pages all` renders the PDF and per-slide PNGs in one call and reports `missingFonts`;
-   `dsoffice convert --input deck.pptx --output <dir>/deck.pdf` for plain PDF export.
-2. **Existing local LibreOffice.** Probe `soffice` on PATH and common install locations
-   (`/opt/libreoffice*/program/soffice`, `/Applications/LibreOffice.app/Contents/MacOS/soffice`,
-   `C:\Program Files\LibreOffice\program\soffice.exe`). Found off PATH? Register it — Linux:
-   `sudo ln -sf /opt/libreoffice*/program/soffice /usr/local/bin/soffice`; macOS:
-   `sudo ln -sf /Applications/LibreOffice.app/Contents/MacOS/soffice /usr/local/bin/soffice`
-   (Apple Silicon: `/opt/homebrew/bin` if `/usr/local/bin` is not on `PATH`); Windows:
-   `setx PATH "...;C:\Program Files\LibreOffice\program"` (`setx` only affects newly launched
-   shells — call the full path for the current session). Then convert with
-   `soffice --headless --convert-to pdf --outdir <out_dir> deck.pptx` + `pdftoppm`, and re-verify
-   `soffice --version`. Never reinstall what is already on disk.
-3. **Install with user consent (needs network).** Only when no engine exists AND the user agrees
-   after being told the download is large (hundreds of MB). Preferred source — Tsinghua TUNA mirror
-   (fast in China, current build): `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/`
-   — pick the newest version directory, then the subdirectory for the platform/arch:
-   `deb/x86_64|aarch64`, `rpm/x86_64`, `mac/aarch64|x86_64`, `win/x86_64|aarch64`.
-   Linux (deb): `tar -xzf <pkg>.tar.gz && sudo dpkg -i LibreOffice_*/DEBS/*.deb && sudo apt-get install -f -y`;
-   macOS: `hdiutil attach <pkg>.dmg && cp -R /Volumes/LibreOffice/LibreOffice.app /Applications/ && hdiutil detach /Volumes/LibreOffice`;
-   Windows: `msiexec /i <pkg>.msi /qn` (needs admin). Package-manager fallback, only if the mirror
-   is unreachable: `brew install --cask libreoffice` / `sudo apt-get install libreoffice` /
-   `winget install TheDocumentFoundation.LibreOffice`. Register the binary on `PATH` afterwards
-   (table above) and re-verify `soffice --version` — only continue once it prints a version.
-4. **Local Office as last resort (user consent).** If installing is impossible (no network), a
-   render through Keynote / PowerPoint / WPS already on the user's machine is acceptable — tell the
-   user first and warn that the preview may differ from LibreOffice's layout.
-5. **Report honestly when nothing works.** Ship the deck with the programmatic code QA done, and
-   state exactly which checks (visual QA, PDF export) could not be performed and why.
+### LibreOffice execution
 
----
+Use the [unified launcher](../../scripts/README.md) for all LibreOffice steps. Its lookup order is the managed installation, then any system version (including older and development builds). Report its version and why the managed program was not used. A managed execution failure retries once on the system program after cleanup; cancellation never retries.
+If neither program is usable, keep existing files and report the reason. On desktop, first explain that preparation is unavailable, point to Help → Preinstalled Tools, and let the user choose waiting or Agent installation. Do not skip required validation.
+When installation is chosen, follow [installation guidance](env_setup/libreoffice-unmanaged.md), then retry the unified launcher. Remote workspaces, standalone CLI and containers keep their existing installation flow. Always use the launcher after installation; it rechecks for a managed program on every call.
 
 ## Final response citations
 

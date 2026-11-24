@@ -4,6 +4,14 @@
 # description: Environment detection, dependency check & install for XLSX skill on macOS and Linux.
 # ---
 set -euo pipefail
+# 优先选择预装入口；存在但运行失败时仍保留它，由用户决定是否切换。
+PY="$(command -v zcode-python || command -v python3)" || PY=""
+# 没有解释器时无法运行 Python 引导脚本；先给桌面选择，避免进入自动装包或下载。
+if [ -z "$PY" ] && [ -n "${ZCODE_PREINSTALLED_TOOLS_AVAILABLE:-}" ]; then
+    echo "预装版本未就绪或已关闭，请在 帮助 → 预装工具 中查看"
+    echo "Choose to wait, enable Python, or install system Python using the manual steps in env_setup/setup.md."
+    exit 1
+fi
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 ok()   { echo -e "  ${GREEN}✓${NC} $1"; }
@@ -76,11 +84,11 @@ fi
 
 # ── Step 2b: Python 3 ──
 echo "--- [2/6] Python 3 ---"
-if command -v python3 &>/dev/null; then
-    PY_VER=$(python3 --version 2>&1)
+if command -v "$PY" &>/dev/null; then
+    PY_VER=$("$PY" --version 2>&1)
     ok "python3 ($PY_VER)"
     if [ "$PLATFORM" = "mac" ]; then
-        PY_PATH=$(which python3 2>/dev/null)
+        PY_PATH="$PY"
         if [[ "$PY_PATH" == "/usr/bin/python3" ]]; then
             warn "Using macOS system Python (limited). Recommend: brew install python3"
         fi
@@ -94,12 +102,12 @@ else
     ERRORS=$((ERRORS + 1))
 fi
 
-if python3 -m pip --version &>/dev/null 2>&1; then
+if "$PY" -m pip --version &>/dev/null 2>&1; then
     ok "pip installed"
 else
     fail "pip not found"
     case "$PLATFORM" in
-        mac)   info "Install: python3 -m ensurepip --upgrade" ;;
+        mac)   info "Install: \"$PY\" -m ensurepip --upgrade" ;;
         linux) info "Install: sudo apt install python3-pip" ;;
     esac
     ERRORS=$((ERRORS + 1))
@@ -117,8 +125,8 @@ MISSING_PY=()
 for entry in "${PY_PKGS[@]}"; do
     mod="${entry%%:*}"
     pkg="${entry##*:}"
-    if python3 -c "import $mod" 2>/dev/null; then
-        ver=$(python3 -c "import $mod; print(getattr($mod, '__version__', 'ok'))" 2>/dev/null)
+    if "$PY" -c "import $mod" 2>/dev/null; then
+        ver=$("$PY" -c "import $mod; print(getattr($mod, '__version__', 'ok'))" 2>/dev/null)
         ok "$pkg ($ver)"
     else
         fail "$pkg not installed"
@@ -129,48 +137,24 @@ done
 if [ ${#MISSING_PY[@]} -gt 0 ]; then
     info "Installing missing Python packages: ${MISSING_PY[*]}"
     # shellcheck disable=SC2086
-    python3 -m pip install -q $PIP_MIRROR_ARGS "${MISSING_PY[@]}" 2>/dev/null \
-        || python3 -m pip install -q --user $PIP_MIRROR_ARGS "${MISSING_PY[@]}" 2>/dev/null \
-        || python3 -m pip install -q --break-system-packages $PIP_MIRROR_ARGS "${MISSING_PY[@]}" 2>/dev/null \
-        || { fail "pip install failed. Try: pip install $PIP_MIRROR_ARGS ${MISSING_PY[*]}"; ERRORS=$((ERRORS + 1)); }
+    "$PY" -m pip install -q $PIP_MIRROR_ARGS "${MISSING_PY[@]}" 2>/dev/null \
+        || "$PY" -m pip install -q --user $PIP_MIRROR_ARGS "${MISSING_PY[@]}" 2>/dev/null \
+        || "$PY" -m pip install -q --break-system-packages $PIP_MIRROR_ARGS "${MISSING_PY[@]}" 2>/dev/null \
+        || { fail "Python package installation failed. Try: \"$PY\" -m pip install $PIP_MIRROR_ARGS ${MISSING_PY[*]}"; ERRORS=$((ERRORS + 1)); }
     ok "Installed: ${MISSING_PY[*]}"
 fi
 echo ""
 
-# ── Step 2d: Conversion engine (bundled dsoffice first, local LibreOffice second) ──
-echo "--- [4/6] Conversion engine (format conversion + formula recalc) ---"
-if command -v dsoffice &>/dev/null; then
-    ok "dsoffice (bundled engine)"
-elif command -v soffice &>/dev/null; then
-    LO_VER=$(soffice --version 2>/dev/null | head -1)
-    ok "libreoffice ($LO_VER)"
+# ── LibreOffice：统一检查，安装方式由执行环境决定 ──
+echo "--- LibreOffice ---"
+_LO_PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../../.." && pwd)"
+if "$PY" "$_LO_PLUGIN_DIR/scripts/zcode_libreoffice.py" check; then
+    ok "LibreOffice ready"
 else
-    warn "no conversion engine (dsoffice / soffice) — needed for recalc, .xlsx→PDF, .csv→.xlsx"
-    info "Follow SKILL.md 'Office conversion engine resolution order'. Local LibreOffice install"
-    info "(only with USER CONSENT after being told the download is large, hundreds of MB):"
-    info "PREFERRED source (fast in China, current build): Tsinghua TUNA mirror"
-    info "  https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/"
-    info "  Pick the newest version, then the subdir for this platform/arch ($(uname -m)):"
-    info "    Linux deb  -> deb/x86_64/ or deb/aarch64/   (tar -xzf, then dpkg -i */DEBS/*.deb)"
-    info "    Linux rpm  -> rpm/x86_64/"
-    info "    macOS      -> mac/aarch64/ (Apple Silicon) or mac/x86_64/ (Intel)  (.dmg)"
-    info "Package-manager FALLBACK (only if the mirror is unreachable):"
-    case "$PLATFORM" in
-        mac)   info "  brew install --cask libreoffice" ;;
-        linux) info "  sudo apt install libreoffice-core" ;;
-    esac
-    info "AFTER installing, REGISTER the binary on PATH -- the method differs per OS:"
-    case "$PLATFORM" in
-        mac)   info "  sudo ln -sf /Applications/LibreOffice.app/Contents/MacOS/soffice /usr/local/bin/soffice"
-               info "  (Apple Silicon: use /opt/homebrew/bin/soffice if /usr/local/bin is not on PATH)" ;;
-        linux) info "  sudo ln -sf /opt/libreoffice*/program/soffice /usr/local/bin/soffice" ;;
-    esac
-    info "  then re-verify: soffice --version"
-    info "If soffice already exists on disk but is off PATH, just link it (never reinstall)."
-    info "No network? With user consent, local Excel/WPS recalc is a last resort (results differ)."
-    info "If nothing works, deliver with engine-free checks and report formula values may be stale."
+    warn "LibreOffice is not ready; retain current files and follow the launcher message."
+    # 桌面可用性只决定引导文案，程序通过 PATH 查找。
+    info "Installation guidance (desktop: ask whether to wait or install): $_LO_PLUGIN_DIR/skills/xlsx/env_setup/libreoffice-unmanaged.md"
 fi
-echo ""
 
 # ── Step 2e: Font Verification (local /usr/share/fonts/) ──
 echo "--- [5/6] Font Verification ---"

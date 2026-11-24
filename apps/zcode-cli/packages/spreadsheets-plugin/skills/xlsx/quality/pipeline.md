@@ -6,11 +6,11 @@ Every xlsx deliverable is built and verified through a role-based workflow. Thre
 
 ## Tool Reference: xlsx.py
 
-All commands: `python3 "$XLSX_SKILL_DIR/xlsx.py" <command> [arguments]`
+All commands: `"$(command -v zcode-python || command -v python3)" "$XLSX_SKILL_DIR/xlsx.py" <command> [arguments]`
 
 | Command | Purpose | Called By |
 |---------|---------|-----------|
-| `recalc <file>` | Recalculate formulas via bundled dsoffice (local LibreOffice fallback), scan for errors | Builder (self-check) |
+| `recalc <file>` | Recalculate formulas via LibreOffice, scan for errors | Builder (self-check) |
 | `audit <file>` | Deep formula error scan + zero-value + implicit array detection | Builder (self-check) |
 | `scan <file>` | Detect out-of-range, header-included, small-aggregate, inconsistent patterns | Builder (self-check) |
 | `inspect <file> --pretty` | Get sheet structure, data ranges, headers (JSON) | Blueprint Architect |
@@ -18,14 +18,7 @@ All commands: `python3 "$XLSX_SKILL_DIR/xlsx.py" <command> [arguments]`
 | `chart-verify <file>` | Verify embedded charts have data | Builder (self-check) |
 | `validate <file>` | Structural validation (release gate) | Inspector |
 
-> **`recalc` needs a conversion engine** — bundled `dsoffice` first, then a local LibreOffice. If
-> neither exists, follow SKILL.md → *"Office conversion engine resolution order"*: probe and register
-> local `soffice` (never reinstall), then install **only with user consent** (large download —
-> preferred source the Tsinghua TUNA mirror `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/`;
-> `brew`/`apt`/`winget` fallbacks; register on `PATH` and re-verify `soffice --version` afterwards).
-> A recalculated pass through the user's Excel/WPS is a user-consented last resort (results may
-> differ). If nothing works, run the engine-free checks (audit/scan/validate) and report that
-> formula values may be stale — never silently skip recalculation.
+> **LibreOffice:** use the [unified launcher](../../../scripts/README.md). The launcher prefers managed LibreOffice, then any installed system version, and reports the fallback reason. If neither is available, retain existing files and follow setup.md. On desktop, first report the unavailable preparation state and ask the user to wait or let the Agent install. After installation, keep using the unified launcher so a later managed installation takes priority.
 
 ---
 
@@ -78,8 +71,8 @@ The Builder writes code and produces the workbook. The Builder operates under a 
 PivotTables depend on finalized source data. They are always the **last data operation**:
 
 ```bash
-python3 "$XLSX_SKILL_DIR/xlsx.py" inspect input.xlsx --pretty   # understand structure
-python3 "$XLSX_SKILL_DIR/xlsx.py" pivot input.xlsx output.xlsx \
+"$(command -v zcode-python || command -v python3)" "$XLSX_SKILL_DIR/xlsx.py" inspect input.xlsx --pretty   # understand structure
+"$(command -v zcode-python || command -v python3)" "$XLSX_SKILL_DIR/xlsx.py" pivot input.xlsx output.xlsx \
     --source "Sheet!A1:F100" \
     --values "Revenue:sum,Units:count" \
     --rows "Product,Region" \
@@ -125,7 +118,7 @@ assert abs(source_total - output_total) < 0.01, f"Total mismatch: {source_total}
 ### Structural Inspection (release gate)
 
 ```bash
-python3 "$XLSX_SKILL_DIR/xlsx.py" validate output.xlsx
+"$(command -v zcode-python || command -v python3)" "$XLSX_SKILL_DIR/xlsx.py" validate output.xlsx
 ```
 
 - Exit 0 → file is releasable

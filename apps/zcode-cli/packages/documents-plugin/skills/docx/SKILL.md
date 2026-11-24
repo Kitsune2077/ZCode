@@ -9,6 +9,13 @@ license: Proprietary. LICENSE.txt has complete terms
 
 # DOCX Creation, Editing, and Analysis
 
+## LibreOffice preflight
+
+Before the first Python command, if neither `zcode-python` nor a system Python is available, follow [Python setup](env_setup/setup.md#python-interpreter-selection). On desktop, report that preinstalled Python is not ready or is disabled and let the user choose waiting, enabling it, or system installation. The same setup guide covers a selected preinstalled interpreter or package installation failure.
+
+Set `DOCX_SKILL_DIR` to this Skill's returned base directory. Run `"$(command -v zcode-python || command -v python3)" "$DOCX_SKILL_DIR/../../scripts/zcode_libreoffice.py" check` before a conversion or recalculation.
+The [launcher contract](../../scripts/README.md) defines managed/system lookup, isolated profiles and failure handling. Report a managed failure and use any available system version. If neither is usable on desktop, preserve completed files and let the user choose waiting or Agent installation using [setup guidance](env_setup/libreoffice-unmanaged.md). The launcher discovers the preinstalled entry on PATH; desktop availability only selects the installation guidance. Keep using the unified launcher after installation so later managed readiness takes priority. Other dependency setup remains unchanged.
+
 ## Quick Setup
 
 ```bash
@@ -52,8 +59,8 @@ All CLI tools live in `scripts/` relative to this skill's directory. Before call
 DOCX_SCRIPTS="<skill_directory>/scripts"   # ← parent directory of this SKILL.md
 
 # Then all commands use $DOCX_SCRIPTS:
-python3 "$DOCX_SCRIPTS/postcheck.py" output.docx
-python3 "$DOCX_SCRIPTS/add_toc_placeholders.py" output.docx --auto
+"$(command -v zcode-python || command -v python3)" "$DOCX_SCRIPTS/postcheck.py" output.docx
+"$(command -v zcode-python || command -v python3)" "$DOCX_SCRIPTS/add_toc_placeholders.py" output.docx --auto
 ```
 
 **For Python imports** (when generation code needs to import skill modules):
@@ -65,7 +72,7 @@ if DOCX_SCRIPTS not in sys.path:
     sys.path.insert(0, DOCX_SCRIPTS)
 ```
 
-**⚠️ NEVER use bare `python3 scripts/...`** — it only works if cwd happens to be the skill directory. Always use the absolute `$DOCX_SCRIPTS` path.
+Launch scripts through `"$(command -v zcode-python || command -v python3)"` and the absolute `$DOCX_SCRIPTS` path so the command works from any working directory.
 
 ### Task Router
 
@@ -181,7 +188,7 @@ For Chinese font size table and common margins, see `references/common-rules.md`
 ### Layer 2: Automated Post-Check Script
 
 ```bash
-python3 "$DOCX_SCRIPTS/postcheck.py" output.docx
+"$(command -v zcode-python || command -v python3)" "$DOCX_SCRIPTS/postcheck.py" output.docx
 ```
 
 Automatically checks 14 business rules: blank pages, **cover overflow (font size/spacing/trailing content)**, line spacing consistency, table margins, table cross-page control (cantSplit/tblHeader), image overflow, image aspect ratio distortion, font fallback, CJK indent, heading hierarchy, ShadingType misuse, TOC quality, document cleanliness (placeholder text/Markdown/HTML residuals), report content quality (abstract presence/heading specificity/vague conclusion detection).
@@ -211,44 +218,21 @@ See `references/chart-templates.md`.
 
 - **pandoc**: Text extraction
 - **docx**: `bun add docx` or `npm install docx` (creating)
-- **dsoffice**: bundled LibreOffice conversion engine (preferred) — `.doc` support, DOCX → PDF,
-  page rendering; falls back to a local LibreOffice, see the resolution order below
-- **Poppler**: PDF to image (`pdftoppm`) — only needed on the local-`soffice` fallback path
+- **LibreOffice**: PDF conversion, .doc support — install from the Tsinghua mirror
+  (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`, see below)
+- **Poppler**: PDF to image (`pdftoppm`)
 - **defusedxml**: Secure XML parsing
 - **python-docx**: Simple comment operations
 
-### Office conversion engine resolution order
+### Poppler and Pandoc
 
-Steps that convert or render Office files (`.doc` → `.docx`, DOCX → PDF, visual verification)
-need a conversion engine. ZCode bundles a prebuilt LibreOffice engine as the `dsoffice` CLI.
-Resolve the engine top-down and stop at the first entry that works — never silently skip the
-verification the task depends on:
+`pandoc` and the Poppler command `pdftoppm` keep their usual names; on desktop the preinstalled versions come first on PATH. If `ZCODE_PREINSTALLED_TOOLS_AVAILABLE` is set and one of them is not found, stop before installing anything. Explain: “预装版本未就绪或已关闭，请在 帮助 → 预装工具 中查看” (the preinstalled version is not ready or is disabled; check **Help → Preinstalled tools**). Let the user choose waiting for it (or enabling it there), or continuing the original way: install it as listed above, or use another method this skill already describes for the same step. Without that variable, keep the existing guidance.
 
-1. **`dsoffice` — bundled engine, preferred.** `command -v dsoffice` (also honor
-   `$ZCODE_DSOFFICE_BINARY` when set). Convert with
-   `dsoffice convert --input input.docx --output output.pdf`. Render page images for visual
-   verification in one step with `dsoffice render --input input.docx --output-dir <dir> --pages 1`
-   (it replaces the `soffice` + `pdftoppm` two-step; the JSON result reports `pageCount` and
-   `missingFonts`).
-2. **Existing local LibreOffice.** Probe `soffice` on PATH and common install locations
-   (Windows: `C:\Program Files\LibreOffice\program\soffice.exe`; macOS:
-   `/Applications/LibreOffice.app/Contents/MacOS/soffice`; Linux: `/opt/libreoffice*/program/soffice`).
-   Found off PATH? Register it (Linux/macOS: symlink into `/usr/local/bin`; Windows: `setx` the
-   program dir onto the user `PATH`) and re-verify `soffice --version` — never reinstall. Convert
-   with `soffice --headless --convert-to pdf --outdir <dir> <file>`, then `pdftoppm` for images.
-3. **Install with user consent (needs network).** Only when no engine exists AND the user agrees
-   after being told the download is large (hundreds of MB): preferred source is the Tsinghua TUNA
-   mirror `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/` (pick newest
-   version, then the platform/arch subdirectory); package-manager fallbacks: Windows
-   `winget install TheDocumentFoundation.LibreOffice`, macOS `brew install --cask libreoffice`,
-   Linux (Debian/Ubuntu) `sudo apt install libreoffice-core`. Register the binary on `PATH`
-   afterwards and re-verify `soffice --version`.
-4. **Local Office as last resort (user consent).** If installing is impossible (no network), a
-   conversion through Office software already on the user's machine (Word / WPS / Pages) is
-   acceptable — tell the user first and warn that layout fidelity may differ from LibreOffice.
-5. **Report honestly when nothing works.** Deliver the document anyway: run `postcheck.py` and
-   every text-level check that does not need an engine, and state exactly which operations
-   (PDF export, visual verification, `.doc` handling) could not be performed and why.
+### LibreOffice execution
+
+Use the [unified launcher](../../scripts/README.md) for all LibreOffice steps. Its lookup order is the managed installation, then any system version (including older and development builds). Report its version and why the managed program was not used. A managed execution failure retries once on the system program after cleanup; cancellation never retries.
+If neither program is usable, keep existing files and report the reason. On desktop, first explain that preparation is unavailable, point to Help → Preinstalled Tools, and let the user choose waiting or Agent installation. Do not skip required validation.
+When installation is chosen, follow [installation guidance](env_setup/libreoffice-unmanaged.md), then retry the unified launcher. Remote workspaces, standalone CLI and containers keep their existing installation flow. Always use the launcher after installation; it rechecks for a managed program on every call.
 
 ## Final response citations
 

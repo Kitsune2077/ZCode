@@ -1,5 +1,22 @@
 # PDF Skill — Environment Setup Guide
 
+## Python interpreter selection
+
+Run Python scripts and package installation with `"$(command -v zcode-python || command -v python3)"`. This selects the preinstalled entry when available and otherwise the existing system Python.
+
+If neither the preinstalled entry nor a system Python is available and `ZCODE_PREINSTALLED_TOOLS_AVAILABLE` is set, stop before running a Python script or any setup installer. Explain: “预装版本未就绪或已关闭，请在 帮助 → 预装工具 中查看” (the preinstalled version is not ready or is disabled; check **Help → Preinstalled tools**). Let the user choose waiting, enabling Python, or installing system Python. Without that variable, keep the existing installation guidance.
+
+After the user chooses system installation, run the Python installation command from [Manual Install by Platform](#manual-install-by-platform) directly; do not rerun the setup preflight while Python is still missing. Make the installed interpreter visible to the current shell, then repeat interpreter selection and continue setup. No environment override is needed.
+
+If the selected preinstalled Python cannot run or its package installation fails, stop this step and explain the cause. Ask the user to choose either their own Python for this step (including any package installation into that Python) or turning off Python in **Help → Preinstalled tools**. Do not switch interpreters automatically after a failure. Errors in the document or script itself follow the existing troubleshooting route.
+
+## LibreOffice availability
+
+Use this section when the unified launcher finds no usable installation. On desktop, first ask the user to wait for managed preparation or let the Agent install.
+
+First run `"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/../../scripts/zcode_libreoffice.py" check`. The launcher discovers the preinstalled entry on PATH; desktop availability only selects the installation guidance. If no program is usable on desktop, report the preparation state and reason, then ask the user to wait or let the Agent install. After installation, continue through the unified launcher, not soffice directly. Python, Node and other dependencies keep their existing setup rules.
+
+
 This document contains full platform-specific instructions for setting up the PDF skill environment.
 The model should read this file when first-time setup is needed.
 
@@ -54,8 +71,7 @@ Run the platform-appropriate setup script:
 | Optional | playwright (npm) | HTML-to-PDF for Creative pipeline |
 | Optional | Chromium (via Playwright) | Headless rendering (large download) |
 | Optional | tectonic | LaTeX/Academic PDF compilation |
-| Engine (bundled) | dsoffice | Office-to-PDF conversion — ships with ZCode desktop; below only applies when it is absent |
-| Engine (fallback) | LibreOffice | Only when bundled dsoffice is missing AND no local LibreOffice exists — install with user consent; see SKILL.md resolution order |
+| On demand (not substitutable) | LibreOffice | Office-to-PDF conversion — install it; do not swap in local Office/WPS |
 
 > **Covers no longer need Playwright.** All Report/Academic covers render with ReportLab
 > (`scripts/cover_render.py`). Playwright/Chromium is required **only** for the Creative/poster
@@ -63,15 +79,19 @@ Run the platform-appropriate setup script:
 > Install these optional engines **on demand, after asking the user** (they involve large
 > downloads / long first-run waits) — do not install them up front.
 >
-> **Office→PDF engine fallback.** The bundled `dsoffice` engine covers Office→PDF with no install;
-> a local LibreOffice is the second choice (probe and register off-`PATH` installs, never
-> reinstall). The LibreOffice instructions in this file apply only when neither exists — install
-> **with user consent** after telling them the download is large (several hundred MB), **preferring
-> the Tsinghua TUNA mirror** documented in *"LibreOffice — Recommended Download Source"* at the end
-> of this file (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/`), falling
-> back to the platform package manager command below. Converting via the user's Word/WPS/Keynote/
-> Pages is a user-consented last resort (fidelity may differ); if no engine can be resolved,
-> report Office→PDF as unavailable — never silently skip it.
+> On desktop (`ZCODE_PREINSTALLED_TOOLS_AVAILABLE` is set), this applies only after the user chooses installation in
+> [LibreOffice availability](#libreoffice-availability): first report the preparation state and let the user choose
+> waiting or installation.
+>
+> **Once an Office→PDF task is requested, LibreOffice MUST be installed — not substituted.** Using
+> the user's already-installed Word/WPS/Keynote/Pages *instead of* installing it is **forbidden**, and
+> the package being large (several hundred MB) is **not** a reason to skip the install. Required:
+> explain the necessity to the user (only engine that preserves themes, layouts, master slides and
+> pagination faithfully), tell them the download is large, then install it — **preferring the
+> Tsinghua TUNA mirror** documented in *"LibreOffice — Recommended Download Source"* at the end of
+> this file (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`), falling
+> back to the platform package manager command below. Another program is permitted **only after** an install attempt has actually failed, and that
+> failure must be reported to the user. **No install attempt = no substitute program.**
 
 ### Manual Install by Platform
 
@@ -80,7 +100,7 @@ Run the platform-appropriate setup script:
 ```bash
 # ── Core (always) ──
 brew install python3
-python3 -m pip install reportlab pypdf PyMuPDF pikepdf pdfplumber
+"$(command -v zcode-python || command -v python3)" -m pip install reportlab pypdf PyMuPDF pikepdf pdfplumber
 
 # ── Optional: Creative/HTML pipeline (install on demand, with user's OK — large Chromium download) ──
 brew install node
@@ -89,7 +109,7 @@ npm install -g playwright@1.50.0 && npx playwright install chromium
 
 # ── Optional: Academic/LaTeX (install on demand — downloads packages on first run) ──
 brew install tectonic
-# ── Engine fallback (user consent): Office-to-PDF ──
+# ── On demand, not substitutable: Office-to-PDF ──
 # Preferred: Tsinghua mirror — see "LibreOffice — Recommended Download Source" below
 brew install --cask libreoffice   # fallback if the mirror is unreachable
 ```
@@ -99,7 +119,7 @@ brew install --cask libreoffice   # fallback if the mirror is unreachable
 ```bash
 # ── Core (always) ──
 sudo apt install python3 python3-pip
-python3 -m pip install reportlab pypdf PyMuPDF pikepdf pdfplumber
+"$(command -v zcode-python || command -v python3)" -m pip install reportlab pypdf PyMuPDF pikepdf pdfplumber
 
 # ── Optional: Creative/HTML pipeline (install on demand, with user's OK) ──
 sudo apt install nodejs npm
@@ -107,7 +127,7 @@ npm install -g playwright@1.50.0 && npx playwright install chromium && npx playw
 
 # ── Optional: Academic/LaTeX (install on demand) ──
 conda install -c conda-forge tectonic   # use Tsinghua mirror: conda config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge/
-# ── Engine fallback (user consent): Office-to-PDF ──
+# ── On demand, not substitutable: Office-to-PDF ──
 # Preferred: Tsinghua mirror — see "LibreOffice — Recommended Download Source" below
 sudo apt install libreoffice-core   # fallback if the mirror is unreachable
 ```
@@ -117,13 +137,15 @@ sudo apt install libreoffice-core   # fallback if the mirror is unreachable
 ```powershell
 winget install Python.Python.3.11
 winget install OpenJS.NodeJS.LTS
-python -m pip install pikepdf pdfplumber pypdf reportlab PyMuPDF
+$PY = Get-Command zcode-python -ErrorAction SilentlyContinue
+if (-not $PY) { $PY = Get-Command python3, python, py -ErrorAction SilentlyContinue | Select-Object -First 1 }
+& $PY.Source -m pip install pikepdf pdfplumber pypdf reportlab PyMuPDF
 npm install -g playwright@1.50.0
 # Pinned to 1.50.0 — npmmirror has Chromium rev 1155 for this version
 npx playwright install chromium
 # optional:
 scoop install tectonic                           # LaTeX
-# engine fallback (user consent): prefer the Tsinghua mirror (see section below)
+# on demand, not substitutable: prefer the Tsinghua mirror (see section below)
 winget install TheDocumentFoundation.LibreOffice  # Office-to-PDF fallback
 ```
 
@@ -208,7 +230,7 @@ If default sources are unreachable, use China mirrors:
 ### pip (Tsinghua mirror)
 
 ```bash
-python3 -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple \
+"$(command -v zcode-python || command -v python3)" -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple \
   --trusted-host pypi.tuna.tsinghua.edu.cn \
   pikepdf pdfplumber pypdf reportlab PyMuPDF
 ```
@@ -229,7 +251,9 @@ PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright/ npx playwrigh
 ### Windows (PowerShell) China mirrors
 
 ```powershell
-python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn pikepdf pdfplumber pypdf reportlab PyMuPDF
+$PY = Get-Command zcode-python -ErrorAction SilentlyContinue
+if (-not $PY) { $PY = Get-Command python3, python, py -ErrorAction SilentlyContinue | Select-Object -First 1 }
+& $PY.Source -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn pikepdf pdfplumber pypdf reportlab PyMuPDF
 npm install -g playwright@1.50.0 --registry https://registry.npmmirror.com
 # Pinned to 1.50.0 — npmmirror has Chromium rev 1155 for this version
 $env:PLAYWRIGHT_DOWNLOAD_HOST = "https://npmmirror.com/mirrors/playwright/"
@@ -242,21 +266,19 @@ npx playwright install chromium
 |----------|-------------|
 | Node.js | https://npmmirror.com/mirrors/node/ |
 | Python | https://npmmirror.com/mirrors/python/ |
-| LibreOffice | https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/ |
+| LibreOffice | https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/ |
 
 ---
 
 ## LibreOffice — Recommended Download Source (Tsinghua TUNA mirror)
 
-Only needed when the bundled `dsoffice` engine is missing and no local LibreOffice exists —
-get the user's consent first (the download is large, hundreds of MB), per SKILL.md's
-*"Office conversion engine resolution order"*.
+Use this section when the unified launcher finds no usable installation. On desktop, first ask the user to wait for managed preparation or let the Agent install.
 
 **Prefer this mirror over the official libreoffice.org download and over `brew`/`apt`/`winget`
 package sources** — it is much faster on Chinese networks and ships the current full build.
 
-- **Recommended base URL:** `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/`
-- **If the pinned version is gone** (the mirror only keeps a few releases), list
+- **Recommended base URL:** `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`
+- **If 26.8.0 is gone** (the mirror only keeps a few releases), list
   `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/` and pick the newest
   version directory, then substitute that version number everywhere below.
 
@@ -291,7 +313,7 @@ curl -fSLO "$BASE/LibreOffice_${LO_VER}_Linux_${LO_TAG}_deb.tar.gz"
 tar -xzf "LibreOffice_${LO_VER}_Linux_${LO_TAG}_deb.tar.gz"
 sudo dpkg -i LibreOffice_${LO_VER}*/DEBS/*.deb
 sudo apt-get install -f -y     # resolve any missing dependencies
-soffice --version              # verify (binary lands in /usr/bin or /opt/libreoffice*/program)
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/../../scripts/zcode_libreoffice.py" check              # verify (binary lands in /usr/bin or /opt/libreoffice*/program)
 ```
 
 If `soffice` is not on `PATH` after install, register it — see
@@ -312,7 +334,7 @@ curl -fSLO "$BASE/LibreOffice_${LO_VER}_MacOS_${LO_TAG}.dmg"
 hdiutil attach "LibreOffice_${LO_VER}_MacOS_${LO_TAG}.dmg"
 cp -R "/Volumes/LibreOffice/LibreOffice.app" /Applications/
 hdiutil detach "/Volumes/LibreOffice"
-/Applications/LibreOffice.app/Contents/MacOS/soffice --version   # verify
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/../../scripts/zcode_libreoffice.py" check   # verify
 ```
 
 `brew install --cask libreoffice` is the fallback if the mirror is unreachable.
@@ -328,7 +350,9 @@ $Msi  = "$env:TEMP\LibreOffice_${LoVer}_Win_${LoTag}.msi"
 
 Invoke-WebRequest -Uri "$Base/LibreOffice_${LoVer}_Win_${LoTag}.msi" -OutFile $Msi
 Start-Process msiexec.exe -ArgumentList "/i `"$Msi`" /qn" -Wait   # silent install (needs admin)
-& "C:\Program Files\LibreOffice\program\soffice.exe" --version    # verify
+$PY = Get-Command zcode-python -ErrorAction SilentlyContinue
+if (-not $PY) { $PY = Get-Command python3, python, py -ErrorAction SilentlyContinue | Select-Object -First 1 }
+& $PY.Source "$env:PDF_SKILL_DIR/../../scripts/zcode_libreoffice.py" check    # verify
 ```
 
 `winget install TheDocumentFoundation.LibreOffice` is the fallback if the mirror is unreachable.
@@ -356,7 +380,7 @@ Get-Command soffice -ErrorAction SilentlyContinue; Test-Path "C:\Program Files\L
 
 ```bash
 sudo ln -sf /opt/libreoffice*/program/soffice /usr/local/bin/soffice
-soffice --version   # re-verify: must print a version, not "command not found"
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/../../scripts/zcode_libreoffice.py" check   # re-verify: must print a version, not "command not found"
 ```
 
 If the distro package was used instead of the mirror, `soffice` normally lands in `/usr/bin` already
@@ -366,7 +390,7 @@ and no link is needed.
 
 ```bash
 sudo ln -sf /Applications/LibreOffice.app/Contents/MacOS/soffice /usr/local/bin/soffice
-soffice --version   # re-verify
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/../../scripts/zcode_libreoffice.py" check   # re-verify
 ```
 
 On Apple Silicon, `/usr/local/bin` is not always on `PATH` — if the verify still fails, link into
@@ -380,6 +404,12 @@ $UserPath = [Environment]::GetEnvironmentVariable("PATH", "User")
 if ($UserPath -notlike "*$LoDir*") { setx PATH "$UserPath;$LoDir" }
 ```
 
-`setx` only affects **newly launched** shells. For the remainder of the current session, call the
-binary by its full path: `& "C:\Program Files\LibreOffice\program\soffice.exe" --version`.
+`setx` only affects **newly launched** shells. The unified launcher also checks the default install
+directory, so verify in the current session with:
+
+```powershell
+$PY = Get-Command zcode-python -ErrorAction SilentlyContinue
+if (-not $PY) { $PY = Get-Command python3, python, py -ErrorAction SilentlyContinue | Select-Object -First 1 }
+& $PY.Source "$env:PDF_SKILL_DIR/../../scripts/zcode_libreoffice.py" check
+```
 

@@ -23,16 +23,11 @@
 ## Step 0: Format Conversion
 
 ```bash
-# .doc → .docx (bundled engine; dsoffice also preserves styles/layout for legacy .doc)
-dsoffice convert --input input.doc --output input.docx
+# .doc → .docx
+"$(command -v zcode-python || command -v python3)" "$DOCX_SKILL_DIR/../../scripts/zcode_libreoffice.py" run -- --convert-to docx input.doc
 ```
 
-> 🔴 **No conversion engine?** Follow the engine resolution order in `SKILL.md` →
-> *"Office conversion engine resolution order"*: bundled `dsoffice` first, then an existing local
-> LibreOffice (probe before installing — register off-`PATH` binaries instead of reinstalling),
-> then a user-consented install, and only with explicit user consent a conversion through local
-> Word/WPS (warn that fidelity may differ). When nothing is available, continue without this step
-> and say so — never silently skip a verification the task depends on.
+> **LibreOffice:** use the [unified launcher](../../../scripts/README.md). The launcher prefers managed LibreOffice, then any installed system version, and reports the fallback reason. If neither is available, retain existing files and follow setup.md. On desktop, first report the unavailable preparation state and ask the user to wait or let the Agent install. After installation, keep using the unified launcher so a later managed installation takes priority.
 
 ## Step 1: Unpack
 
@@ -82,13 +77,11 @@ cd work_dir && zip -r "../${STEM}_updated.docx" . -x ".*"
 
 ```bash
 pandoc "${STEM}_updated.docx" -t plain -o /dev/stdout | head -50
-# or visual (bundled engine renders page PNGs in one step)
-dsoffice render --input "${STEM}_updated.docx" --output-dir <work_dir> --pages 1
+# or visual
+"$(command -v zcode-python || command -v python3)" "$DOCX_SKILL_DIR/../../scripts/zcode_libreoffice.py" run -- --convert-to pdf "${STEM}_updated.docx"
 ```
 
-> 🔴 **No conversion engine?** Same resolution order as Step 0 (see `SKILL.md` →
-> *"Office conversion engine resolution order"*). If no engine can be resolved, deliver with the
-> text-level verification above and report that the visual check was unavailable.
+> **LibreOffice:** use the [unified launcher](../../../scripts/README.md). The launcher prefers managed LibreOffice, then any installed system version, and reports the fallback reason. If neither is available, retain existing files and follow setup.md. On desktop, first report the unavailable preparation state and ask the user to wait or let the Agent install. After installation, keep using the unified launcher so a later managed installation takes priority.
 
 ---
 

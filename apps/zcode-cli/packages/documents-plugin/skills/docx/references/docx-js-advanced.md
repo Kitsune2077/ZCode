@@ -231,34 +231,29 @@ const doc = new Document({
 
 ## Converting DOCX to PDF
 
+> **LibreOffice:** use the [unified launcher](../../../scripts/README.md). The launcher prefers managed LibreOffice, then any installed system version, and reports the fallback reason. If neither is available, retain existing files and follow setup.md. On desktop, first report the unavailable preparation state and ask the user to wait or let the Agent install. After installation, keep using the unified launcher so a later managed installation takes priority.
+
 ```bash
-# Bundled engine (preferred)
-dsoffice convert --input output.docx --output output.pdf
+# Using LibreOffice (headless)
+"$(command -v zcode-python || command -v python3)" "$DOCX_SKILL_DIR/../../scripts/zcode_libreoffice.py" run -- --convert-to pdf output.docx
 
 # ⚠️ TOC Rule: If document has TOC, warn user that:
-# 1. LibreOffice-based conversion may show empty TOC
+# 1. LibreOffice conversion may show empty TOC
 # 2. User should open in Word first, update fields (Ctrl+A → F9), save, then convert
 # 3. Or use Word's "Save as PDF" for best results
 ```
 
-> 🔴 **No conversion engine?** Follow the engine resolution order in `SKILL.md` →
-> *"Office conversion engine resolution order"*: bundled `dsoffice` first, then an existing local
-> LibreOffice (`soffice --headless --convert-to pdf`, register off-`PATH` binaries instead of
-> reinstalling), then a user-consented install (Tsinghua TUNA mirror; full commands in
-> `env_setup/setup.md`), and only with explicit user consent a conversion through local Word/WPS
-> (warn that fidelity may differ). If nothing is available, skip the PDF export, run the remaining
-> checks, and report it as unavailable. This is separate from the TOC rule above, which is about
-> field recalculation.
-
 ## Converting DOCX to Images
 
 ```bash
-# Bundled engine — one step (output_page-0001.png, output_page-0002.png, ...)
-dsoffice render --input output.docx --output-dir <dir> --pages all
+# Step 1: Convert to PDF
+"$(command -v zcode-python || command -v python3)" "$DOCX_SKILL_DIR/../../scripts/zcode_libreoffice.py" run -- --convert-to pdf output.docx
 
-# Local-LibreOffice fallback: two steps
-# soffice --headless --convert-to pdf output.docx
-# pdftoppm -png -r 200 output.pdf output_page
+# Step 2: Convert PDF to images
+pdftoppm -png -r 200 output.pdf output_page
+
+# This generates output_page-1.png, output_page-2.png, etc.
+# Use -r 200 for good quality (200 DPI)
 ```
 
 Useful for generating preview thumbnails or when user needs images instead of document files.

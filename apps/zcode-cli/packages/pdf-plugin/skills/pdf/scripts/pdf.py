@@ -3,7 +3,7 @@
 PDF Processing Toolkit — All-in-One CLI
 
 Usage:
-    python3 pdf.py <command> [args...]
+    "$(command -v zcode-python || command -v python3)" pdf.py <command> [args...]
 
 Commands:
     env.check [--json]          Check environment dependencies
@@ -51,6 +51,7 @@ Commands:
 
 from __future__ import annotations
 
+import asyncio
 import glob
 import html
 import json
@@ -64,6 +65,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+# 统一入口在插件根目录；禁止导入时生成缓存，保持分发内容不可变。
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts'))
+from zcode_libreoffice import LibreOfficeInvocationError, LibreOfficeUnavailable, conversion_directory, run_cli_operation, run_libreoffice
 
 # ═══════════════════════════════════════════════════════════════
 #  Section 0: Framework — Output, @cmd registry, CLI parser
@@ -264,28 +270,11 @@ def _probe_python() -> tuple[str, str]:
 
 
 def _probe_libreoffice() -> tuple[str, str]:
-    # Bundled dsoffice engine counts as a usable Office→PDF engine (see convert.office).
-    env_path = os.environ.get("ZCODE_DSOFFICE_BINARY", "").strip()
-    if env_path and (Path(env_path).is_file() or shutil.which(env_path)):
-        return ("ok", "bundled dsoffice")
-    if shutil.which("dsoffice"):
-        return ("ok", "bundled dsoffice")
-    candidates = [
-        "/Applications/LibreOffice.app/Contents/MacOS/soffice",
-        os.path.expanduser("~/Applications/LibreOffice.app/Contents/MacOS/soffice"),
-        "/usr/bin/soffice",
-        "/usr/local/bin/soffice",
-        "/usr/lib/libreoffice/program/soffice",
-        "/opt/libreoffice/program/soffice",
-        "/snap/bin/libreoffice.soffice",
-    ]
-    for c in candidates:
-        if Path(c).is_file():
-            return ("ok", "")
-    for alias in ("soffice", "libreoffice"):
-        if shutil.which(alias):
-            return ("ok", "")
-    return ("missing", "")
+    try:
+        result = run_cli_operation(run_libreoffice(['--version'], timeout=15))
+        return ('ok', f'{result.source}: {result.version}')
+    except (LibreOfficeUnavailable, LibreOfficeInvocationError, OSError, ValueError) as error:
+        return ('missing', str(error))
 
 
 def _probe_tectonic() -> tuple[str, str]:
@@ -388,12 +377,9 @@ def env_check(argv: list):
                 "python3": s_py[0], "python3_version": s_py[1],
                 "reportlab": s_rl[0], "reportlab_version": s_rl[1],
                 "pypdf": s_pypdf[0], "pypdf_version": s_pypdf[1],
+                "PyMuPDF": s_fitz[0], "PyMuPDF_version": s_fitz[1],
                 "pikepdf": s_pike[0], "pikepdf_version": s_pike[1],
                 "pdfplumber": s_plumb[0], "pdfplumber_version": s_plumb[1],
-            },
-            # PyMuPDF 是 AGPL-3.0，不随 ZCode 分发；页面渲染由 dsoffice 承担。
-            "optional_rendering": {
-                "PyMuPDF": s_fitz[0], "PyMuPDF_version": s_fitz[1],
             },
             "optional_html_route": {  # Creative / poster / HTML->PDF \u2014 install on demand
                 "node": s_node[0], "node_version": s_node[1],
@@ -403,13 +389,14 @@ def env_check(argv: list):
             },
             "optional_other": {
                 "libreoffice": s_lo[0],
+                "libreoffice_message": s_lo[1],
                 "tectonic": s_tec[0],
             },
         }
         sys.stdout.write(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
         # Exit code reflects CORE only; optional engines never fail the check.
         rc = 0
-        for v in [s_py, s_rl, s_pypdf, s_pike, s_plumb]:
+        for v in [s_py, s_rl, s_pypdf, s_fitz, s_pike, s_plumb]:
             if v[0] != "ok":
                 rc = 2
                 break
@@ -426,11 +413,7 @@ def env_check(argv: list):
             detail = f" ({d})" if d else ""
             print(f"  \u2713 {name}{detail}")
         elif on_demand_required:
-            print(f"  \u25cb {name} (not installed \u2014 MUST be installed, not substituted)")
-            print(f"      \u2192 FORBIDDEN: using Word/WPS/Keynote/Pages instead of installing it.")
-            print(f"        A large download is NOT a reason to skip it.")
-            print(f"        REQUIRED: explain the necessity to the user, tell them the package is")
-            print(f"        large, then INSTALL it. No install attempt = no substitute program.")
+            print(f"  ○ {name}: {d}")
         elif optional:
             print(f"  \u25cb {name} (optional, not installed \u2014 install on demand)")
         else:
@@ -442,11 +425,9 @@ def env_check(argv: list):
     show("python3", s_py)
     show("reportlab", s_rl)
     show("pypdf", s_pypdf)
+    show("PyMuPDF", s_fitz)
     show("pikepdf", s_pike)
     show("pdfplumber", s_plumb)
-
-    print("\n--- Optional: PyMuPDF (AGPL-3.0 — not bundled; pages render via dsoffice) ---")
-    show("PyMuPDF", s_fitz, optional=True)
 
     print("\n--- Optional: HTML route (Creative / poster / HTML\u2192PDF) ---")
     show("node", s_node, optional=True)
@@ -461,22 +442,17 @@ def env_check(argv: list):
         print(f"    (playwright-python: {s_pw_py[1]})")
 
     print("\n--- On demand: other ---")
-    show("office engine (dsoffice/soffice)", s_lo)
+    show("libreoffice", s_lo, on_demand_required=True)
     show("tectonic", s_tec, optional=True)
 
-    print("\n=== Install Commands (optional engines — install only when a route needs them, with the user's OK) ===")
-    print("  Core Python: pip install reportlab pypdf pikepdf pdfplumber")
-    print("  PyMuPDF:     pip install PyMuPDF   # AGPL-3.0, optional; prefer dsoffice render")
+    print("\n=== Install Commands (optional engines \u2014 install only when a route needs them, with the user's OK) ===")
+    print("  Core Python: \"$(command -v zcode-python || command -v python3)\" -m pip install reportlab pypdf PyMuPDF pikepdf pdfplumber")
     print("  Node.js:     brew install node (macOS) / apt install nodejs (Ubuntu)")
     print("  Playwright:  npm install -g playwright && npx playwright install chromium   # large download, minutes")
-    print("  Office→PDF:  bundled dsoffice engine first (convert.office uses it automatically).")
-    print("               Local LibreOffice fallback — install with USER CONSENT only (large download):")
-    print("               PREFERRED \u2192 Tsinghua mirror https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/")
-    print("               (pick deb/rpm/mac/win subdir for your arch; newest version)")
-    print("               fallback: brew install --cask libreoffice (macOS) / sudo apt install libreoffice-core (Linux)")
-    print("               ↳ register soffice on PATH after install; local Word/WPS conversion is a")
-    print("                 user-consented last resort (fidelity may differ). If no engine exists,")
-    print("                 report Office→PDF as unavailable — never silently skip it.")
+    if os.environ.get('ZCODE_PREINSTALLED_TOOLS_AVAILABLE'):
+        print('  LibreOffice: use the unified launcher; if neither program is usable, report the preparation state and reason, then ask the user to wait or let the Agent follow env_setup/setup.md. Keep using the launcher after installation.')
+    else:
+        print('  LibreOffice: follow env_setup/libreoffice-unmanaged.md when required; verify with the unified launcher check command.')
     print("  Tectonic:    curl -fsSL https://drop-sh.fullyjustified.net | sh            # downloads LaTeX packages on first run")
     raise SystemExit(rc)
 
@@ -490,6 +466,7 @@ def env_fix(argv: list):
     modules = {
         "reportlab": "reportlab",
         "pypdf": "pypdf",
+        "fitz": "PyMuPDF",
         "pikepdf": "pikepdf",
         "pdfplumber": "pdfplumber",
         "pdf2image": "pdf2image",
@@ -836,7 +813,7 @@ def pages_clean(argv: list):
     try:
         import pdfplumber
     except ImportError:
-        Output.error("DependencyMissing", "pdfplumber required: pip install pdfplumber")
+        Output.error("DependencyMissing", "pdfplumber required: \"$(command -v zcode-python || command -v python3)\" -m pip install pdfplumber")
 
     blank_indices = []  # 0-indexed
     total_pages = 0
@@ -867,7 +844,7 @@ def pages_clean(argv: list):
     try:
         import pikepdf
     except ImportError:
-        Output.error("DependencyMissing", "pikepdf required: pip install pikepdf")
+        Output.error("DependencyMissing", "pikepdf required: \"$(command -v zcode-python || command -v python3)\" -m pip install pikepdf")
 
     try:
         doc = pikepdf.open(str(src))
@@ -1799,45 +1776,24 @@ _CONVERTIBLE_EXTENSIONS = frozenset({
     ".txt", ".html", ".htm",
 })
 
-_SOFFICE_CANDIDATES = [
-    "/Applications/LibreOffice.app/Contents/MacOS/soffice",
-    os.path.expanduser("~/Applications/LibreOffice.app/Contents/MacOS/soffice"),
-    "/usr/bin/soffice",
-    "/usr/local/bin/soffice",
-    "/usr/lib/libreoffice/program/soffice",
-    "/opt/libreoffice/program/soffice",
-    "/snap/bin/libreoffice.soffice",
-]
-
-
-def _locate_dsoffice() -> str | None:
-    """Locate the bundled dsoffice engine (preferred over local soffice).
-
-    Search order:
-      1. ZCODE_DSOFFICE_BINARY (injected by the desktop runtime)
-      2. PATH (the desktop runtime appends the bundled tools dir)
-    """
-    env_path = os.environ.get("ZCODE_DSOFFICE_BINARY", "").strip()
-    if env_path and (Path(env_path).is_file() or shutil.which(env_path)):
-        return env_path
-    return shutil.which("dsoffice")
-
-
-def _locate_soffice() -> str | None:
-    """Search for a working soffice binary."""
-    for candidate in _SOFFICE_CANDIDATES:
-        if Path(candidate).is_file():
-            return candidate
-    for alias in ("soffice", "libreoffice"):
-        found = shutil.which(alias)
-        if found:
-            return found
-    return None
+async def _convert_office_with_runtime(src: Path, final: Path):
+    await asyncio.to_thread(final.parent.mkdir, parents=True, exist_ok=True)
+    async with conversion_directory(final.parent) as temporary:
+        produced = temporary / (src.stem + '.pdf')
+        result = await run_libreoffice(['--convert-to', 'pdf', '--outdir', str(temporary), str(src)], timeout=120, temporary_outputs=[produced])
+        # 原实现会把同名旧 PDF 当成本轮成果；独立输出目录只接纳本次新生成的文件。
+        def verify_output():
+            with produced.open('rb') as output:
+                if output.read(5) != b'%PDF-':
+                    raise LibreOfficeInvocationError('Converted file is not a PDF')
+        await asyncio.to_thread(verify_output)
+        await asyncio.to_thread(os.replace, produced, final)
+        return result
 
 
 @cmd("convert.office")
 def convert_office(argv: list):
-    """Convert an office document to PDF (bundled dsoffice engine, LibreOffice fallback)."""
+    """Convert an office document to PDF via LibreOffice."""
     if not argv:
         Output.error("MissingArg", "input file required")
     src_path = argv.pop(0)
@@ -1853,77 +1809,24 @@ def convert_office(argv: list):
             hint=f"Supported formats: {', '.join(sorted(_CONVERTIBLE_EXTENSIONS))}",
         )
 
-    target_dir = Path(out_path).parent if out_path else src.parent
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    auto_name = target_dir / f"{src.stem}.pdf"
-    final = Path(out_path) if out_path else auto_name
-
-    # Bundled engine first: dsoffice takes explicit --output, no rename dance needed.
-    dsoffice = _locate_dsoffice()
-    if dsoffice is not None:
-        try:
-            proc = subprocess.run(
-                [dsoffice, "convert", "--input", str(src), "--output", str(final)],
-                capture_output=True, text=True, timeout=120,
-            )
-            if proc.returncode != 0:
-                Output.error(
-                    "ConvertError",
-                    f"Conversion failed: {proc.stderr.strip() or proc.stdout.strip() or 'Unknown error'}",
-                    code=4,
-                )
-        except subprocess.TimeoutExpired:
-            Output.error("Timeout", "Conversion timeout (>120s)", code=4)
-        except Exception as exc:
-            Output.error("ConvertError", f"Conversion failed: {exc}", code=4)
-
-        if not final.exists():
-            Output.error("ConvertError", "Converted PDF file was not generated", code=4)
-        Output.success({"input": str(src), "output": str(final), "format": ext, "engine": "dsoffice"})
-        return
-
-    binary = _locate_soffice()
-    if binary is None:
-        Output.error(
-            "DependencyMissing",
-            "No conversion engine available (neither bundled dsoffice nor local soffice)",
-            hint=(
-                "Follow SKILL.md 'Office conversion engine resolution order': "
-                "(1) bundled dsoffice is preferred — absent here; (2) probe local soffice on PATH "
-                "and common install locations, register off-PATH installs instead of reinstalling; "
-                "(3) with USER CONSENT and network, install LibreOffice (large download, several "
-                "hundred MB — preferred source is the Tsinghua TUNA mirror "
-                "'https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/', pick the "
-                "newest version and platform/arch subdirectory; package-manager fallbacks: macOS "
-                "'brew install --cask libreoffice', Debian/Ubuntu 'sudo apt install libreoffice-core', "
-                "Windows 'winget install TheDocumentFoundation.LibreOffice'); register it on PATH "
-                "and re-verify 'soffice --version' afterwards; (4) with user consent, converting "
-                "via local Word / WPS / Keynote / Pages is a last resort (fidelity may differ — "
-                "LibreOffice preserves themes, layouts, master slides, fonts and pagination "
-                "faithfully); (5) if nothing works, report the Office→PDF conversion as "
-                "unavailable and continue with text-level processing."
-            ),
-        )
-
-    cmd_list = [binary, "--headless", "--convert-to", "pdf", "--outdir", str(target_dir), str(src)]
-
+    final = Path(out_path).resolve() if out_path else src.with_suffix('.pdf').resolve()
+    # 转换只生成交付副本；输出路径指向输入时必须在执行前拒绝。
+    if final == src.resolve():
+        Output.error('OutputOverwritesInput', 'PDF output must differ from the input document', code=4)
     try:
-        proc = subprocess.run(cmd_list, capture_output=True, text=True, timeout=120)
-        if proc.returncode != 0:
-            Output.error("ConvertError", f"Conversion failed: {proc.stderr.strip() or 'Unknown error'}", code=4)
-    except subprocess.TimeoutExpired:
-        Output.error("Timeout", "Conversion timeout (>120s)", code=4)
-    except Exception as exc:
-        Output.error("ConvertError", f"Conversion failed: {exc}", code=4)
-
-    if out_path and final.name != auto_name.name and auto_name.exists():
-        auto_name.rename(final)
-
-    if not final.exists():
-        Output.error("ConvertError", "Converted PDF file was not generated", code=4)
-
-    Output.success({"input": str(src), "output": str(final), "format": ext})
+        result = run_cli_operation(_convert_office_with_runtime(src.resolve(), final))
+    except asyncio.CancelledError as error:
+        raise SystemExit(143 if error.args == ('SIGTERM',) else 130) from None
+    except LibreOfficeUnavailable as error:
+        Output.error('DependencyMissing', str(error), code=error.exit_code)
+    except LibreOfficeInvocationError as error:
+        # 统一入口的执行超时仍沿用 PDF CLI 的 Timeout 错误类型。
+        Output.error('Timeout' if error.exit_code == 124 else 'ConvertError', str(error), code=4)
+    except (OSError, ValueError) as error:
+        Output.error('ConvertError', str(error), code=4)
+    if result.stderr:
+        print(result.stderr, file=sys.stderr, end='' if result.stderr.endswith('\n') else '\n')
+    Output.success({'input': str(src), 'output': str(final), 'format': ext, 'libreoffice_source': result.source})
 
 
 @cmd("convert.html")

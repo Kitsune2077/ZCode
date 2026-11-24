@@ -89,6 +89,7 @@ import {
   resetPluginConfig,
   restoreBuiltinPlugin,
   setPluginEnabled,
+  setPluginWorkspaceTrust,
   uninstallPlugin,
   updatePlugin,
   updatePluginMarketplace,
@@ -149,6 +150,7 @@ import {
   measureSessionData,
   purgeSessionData,
   previewSessionDeletion,
+  previewSessionDeletions,
   executeSessionDeletion,
 } from "./session-data/index.js";
 import {
@@ -602,6 +604,7 @@ export class ZCodeProtocolAgentServer {
     let releaseResidencyOperation: (() => void) | undefined;
     const deletionRequest =
       request.method === V4_METHODS.sessionDeletionPreview ||
+      request.method === V4_METHODS.sessionDeletionPreviewBatch ||
       request.method === V4_METHODS.sessionDeletionExecute;
     const requestSessionIds = deletionRequest ? [] : collectResidencySessionIds(request.params);
     const requestCounts = (this.context.sessionRequestCounts ??= new Map<string, number>());
@@ -629,10 +632,7 @@ export class ZCodeProtocolAgentServer {
         releaseResidencyOperation =
           await this.context.sessionResidentPool?.acquireOperation(sessionIds);
       }
-      if (
-        request.method !== V4_METHODS.sessionDeletionPreview &&
-        request.method !== V4_METHODS.sessionDeletionExecute
-      )
+      if (!deletionRequest)
         for (const id of collectResidencySessionIds(request.params))
           await this.context.deps.sessionStore?.assertSessionNotDeleting?.(id as SessionId);
       const result = await this.dispatchRequest(request);
@@ -778,6 +778,8 @@ export class ZCodeProtocolAgentServer {
       // 项目数据彻底删除：不经 v4Gateway 会话投影，直接操作本进程的 store 与会话注册表。
       case V4_METHODS.sessionDeletionPreview:
         return previewSessionDeletion(this.context, request.params);
+      case V4_METHODS.sessionDeletionPreviewBatch:
+        return previewSessionDeletions(this.context, request.params);
       case V4_METHODS.sessionDeletionExecute:
         return executeSessionDeletion(this.context, request.params);
       case V4_METHODS.sessionDataMeasure:
@@ -961,6 +963,8 @@ export class ZCodeProtocolAgentServer {
         return await this.withPluginOperationSignal(request, (signal) =>
           setPluginEnabled(this.context, request.params, signal),
         );
+      case zcodeProtocolMethods.pluginsWorkspaceTrust:
+        return await setPluginWorkspaceTrust(this.context, request.params);
       case zcodeProtocolMethods.pluginsOverview:
         return await getPluginsOverview(this.context, request.params);
       case zcodeProtocolMethods.processChildProcesses:

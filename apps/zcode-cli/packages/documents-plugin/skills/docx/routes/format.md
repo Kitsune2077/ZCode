@@ -120,12 +120,8 @@ para.paragraph_format.line_spacing = Pt(28)
 ## Verification
 
 After formatting changes:
-1. Render to page images with the bundled engine (`dsoffice render`) and inspect visually
+1. Open in LibreOffice or convert to PDF for visual check
 2. Extract text with pandoc to ensure content unchanged
 3. Compare file sizes (formatting-only changes shouldn't dramatically change size)
 
-> 🔴 **No conversion engine?** Follow the engine resolution order in `SKILL.md` →
-> *"Office conversion engine resolution order"*: bundled `dsoffice` first, then an existing local
-> LibreOffice, then a user-consented install, and only with explicit user consent a visual check
-> through local Word/WPS (say so and warn that rendering may differ). If nothing is available,
-> run the remaining text-level checks and report the visual check as unavailable.
+> **LibreOffice:** use the [unified launcher](../../../scripts/README.md). The launcher prefers managed LibreOffice, then any installed system version, and reports the fallback reason. If neither is available, retain existing files and follow setup.md. On desktop, first report the unavailable preparation state and ask the user to wait or let the Agent install. After installation, keep using the unified launcher so a later managed installation takes priority.

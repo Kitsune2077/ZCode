@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# 优先选择预装入口；存在但运行失败时仍保留它，由用户决定是否切换。
+PY="$(command -v zcode-python || command -v python3)" || PY=""
+# 没有解释器时无法运行 Python 引导脚本；先给桌面选择，避免进入自动装包或下载。
+if [ -z "$PY" ] && [ -n "${ZCODE_PREINSTALLED_TOOLS_AVAILABLE:-}" ]; then
+    echo "预装版本未就绪或已关闭，请在 帮助 → 预装工具 中查看"
+    echo "Choose to wait, enable Python, or install system Python using the manual steps in env_setup/setup.md."
+    return 1 2>/dev/null || exit 1
+fi
 # Lightweight environment check for PDF skill.
 # Exit 0 = all CORE deps OK, exit 1 = missing CORE dependency.
 # Playwright/Chromium (Creative/HTML pipeline) and Tectonic (Academic/LaTeX) are
@@ -11,16 +19,13 @@ QUIET=false; [ "${1:-}" = "--quiet" ] && QUIET=true
 FAIL=0
 check() { local desc="$1"; shift; if ! "$@" &>/dev/null; then $QUIET || echo "MISSING (core): $desc"; FAIL=1; fi; }
 optional() { local desc="$1"; shift; if "$@" &>/dev/null; then $QUIET || echo "optional OK: $desc"; else $QUIET || echo "optional MISSING: $desc (install on demand)"; fi; }
-# Office 转换引擎：随包 dsoffice 优先，其次本机已有的 LibreOffice。两者都缺不算本检查失败——
-# 后续动作按 SKILL.md "Office conversion engine resolution order" 降级链处理（征得用户同意安装、
-# 经同意用本机 Word/WPS 并警告保真度、或如实报告 Office→PDF 不可用），唯独不允许静默跳过。
-report_engine() {
-    if command -v dsoffice &>/dev/null; then
-        $QUIET || echo "engine OK: dsoffice (bundled)"
-    elif command -v soffice &>/dev/null; then
-        $QUIET || echo "engine OK: soffice (local LibreOffice)"
+# 统一入口报告受管故障和系统回退；无可用程序时给安装指引，由用户决定等待或安装。
+required_on_demand() {
+    local result
+    if result=$("$PY" "$1" check 2>&1); then
+        $QUIET || echo "on-demand OK: LibreOffice — $result"
     else
-        $QUIET || echo "engine MISSING: no dsoffice / soffice — follow SKILL.md 'Office conversion engine resolution order': bundled dsoffice → probe local soffice (register off-PATH installs, never reinstall) → user-consented install (Tsinghua mirror / winget / brew / apt) → user-consented local Word/WPS with fidelity warning → report Office→PDF as unavailable. Do NOT silently skip it."
+        $QUIET || echo "$result"
     fi
 }
 
@@ -37,15 +42,12 @@ fi
 export FONT_DIR
 
 # ── CORE (required): Python + ReportLab/pypdf toolchain + CJK font ──
-check "python3"    command -v python3
-check "pikepdf"    python3 -c "import pikepdf"
-check "pdfplumber" python3 -c "import pdfplumber"
-check "pypdf"      python3 -c "import pypdf"
-check "reportlab"  python3 -c "import reportlab"
-
-# PyMuPDF 是 AGPL-3.0，不随 ZCode 分发：仅 optional。页面渲染统一走 `dsoffice render`，
-# 只有在用户自行安装（接受 AGPL）时才用于额外字形检查。
-optional "PyMuPDF (fitz; AGPL — pages render via dsoffice)" python3 -c "import fitz"
+check "python3"    command -v "$PY"
+check "pikepdf"    "$PY" -c "import pikepdf"
+check "pdfplumber" "$PY" -c "import pdfplumber"
+check "pypdf"      "$PY" -c "import pypdf"
+check "reportlab"  "$PY" -c "import reportlab"
+check "PyMuPDF"    "$PY" -c "import fitz"
 
 # Font check: verify an embeddable CJK font is available (SimHei/Noto/WenQuanYi/Songti…)
 if command -v fc-list &>/dev/null; then
@@ -64,8 +66,8 @@ else
     $QUIET || echo "optional MISSING: tectonic (LaTeX/Academic; install on demand)"
 fi
 
-# ── Conversion engine probe: bundled dsoffice first, then local soffice ──
-report_engine
+# ── ON-DEMAND but NOT substitutable: Office→PDF (LibreOffice/soffice) ──
+required_on_demand "${PDF_SKILL_DIR}/../../scripts/zcode_libreoffice.py"
 
 $QUIET || echo "PDF_SKILL_DIR=$PDF_SKILL_DIR"
 $QUIET || echo "FONT_DIR=$FONT_DIR"

@@ -1,8 +1,8 @@
 import type { ProviderSettingsView } from "@zcode/services";
 import { ArrowLeftIcon, ChevronRightIcon, PlusIcon, ServerIcon } from "lucide-react";
 import { resolveProviderTemplateName } from "@zcode/provider";
+import { OFFICIAL_PROVIDER_TEMPLATE_IDS, toZhOrEnLocale } from "@zcode/shared";
 import { useState, type ReactNode } from "react";
-import { toZhOrEnLocale } from "@zcode/shared";
 import {
   TID_MODEL_PROVIDER_TEMPLATE_BACK_BUTTON,
   TID_MODEL_PROVIDER_TEMPLATE_ITEM,
@@ -41,17 +41,18 @@ export function ProviderTemplatePicker({
   const { dismissFeedback, showFeedback } = useProviderDetailFeedback();
   const [newApiOpen, setNewApiOpen] = useState(false);
   const customLabel = intl.formatMessage({ id: "settings.modelProvider.newProviderName" });
-  const zhipuIds = ["bigmodel-api", "zai-api", "bigmodel-standard-api", "zai-standard-api"];
   const groups = [
     {
       id: "zhipu",
-      templates: zhipuIds.flatMap((id) =>
+      templates: OFFICIAL_PROVIDER_TEMPLATE_IDS.flatMap((id) =>
         templates.filter((template) => template.templateId === id),
       ),
     },
     {
       id: "other",
-      templates: templates.filter((template) => !zhipuIds.includes(template.templateId)),
+      templates: templates.filter(
+        (template) => !OFFICIAL_PROVIDER_TEMPLATE_IDS.includes(template.templateId),
+      ),
     },
   ] as const;
   const createWithFeedback = async (create: () => Promise<void>) => {

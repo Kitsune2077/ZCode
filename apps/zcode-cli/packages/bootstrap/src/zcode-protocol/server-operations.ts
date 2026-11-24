@@ -56,6 +56,7 @@ import {
   type TurnId,
   type UsageStorePort,
   type WorkspaceId,
+  WINDOWS_CMD_SHELL_DISPLAY_NAME,
 } from "@zcode/contracts";
 import {
   subagentRuntimeConfigSchema,
@@ -149,6 +150,7 @@ import {
 import { createConfig, resolvePath } from "@zcode/adapters/config";
 import {
   collectSubagentChildSessionIds,
+  collectSubagentParentMessageIds,
   loadPreviousRuntimeRunMetadata,
   paginateEndedSubagents,
   projectSessionSubagents,
@@ -200,6 +202,8 @@ interface SessionStartupPreferences {
   modelContextBudgetStrategy: ZCodeModelContextBudgetStrategy;
   nativeSearchEnhancementsEnabled: boolean;
   toolSearchMode: AppToolSearchMode;
+  totalTokensReminderEnabled: boolean;
+  agentAlwaysBackgroundEnabled: boolean;
   resolveInitialBashShellSelection: () => Promise<ExecutionShellSelection | undefined>;
 }
 
@@ -1918,12 +1922,14 @@ export async function listSessionSubagents(
   context: ZCodeProtocolAgentServerContext,
   rawParams: unknown,
   persistedMessages?: MessageWithParts[],
+  includeAllEnded = false,
 ) {
   const params = parseParams(zcodeSessionSubagentsParamsSchema, rawParams ?? {});
   const store = context.deps.sessionStore;
   const liveParent = context.sessions.get(params.sessionId);
   if (!store) {
     return {
+      parentMessageIdsByChildId: undefined as Record<string, string[]> | undefined,
       revision: liveParent?.stateRevision ?? 0,
       childSessionIds: [],
       running: [],
@@ -2019,13 +2025,22 @@ export async function listSessionSubagents(
     limit: params.endedLimit,
   });
   return {
+    ...(includeAllEnded
+      ? {
+          parentMessageIdsByChildId: collectSubagentParentMessageIds(
+            parentSession,
+            messages,
+            parentEvents,
+          ),
+        }
+      : {}),
     revision: projection.revision,
     childSessionIds: persistedChildren.map((entry) => entry.childSessionId),
     running: projection.running,
     ended: {
       total: projection.ended.length,
-      items: ended.items,
-      ...(ended.nextCursor ? { nextCursor: ended.nextCursor } : {}),
+      items: includeAllEnded ? projection.ended : ended.items,
+      ...(!includeAllEnded && ended.nextCursor ? { nextCursor: ended.nextCursor } : {}),
     },
   };
 }
@@ -2144,11 +2159,12 @@ export async function readSession(context: ZCodeProtocolAgentServerContext, rawP
   });
   record.deliveryKind = params.deliveryKind ?? record.deliveryKind;
   const result = await snapshot(context, record, undefined, {
+    contentProfile: params.contentProfile,
     messageLimit: params.messageLimit,
     modelAvailability: "current",
   });
   // task index resync 只需标题/搜索文本/可见性/状态，完整历史单行可达 ~15MB 会打满 host stdio；
-  // 先按 full 构建再裁剪大载荷，保证 index 派生字段与 full 同源一致。
+  // 读取时已裁掉不参与派生的正文；保留 input/metadata 完成待办等计算后，再执行最终协议裁剪。
   return params.contentProfile === "index" ? elideSessionSnapshotForIndex(result) : result;
 }
 
@@ -3637,7 +3653,11 @@ function sendProtocolSessionEvent(
 // 注意不能用 IntegratedTerminalShellSelection["dialect"]：auto 分支没有 dialect 键，
 // 对 union 的索引访问会报 TS2339（只有 CLI 打包构建的 tsc 会跑到这里）。
 function integratedTerminalShellDisplayName(dialect: IntegratedTerminalShellDialect) {
-  return dialect === "git-bash" ? "Git Bash" : dialect === "powershell" ? "PowerShell 7" : "CMD";
+  return dialect === "git-bash"
+    ? "Git Bash"
+    : dialect === "powershell"
+      ? "PowerShell 7"
+      : WINDOWS_CMD_SHELL_DISPLAY_NAME;
 }
 
 function integratedTerminalShellToExecutionSelection(
@@ -3658,16 +3678,18 @@ function integratedTerminalShellToExecutionSelection(
   };
 }
 
-function resolveProtocolBashShellSelection(
+async function resolveProtocolBashShellSelection(
   context: ZCodeProtocolAgentServerContext,
   selection: IntegratedTerminalShellSelection | undefined,
-): ExecutionShellSelection {
+): Promise<ExecutionShellSelection> {
   const configuredSelection = integratedTerminalShellToExecutionSelection(selection);
-  return resolveEffectiveBashShellSelection({
-    env: context.deps.env ?? process.env,
-    override: configuredSelection,
-    platform: context.deps.platform ?? process.platform,
-  }).selection;
+  return (
+    await resolveEffectiveBashShellSelection({
+      env: context.deps.env ?? process.env,
+      override: configuredSelection,
+      platform: context.deps.platform ?? process.platform,
+    })
+  ).selection;
 }
 
 async function requestSessionRuntimePreferences(
@@ -3747,6 +3769,9 @@ async function requestSessionRuntimePreferences(
         modelContextBudgetStrategy: DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
         nativeSearchEnhancementsEnabled: true,
         toolSearchMode: "off",
+        totalTokensReminderEnabled: false,
+        // 旧 Host 不知道这个开关，按产品缺省开启。
+        agentAlwaysBackgroundEnabled: true,
       };
     }
     throw error;
@@ -3770,6 +3795,8 @@ async function resolveSessionStartupPreferences(
       modelContextBudgetStrategy: DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
       nativeSearchEnhancementsEnabled: source.parent.nativeSearchEnhancementsEnabled,
       toolSearchMode: source.parent.toolSearchMode,
+      totalTokensReminderEnabled: source.parent.totalTokensReminderEnabled,
+      agentAlwaysBackgroundEnabled: source.parent.agentAlwaysBackgroundEnabled,
       resolveInitialBashShellSelection: async () => inheritedShellSelection,
     };
   }
@@ -3794,6 +3821,8 @@ async function resolveSessionStartupPreferences(
     modelContextBudgetStrategy: DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
     nativeSearchEnhancementsEnabled: runtimePreferences.nativeSearchEnhancementsEnabled,
     toolSearchMode: runtimePreferences.toolSearchMode,
+    totalTokensReminderEnabled: runtimePreferences.totalTokensReminderEnabled,
+    agentAlwaysBackgroundEnabled: runtimePreferences.agentAlwaysBackgroundEnabled,
     resolveInitialBashShellSelection: async () => {
       const executionPreferences = await requestSessionRuntimePreferences(
         context,
@@ -3917,6 +3946,9 @@ async function createRecord(
       toolDisallowlist: resolveSessionToolDenylist(params, workspace),
       nativeSearchEnhancementsEnabled: startupPreferences.nativeSearchEnhancementsEnabled,
       toolSearch: { mode: startupPreferences.toolSearchMode },
+      totalTokensReminder: { enabled: startupPreferences.totalTokensReminderEnabled },
+      // Agent 是否总在后台运行（07-subagent.md「ZCode 当前实现」）；bootstrap 合并 subagents 时保留其余字段。
+      subagents: { alwaysBackground: startupPreferences.agentAlwaysBackgroundEnabled },
       modelContextBudgetStrategy: startupPreferences.modelContextBudgetStrategy,
       // Memory Settings 是现有 CLI features.memory/use 之外的总开关。只在关闭时
       // 写入 override，避免开启值反向覆盖用户已有的 CLI 禁用配置。
@@ -4037,6 +4069,8 @@ async function createRecord(
     modelContextBudgetStrategy: startupPreferences.modelContextBudgetStrategy,
     nativeSearchEnhancementsEnabled: startupPreferences.nativeSearchEnhancementsEnabled,
     toolSearchMode: startupPreferences.toolSearchMode,
+    totalTokensReminderEnabled: startupPreferences.totalTokensReminderEnabled,
+    agentAlwaysBackgroundEnabled: startupPreferences.agentAlwaysBackgroundEnabled,
     ...(parentSessionId ? { parentSessionId } : {}),
     persistence: "persistence" in params ? (params.persistence ?? "immediate") : "immediate",
     protocolEventSequences: new Map(),
@@ -4139,6 +4173,7 @@ async function snapshot(
   record: ZCodeProtocolSessionRecord,
   knownSession?: SessionInfo | null,
   options: {
+    contentProfile?: "full" | "index";
     messageLimit?: number;
     modelAvailability?: "all" | "current";
   } = {},
@@ -4151,6 +4186,7 @@ async function snapshotWithDiagnostics(
   record: ZCodeProtocolSessionRecord,
   knownSession?: SessionInfo | null,
   options: {
+    contentProfile?: "full" | "index";
     messageLimit?: number;
     modelAvailability?: "all" | "current";
   } = {},
@@ -4191,7 +4227,9 @@ async function snapshotWithDiagnostics(
     measureSnapshotPhase("eventSeq", () =>
       getProtocolEventSeq(context, record, record.deliveryKind),
     ),
-    measureSnapshotPhase("persistedMessages", () => readSessionMessages(context, record)),
+    measureSnapshotPhase("persistedMessages", () =>
+      readSessionMessages(context, record, options.contentProfile),
+    ),
     knownSession === undefined
       ? measureSnapshotPhase("persistedSession", () =>
           getPersistedSession(context, record.app.sessionId),
@@ -4416,10 +4454,12 @@ function limitMessages<T>(messages: T[], limit?: number): T[] {
 async function readSessionMessages(
   context: ZCodeProtocolAgentServerContext,
   record: ZCodeProtocolSessionRecord,
+  contentProfile?: "full" | "index",
 ) {
   if (!context.deps.sessionStore) return [];
   return await context.deps.sessionStore.messages({
     sessionID: record.app.sessionId as SessionId,
+    ...(contentProfile ? { contentProfile } : {}),
   });
 }
 

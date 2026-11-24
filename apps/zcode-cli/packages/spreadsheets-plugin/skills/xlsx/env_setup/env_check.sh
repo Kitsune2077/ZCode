@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# 优先选择预装入口；存在但运行失败时仍保留它，由用户决定是否切换。
+PY="$(command -v zcode-python || command -v python3)" || PY=""
+# 没有解释器时无法运行 Python 引导脚本；先给桌面选择，避免进入自动装包或下载。
+if [ -z "$PY" ] && [ -n "${ZCODE_PREINSTALLED_TOOLS_AVAILABLE:-}" ]; then
+    echo "预装版本未就绪或已关闭，请在 帮助 → 预装工具 中查看"
+    echo "Choose to wait, enable Python, or install system Python using the manual steps in env_setup/setup.md."
+    return 1 2>/dev/null || exit 1
+fi
 # Lightweight environment check for XLSX skill.
 # Exit 0 = all OK, exit 1 = missing dependencies.
 # Also resolves and exports XLSX_SKILL_DIR and FONT_DIR.
@@ -7,16 +15,13 @@
 QUIET=false; [ "${1:-}" = "--quiet" ] && QUIET=true
 FAIL=0
 check() { local desc="$1"; shift; if ! "$@" &>/dev/null; then $QUIET || echo "MISSING: $desc"; FAIL=1; fi; }
-# Office 转换引擎：随包 dsoffice 优先，其次本机已有的 LibreOffice。两者都缺不算本检查失败——
-# 后续动作按 SKILL.md "Office conversion engine resolution order" 降级链处理（征得用户同意安装、
-# 经同意用本机 Excel/WPS 并警告结果差异、或如实报告公式值可能过期），唯独不允许静默跳过重算。
-report_engine() {
-    if command -v dsoffice &>/dev/null; then
-        $QUIET || echo "engine OK: dsoffice (bundled)"
-    elif command -v soffice &>/dev/null; then
-        $QUIET || echo "engine OK: soffice (local LibreOffice)"
+# 统一入口报告受管故障和系统回退；无可用程序时给安装指引，由用户决定等待或安装。
+required_on_demand() {
+    local result
+    if result=$("$PY" "$1" check 2>&1); then
+        $QUIET || echo "on-demand OK: LibreOffice — $result"
     else
-        $QUIET || echo "engine MISSING: no dsoffice / soffice — follow SKILL.md 'Office conversion engine resolution order': bundled dsoffice → probe local soffice (register off-PATH installs, never reinstall) → user-consented install (Tsinghua mirror / winget / brew / apt) → user-consented local Excel/WPS with results-differ warning → deliver with engine-free checks and report formula values may be stale. Do NOT silently skip recalculation."
+        $QUIET || echo "$result"
     fi
 }
 
@@ -32,17 +37,17 @@ else
 fi
 export FONT_DIR
 
-check "python3"     command -v python3
-check "openpyxl"    python3 -c "import openpyxl"
-check "xlsxwriter"  python3 -c "import xlsxwriter"
+check "python3"     command -v "$PY"
+check "openpyxl"    "$PY" -c "import openpyxl"
+check "xlsxwriter"  "$PY" -c "import xlsxwriter"
 
 # Font check
 if command -v fc-list &>/dev/null; then
     fc-list :lang=zh 2>/dev/null | grep -qi "noto\|simhei\|wenquanyi" || { $QUIET || echo "MISSING: CJK fonts"; FAIL=1; }
 fi
 
-# ── Conversion engine probe: bundled dsoffice first, then local soffice ──
-report_engine
+# ── ON-DEMAND but NOT substitutable: recalc / .xlsx→PDF / .csv→.xlsx (LibreOffice/soffice) ──
+required_on_demand "${XLSX_SKILL_DIR}/../../scripts/zcode_libreoffice.py"
 
 $QUIET || echo "XLSX_SKILL_DIR=$XLSX_SKILL_DIR"
 $QUIET || echo "FONT_DIR=$FONT_DIR"
