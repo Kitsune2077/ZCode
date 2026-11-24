@@ -18,6 +18,13 @@ vi.mock("@/components/lib/utils.js", () => ({
   cn: (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(" "),
 }));
 
+// 上游 4.0.0 起 AgentBehaviorSectionContent 会渲染「回复语言」设置（ReplyLanguageSetting），
+// 它经 usePlatform 写入 Main。本文件只断言各开关与数据目录控件，不涉及该能力：给一个没有
+// setReplyLanguage 的空平台，组件走「仅本机提示」分支，不渲染输入框。
+vi.mock("@/hooks/usePlatform.js", () => ({
+  usePlatform: () => ({}),
+}));
+
 vi.mock("@/components/ui/button.js", () => ({
   Button: ({ children, ...props }: { children: unknown; [key: string]: unknown }) => {
     capturedButtons.push({ children, ...props });

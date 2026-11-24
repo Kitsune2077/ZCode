@@ -119,6 +119,8 @@ vi.mock("electron", () => ({
   app: appMock,
   BrowserWindow: {
     getAllWindows: vi.fn(() => browserWindows),
+    // 上游 4.0.0 起安装前的 Linux 包授权确认（confirmLinuxPackageAuthorization）用它取父窗口。
+    getFocusedWindow: vi.fn(() => browserWindows[0] ?? null),
   },
   ipcMain: {
     on: ipcMainOn,
@@ -208,6 +210,13 @@ function mockProcessPlatform(platform: NodeJS.Platform) {
     value: platform,
     configurable: true,
   });
+}
+
+// 上游 4.0.0 起，Linux 系统包更新在没有现成 sudo 授权时先弹确认框（选「稍后」则保留 ready 包、
+// 不进入退出准备）。execFileMock 以数字错误码失败，恰好被判定为「需要授权」，所以凡是验证
+// 「确认之后」安装流程的用例，都用它让用户选「继续」。
+function acceptLinuxPackageAuthorizationDialog() {
+  dialogShowMessageBox.mockResolvedValue({ response: 0 });
 }
 
 function getExpectedDownloadingProgressLabel(progress: number) {
@@ -1912,6 +1921,7 @@ describe("autoUpdater ready state sync", () => {
     "%s 安装调用返回后原生退出直接放行，重复安装命令不重入",
     async (platform) => {
       mockProcessPlatform(platform);
+      acceptLinuxPackageAuthorizationDialog();
       const onBeforeQuitAndInstall = vi.fn(async () => {});
       const { initAutoUpdater } = await importAutoUpdaterWithLocale();
       await initAutoUpdater({ onBeforeQuitAndInstall });
@@ -1931,6 +1941,8 @@ describe("autoUpdater ready state sync", () => {
       expect(event.preventDefault).not.toHaveBeenCalled();
       expect(onBeforeQuitAndInstall).toHaveBeenCalledOnce();
       expect(autoUpdaterMock.quitAndInstall).toHaveBeenCalledOnce();
+      // darwin 不弹授权确认；linux 在进入退出准备前弹一次。
+      expect(dialogShowMessageBox).toHaveBeenCalledTimes(platform === "linux" ? 1 : 0);
     },
   );
 
@@ -1986,6 +1998,7 @@ describe("autoUpdater ready state sync", () => {
     "%s 服务清理后锁定目标，迟到新版本事件与重复入口不会放弃或重入安装",
     async (platform) => {
       mockProcessPlatform(platform);
+      acceptLinuxPackageAuthorizationDialog();
       let finishPreparation!: () => void;
       const preparation = new Promise<void>((resolve) => {
         finishPreparation = resolve;
@@ -2032,6 +2045,7 @@ describe("autoUpdater ready state sync", () => {
     "%s 后台检查永不完成也不阻塞已有 ready，迟到结果不替换安装目标",
     async (platform) => {
       mockProcessPlatform(platform);
+      acceptLinuxPackageAuthorizationDialog();
       let finishCheck!: () => void;
       autoUpdaterMock.checkForUpdates.mockReturnValueOnce(
         new Promise<void>((resolve) => {
@@ -2061,6 +2075,37 @@ describe("autoUpdater ready state sync", () => {
       expect(autoUpdaterMock.quitAndInstall).toHaveBeenCalledOnce();
     },
   );
+
+  // 上游 4.0.0：Linux 系统包更新没有现成 sudo 授权时先弹确认。选「稍后」必须保留 ready 包、
+  // 不进入不可逆的退出准备，用户之后再点安装仍可继续。
+  it("linux 包授权确认选稍后时保留 ready 且不退出，再次确认后可继续安装", async () => {
+    mockProcessPlatform("linux");
+    const onBeforeQuitAndInstall = vi.fn(async () => {});
+    const module = await importAutoUpdaterWithLocale();
+    await module.initAutoUpdater({ onBeforeQuitAndInstall });
+    autoUpdaterMock.emit("update-downloaded", { version: "0.1.25" });
+    const install = ipcMainHandle.mock.calls.find(
+      ([channel]) => channel === PlatformChannels.QuitAndInstallUpdate,
+    )![1] as () => Promise<void>;
+
+    dialogShowMessageBox.mockResolvedValueOnce({ response: 1 });
+    // IPC 入口按 rejectUnavailable 调用：用户选「稍后」要以明确错误告知调用方，而不是静默返回。
+    await expect(install()).rejects.toThrow("Linux package update authorization was postponed");
+
+    expect(dialogShowMessageBox).toHaveBeenCalledOnce();
+    expect(onBeforeQuitAndInstall).not.toHaveBeenCalled();
+    expect(autoUpdaterMock.quitAndInstall).not.toHaveBeenCalled();
+    expect(module.getAutoUpdaterState()).toMatchObject({
+      kind: "update-downloaded",
+      version: "0.1.25",
+    });
+
+    acceptLinuxPackageAuthorizationDialog();
+    await install();
+
+    expect(onBeforeQuitAndInstall).toHaveBeenCalledOnce();
+    expect(autoUpdaterMock.quitAndInstall).toHaveBeenCalledOnce();
+  });
 
   it.skip("检查结果已进入异步设置读取，确认安装后也不能改写锁定包", async () => {
     let finishSettings!: (value: { recentProjects: never[]; locale: "en-US" }) => void;
