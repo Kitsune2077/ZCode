@@ -457,26 +457,7 @@ function resolveBundledLarkCliBinaryPath(): string | undefined {
   return resolveBundledRuntimeToolBinaryPath("lark-cli", "lark-cli");
 }
 
-// dsoffice 的入口不是单一原生 exe 而是 shim（win32 为 .cmd，其余平台为无扩展名 sh），
-// 上面的通用 helper 硬编码 .exe 后缀，这里按平台显式给出 shim 文件名。
-function resolveBundledDsofficeBinaryPath(): string | undefined {
-  const toolDir = "libreoffice-kit";
-  const shimName = process.platform === "win32" ? "dsoffice.cmd" : "dsoffice";
-  const candidates = [
-    isElectronAppPackaged() ? join(process.resourcesPath, "tools", toolDir, shimName) : null,
-    join(
-      import.meta.dirname,
-      "../../bundled-tools",
-      resolvePlatformKeyForPackagedApp(),
-      toolDir,
-      shimName,
-    ),
-  ].filter((candidate): candidate is string => Boolean(candidate));
-
-  return candidates.find((candidate) => existsSync(candidate));
-}
-
-// 随包 Python 同样是双入口 shim：win32 用 python3.cmd（cmd/PowerShell/Node 解析），
+// 随包 Python 是双入口 shim：win32 用 python3.cmd（cmd/PowerShell/Node 解析），
 // 其余平台用无扩展名 python3（Git Bash 的 command -v 命中）。
 function resolveBundledPythonBinaryPath(): string | undefined {
   const toolDir = "python";
@@ -577,12 +558,6 @@ export function buildHostProcessEnv(hostProcessLocalEnv: Record<string, string>)
     hostProcessLocalEnv,
     larkCliBinaryPath,
   );
-  const dsofficeBinaryPath = resolveBundledDsofficeBinaryPath();
-  const resolvedDsofficeBinaryPath = resolveHostProcessBinaryEnv(
-    "ZCODE_DSOFFICE_BINARY",
-    hostProcessLocalEnv,
-    dsofficeBinaryPath,
-  );
   const pythonBinaryPath = resolveBundledPythonBinaryPath();
   const resolvedPythonBinaryPath = resolveHostProcessBinaryEnv(
     "ZCODE_PYTHON_BINARY",
@@ -676,14 +651,6 @@ export function buildHostProcessEnv(hostProcessLocalEnv: Record<string, string>)
       : {}),
     ...(resolvedGlmBinaryPath ? { GLM_BINARY_PATH: resolvedGlmBinaryPath } : {}),
     ...(resolvedLarkCliBinaryPath ? { ZCODE_LARK_CLI_BINARY: resolvedLarkCliBinaryPath } : {}),
-    ...(resolvedDsofficeBinaryPath
-      ? {
-          // runtimeToolResolver 也会解析同一工具；这里提前注入是为了让 dsoffice shim
-          // 拿到 app 的 Electron 二进制路径（ELECTRON_RUN_AS_NODE），Preview/生产均不必猜 exe 名。
-          ZCODE_DSOFFICE_BINARY: resolvedDsofficeBinaryPath,
-          ZCODE_DSOFFICE_NODE_EXE: process.execPath,
-        }
-      : {}),
     ...(resolvedPythonBinaryPath ? { ZCODE_PYTHON_BINARY: resolvedPythonBinaryPath } : {}),
   };
 }

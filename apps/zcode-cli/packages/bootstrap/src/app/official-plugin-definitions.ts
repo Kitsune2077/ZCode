@@ -259,11 +259,11 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
     [
       // 版本按插件各自升，换新缓存目录：pdf 0.2.1 起面板带中日韩字体回退；0.2.1（pdf 0.2.2）起
       // server 由工作区内各 session 共享，旧缓存的 server 不区分 session，不能沿用。
-      // fork 曾在 0.2.2（pdf 0.2.3～0.2.4）把 skill 文案改成 dsoffice 优先的降级链并让 PyMuPDF 可选。
-      // 同步上游 4.0.0 时四个插件整体取上游内容（与上游逐字节一致，满足上游两道工程门禁：
-      // skills 不得裸调 python3、统一入口与 libreoffice-profile 四份逐字节一致，见 pnpm lint）。
-      // 此后随包 dsoffice 不再被 skill 调用——上游统一入口只认 zcode-soffice 与系统 soffice；
-      // 现状见 packages/desktop/docs/bundled-runtime-tools.md。
+      // fork 曾在 0.2.2（pdf 0.2.3～0.2.4）把 skill 文案改成自建 dsoffice 引擎优先的降级链并让
+      // PyMuPDF 可选。同步上游 4.0.0 时四个插件整体取上游内容（与上游逐字节一致，满足上游两道
+      // 工程门禁：skills 不得裸调 python3、统一入口与 libreoffice-profile 四份逐字节一致，见
+      // pnpm lint），随包 dsoffice 也随之移除；文档转换统一走上游统一入口，只认预装的
+      // zcode-soffice 与系统 soffice（见 packages/desktop/docs/bundled-runtime-tools.md）。
       // 0.2.10（pdf 0.2.11）起不再提供 visual-judge 子代理，换新缓存目录让老用户也不再加载旧 agents/。
       ["documents", "docx", "Documents", "Word文档", "0.2.10"],
       ["pdf", "pdf", "PDF", "PDF", "0.2.11"],

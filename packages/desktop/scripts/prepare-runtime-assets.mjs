@@ -35,8 +35,6 @@ const shouldPrepareMacosWindowBounds = target.os === "darwin";
 // 未配置时解包仓库内置的同名归档，两种情况都不需要额外开关。
 // prepare:lark-cli 是唯一需要联网的本机步骤（上游以 GitHub Release 分发，构建期按官方
 // checksums.txt 校验）；离线构建可用 ZCODE_SKIP_LARK_CLI=1 跳过，代价是包内不带飞书 CLI。
-// prepare:libreoffice-kit 同理需要联网（registry tarball，npm 按 dist.integrity 校验），
-// ZCODE_SKIP_LIBREOFFICE_KIT=1 跳过；缺引擎时四个文档插件的转换/渲染/重算走 skill 降级链。
 // prepare:python 需要联网（python-build-standalone 归档 + PyPI wheel，均按锁定 sha256 校验），
 // ZCODE_SKIP_PYTHON=1 跳过；缺环境时 skill 回落系统 python3。
 const localRuntimeScripts = [
@@ -45,7 +43,6 @@ const localRuntimeScripts = [
   ...(shouldPrepareWindowsCuaHelper ? ["prepare:windows-cua-helper"] : []),
   ...(nativeSearchReleasePlan.enabled ? ["prepare:native-search"] : []),
   ...(process.env.ZCODE_SKIP_LARK_CLI === "1" ? [] : ["prepare:lark-cli"]),
-  ...(process.env.ZCODE_SKIP_LIBREOFFICE_KIT === "1" ? [] : ["prepare:libreoffice-kit"]),
   ...(process.env.ZCODE_SKIP_PYTHON === "1" ? [] : ["prepare:python"]),
   ...(shouldPrepareWindowsBrowserImportHelper ? ["prepare:browser-import-helper"] : []),
   // 预装工具的 Windows 入口都由这个 shim 提供；缺失时入口无法写入。

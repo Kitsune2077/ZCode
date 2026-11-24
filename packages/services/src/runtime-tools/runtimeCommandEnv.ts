@@ -169,7 +169,7 @@ export function buildRuntimeProcessEnvPatch(
     ...loginShellEnvPatch,
   });
   const runtimeToolEnvPatch = buildRuntimeToolEnvPatch(
-    ["bfs", "dsoffice", "lark-cli", "python", "ripgrep", "ugrep"],
+    ["bfs", "lark-cli", "python", "ripgrep", "ugrep"],
     {
       ...normalizedBaseEnv,
       PATH: undefined,

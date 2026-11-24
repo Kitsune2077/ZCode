@@ -800,7 +800,7 @@
     "package.json": "b964b4d37392a23837f761edeca84ded2ecab3396249a4a275c94ec74180f0a4",
     "packages/client/package.json": "e76f441549130dc3e5e68072a36b6cb9044e19a6625f1e813f19a4def2b1b689",
     "packages/design-runtime/package.json": "647d36a7bb3b5b13f87ddb8a94811152a1a024f0293eebd0b16032e1c0976d9c",
-    "packages/desktop/package.json": "bc7dedbb6724b15c97f62d17b0ea130c00c512d8cdfc16eff5772e5061633a27",
+    "packages/desktop/package.json": "34796cda165eba093ad35eb5344250c568c3d084373e61cf980bcfcd52ea800e",
     "packages/desktop/src/renderer/public/material-icons/3d.svg": "9527b849f0fba57ca7640e2717b3a19cb5f5e046712cbbd8b75d73af338c68fb",
     "packages/desktop/src/renderer/public/material-icons/abap.svg": "1335bd7eb9a0ed49deb622330d680c2e97731726a7a5eee8e4f46dc1e5db4de4",
     "packages/desktop/src/renderer/public/material-icons/abc.svg": "d1a68020e8f020ef29dca5f94dc8613b7ae8fb5b212d8b1cc23b0f975ac7acda",

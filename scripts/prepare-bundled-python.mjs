@@ -14,7 +14,7 @@
  *     release tag、每平台资产名与 sha256 钉死在 scripts/python-runtime-lock.json。
  *   - wheel 集同样是"包名 + 版本 + 每平台 sha256"锁定；下载后逐字节校验，
  *     pip 以 --no-deps 安装锁定文件，不做运行时版本解析。
- *   - 刻意不含 PyMuPDF（AGPL-3.0）：PDF 页面渲染由 dsoffice 承担。
+ *   - 刻意不含 PyMuPDF（AGPL-3.0）：与上游一致不预装，由用户按需 pip 安装。
  *
  * 产物：packages/desktop/bundled-tools/<platform-key>/python/
  *   - python3 / python3.cmd / python / python.cmd（shim：清理 PYTHONHOME/PYTHONPATH，

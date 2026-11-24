@@ -121,17 +121,6 @@ function resolveBundledToolProvenance(dirName, metaFile) {
   }
 }
 
-function resolveDsofficeProvenance() {
-  // kit 元数据把信息放在嵌套对象里，归一化成与 lark 一致的三字段。
-  const meta = resolveBundledToolProvenance("libreoffice-kit", "libreoffice-kit-bundle.json");
-  if (!meta?.kit?.version) return null;
-  return {
-    archiveSha256: meta.engine?.version ? `engine ${meta.engine.version}` : undefined,
-    sourceUrl: meta.upstream,
-    version: meta.kit.version,
-  };
-}
-
 function resolvePythonProvenance() {
   const meta = resolveBundledToolProvenance("python", "python-runtime-bundle.json");
   if (!meta?.cpython?.version) return null;
@@ -199,7 +188,6 @@ function collect() {
     arch: targetArch,
     artifacts: classifyArtifacts(distDir, targetOs),
     commit: resolveCommitId(),
-    dsoffice: resolveDsofficeProvenance(),
     larkCli: resolveLarkCliProvenance(),
     pythonRuntime: resolvePythonProvenance(),
     os: targetOs,
@@ -240,7 +228,6 @@ function renderPlatformRows(info) {
 export function buildReleaseNotes({ commit, infos, officialNotes = null, runUrl }) {
   const version = infos[0].version;
   const larkCli = infos.find((info) => info.larkCli)?.larkCli ?? null;
-  const dsoffice = infos.find((info) => info.dsoffice)?.dsoffice ?? null;
   const pythonRuntime = infos.find((info) => info.pythonRuntime)?.pythonRuntime ?? null;
   const remoteAssetsIncluded = infos.every((info) => info.remoteAssetsIncluded);
 
@@ -285,11 +272,6 @@ export function buildReleaseNotes({ commit, infos, officialNotes = null, runUrl 
     lines.push(
       `- 内置飞书 CLI \`${larkCli.version}\`（无需预装 Node.js）。来源：${larkCli.sourceUrl}` +
         `，归档 sha256 \`${larkCli.archiveSha256}\`。`,
-    );
-  }
-  if (dsoffice) {
-    lines.push(
-      `- 内置 Office 转换引擎 \`${dsoffice.version}\`（dsoffice）。来源：${dsoffice.sourceUrl}。`,
     );
   }
   if (pythonRuntime) {

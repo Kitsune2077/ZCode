@@ -23,7 +23,6 @@
     "prepare:windows-runtime-host": "node ../../scripts/build-windows-runtime-host.mjs",
     "prepare:native-search": "node ../../scripts/prepare-native-search-tools.mjs",
     "prepare:lark-cli": "node ../../scripts/prepare-bundled-lark-cli.mjs",
-    "prepare:libreoffice-kit": "node ../../scripts/prepare-bundled-libreoffice-kit.mjs",
     "prepare:python": "node ../../scripts/prepare-bundled-python.mjs",
     "prepare:browser-import-helper": "node scripts/build-windows-browser-import-helper.mjs",
     "prepare:preinstalled-entry-shim": "node scripts/build-windows-preinstalled-entry-shim.mjs",
