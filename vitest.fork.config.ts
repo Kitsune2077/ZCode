@@ -6,7 +6,8 @@ import { defineConfig } from "vitest/config";
  *
  * 上游 3.17 退役了 App 单测执行链：`vitest.config.ts` 只注册 engineering 项目与 CUA，
  * 根 package.json 删除了 test:unit。fork 自己维护的功能（NewAPI 接入、便携数据目录、
- * PowerShell 7、ZIP 技能导入、自定义更新源、外部会话导入）仍需要回归守卫，因此用一份
+ * PowerShell 7、ZIP 技能导入、自定义更新源、外部会话导入、Release 说明的官方更新日志）
+ * 仍需要回归守卫，因此用一份
  * **独立配置**显式列出这些文件，不去改动上游的 vitest.config.ts。
  *
  * 新增 fork 测试时，把文件加进下方 include 即可（相对仓库根）。
@@ -47,6 +48,8 @@ const forkTestFiles = [
   // "packages/ui/test/skillsSection.test.ts",
   "packages/ui/test/usageStatusBarModel.test.ts",
   "packages/ui/test/v4ComposerToolbarRecovery.test.ts",
+  // Release 说明附官方更新日志（scripts/ci/desktop-release-info.mjs 与 official-release-notes.mjs）。
+  "scripts/ci/desktop-release-info.test.mjs",
 ];
 
 export default defineConfig({

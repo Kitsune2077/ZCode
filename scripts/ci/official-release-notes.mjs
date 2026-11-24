@@ -1,5 +1,10 @@
 #!/usr/bin/env node
-// 取官方（zai-org/ZCode）某版本的更新日志，供 upstream-sync workflow 贴进同步 PR。
+// 取官方（zai-org/ZCode）某版本的更新日志。
+//
+// 两个调用方共用同一份取法：
+//   1. upstream-sync workflow：作为命令行执行，把日志贴进同步 PR；
+//   2. scripts/ci/desktop-release-info.mjs render：import fetchOfficialReleaseNotes，
+//      把日志附进 Release 说明（见 packages/desktop/docs/ci-desktop-installers.md）。
 //
 // 数据源与桌面端 autoUpdater 的官方说明回退（releaseFeedUpdateProvider
 // .fetchOfficialReleaseNotes）同源，按可靠性排序：
@@ -9,25 +14,18 @@
 //   2. GitHub Releases API 的 tag body。
 //
 // 版本完全匹配才采用（与 extractOfficialReleaseNotesForVersion 同语义）：manifest 里
-// version 字段必须等于目标版本，避免把相邻版本的说明贴进错误的 PR。
+// version 字段必须等于目标版本，避免把相邻版本的说明贴进错误的位置。
 //
-// 用法：node scripts/ci/official-release-notes.mjs --version 3.17.2
+// 命令行用法：node scripts/ci/official-release-notes.mjs --version 3.17.2
 // 输出：更新日志文本（stdout）；任一来源命中即输出并 exit 0；全部未命中输出空并 exit 0
 //      （调用方按空值省略"官方更新日志"小节，不视为错误）。
 
 import process from "node:process";
+import { isCliEntryPoint } from "./cli-entry.mjs";
 
 const OFFICIAL_ENDPOINT_ORIGIN = "https://zcode.z.ai";
 const OFFICIAL_RELEASES_API = "https://api.github.com/repos/zai-org/ZCode/releases/tags/";
-
-function parseArgs(argv) {
-  const index = argv.indexOf("--version");
-  if (index === -1 || !argv[index + 1]) {
-    console.error("用法: node scripts/ci/official-release-notes.mjs --version <x.y.z>");
-    process.exit(2);
-  }
-  return { version: argv[index + 1].replace(/^v/u, "").trim() };
-}
+const REQUEST_TIMEOUT_MS = 20_000;
 
 /** 官方 manifest 的 platform/channel 取值规则（manifestUpdateProvider 同款映射）。 */
 function manifestUrl(version, channel) {
@@ -43,7 +41,7 @@ function manifestUrl(version, channel) {
  * manifest 结构由官方服务端生成，字段顺序稳定；顶层键是行首无缩进的 `key:`，
  * 块正文是缩进行。version 不匹配返回 null（与桌面端"版本完全一致才采用"同语义）。
  */
-function extractReleaseNotesFromManifest(yamlText, version) {
+export function extractReleaseNotesFromManifest(yamlText, version) {
   const lines = yamlText.split(/\r?\n/u);
   const versionLine = lines.find((line) => /^version:\s*/u.test(line));
   if (!versionLine || versionLine.replace(/^version:\s*/u, "").trim() !== version) {
@@ -77,13 +75,13 @@ function extractReleaseNotesFromManifest(yamlText, version) {
   return notes.length > 0 ? notes : null;
 }
 
-async function fetchManifestReleaseNotes(version) {
+async function fetchManifestReleaseNotes(version, { fetchImpl, timeoutMs }) {
   // stable 优先；官方常先把新版放 preview（历史实况），stable 没有再探 preview。
   for (const channel of ["stable", "preview"]) {
     try {
-      const response = await fetch(manifestUrl(version, channel), {
+      const response = await fetchImpl(manifestUrl(version, channel), {
         headers: { accept: "application/x-yaml,text/yaml,text/plain,*/*" },
-        signal: AbortSignal.timeout(20_000),
+        signal: AbortSignal.timeout(timeoutMs),
       });
       if (!response.ok) continue;
       const text = await response.text();
@@ -96,17 +94,16 @@ async function fetchManifestReleaseNotes(version) {
   return null;
 }
 
-async function fetchGitHubReleaseNotes(version) {
-  const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+async function fetchGitHubReleaseNotes(version, { fetchImpl, token, timeoutMs }) {
   try {
-    const response = await fetch(`${OFFICIAL_RELEASES_API}v${version}`, {
+    const response = await fetchImpl(`${OFFICIAL_RELEASES_API}v${version}`, {
       headers: {
         accept: "application/vnd.github+json",
         // 匿名配额 60/h 不够 CI 用；workflow 里注入 GITHUB_TOKEN 提额。
         ...(token ? { authorization: `Bearer ${token}` } : {}),
         "x-github-api-version": "2022-11-28",
       },
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) return null;
     const release = await response.json();
@@ -117,8 +114,36 @@ async function fetchGitHubReleaseNotes(version) {
   }
 }
 
-const { version } = parseArgs(process.argv);
-const found = (await fetchManifestReleaseNotes(version)) ?? (await fetchGitHubReleaseNotes(version));
-if (found) {
-  console.log(found.notes);
+/**
+ * 取官方某版本的更新日志：任一来源命中返回 { notes, source }，否则返回 null，不抛错——
+ * 官方日志只是增强信息，取不到时由调用方省略，不能让同步 PR 或 Release 因此失败。
+ * fetch / token / timeoutMs 可注入，供调用方与测试替换网络与凭据。
+ */
+export async function fetchOfficialReleaseNotes(version, options = {}) {
+  const context = {
+    fetchImpl: options.fetch ?? globalThis.fetch,
+    timeoutMs: options.timeoutMs ?? REQUEST_TIMEOUT_MS,
+    token: options.token ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN,
+  };
+  return (
+    (await fetchManifestReleaseNotes(version, context)) ??
+    (await fetchGitHubReleaseNotes(version, context))
+  );
+}
+
+function parseArgs(argv) {
+  const index = argv.indexOf("--version");
+  if (index === -1 || !argv[index + 1]) {
+    console.error("用法: node scripts/ci/official-release-notes.mjs --version <x.y.z>");
+    process.exit(2);
+  }
+  return { version: argv[index + 1].replace(/^v/u, "").trim() };
+}
+
+if (isCliEntryPoint(import.meta.url)) {
+  const { version } = parseArgs(process.argv);
+  const found = await fetchOfficialReleaseNotes(version);
+  if (found) {
+    console.log(found.notes);
+  }
 }

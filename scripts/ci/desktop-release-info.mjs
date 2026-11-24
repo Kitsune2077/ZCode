@@ -11,6 +11,10 @@
  * 用法：
  *   node scripts/ci/desktop-release-info.mjs collect --dist-dir <dir> --os win --arch x64 --out <file>
  *   node scripts/ci/desktop-release-info.mjs render  --info-dir <dir> --out <file>
+ *
+ * render 会按发布版本号附上官方更新日志（取不到则省略该节），规则见
+ * packages/desktop/docs/ci-desktop-installers.md「官方更新日志」。
+ * 说明正文的拼装是不碰网络的纯函数 buildReleaseNotes，网络请求只发生在 render 里。
  */
 
 import { createHash } from "node:crypto";
@@ -19,6 +23,8 @@ import { dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { runCommandAndReadStdout } from "../spawn-command.mjs";
+import { isCliEntryPoint } from "./cli-entry.mjs";
+import { fetchOfficialReleaseNotes } from "./official-release-notes.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const rootDir = resolve(scriptDir, "../..");
@@ -230,22 +236,9 @@ function renderPlatformRows(info) {
     }));
 }
 
-function render() {
-  const infoDir = resolve(readArg("info-dir") ?? ".");
-  const outPath = readArg("out");
-  if (!outPath) throw new Error("render 需要 --out");
-
-  const infos = readdirSync(infoDir)
-    .filter((name) => name.endsWith(".json"))
-    .map((name) => readJson(join(infoDir, name)));
-  if (infos.length === 0) throw new Error(`未在 ${infoDir} 找到任何 build-info json`);
-
+/** Release 说明正文（纯函数，不碰网络）：各平台 build-info 加可选的官方更新日志。 */
+export function buildReleaseNotes({ commit, infos, officialNotes = null, runUrl }) {
   const version = infos[0].version;
-  const commit = infos[0].commit;
-  const runUrl =
-    process.env.GITHUB_SERVER_URL && process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID
-      ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
-      : null;
   const larkCli = infos.find((info) => info.larkCli)?.larkCli ?? null;
   const dsoffice = infos.find((info) => info.dsoffice)?.dsoffice ?? null;
   const pythonRuntime = infos.find((info) => info.pythonRuntime)?.pythonRuntime ?? null;
@@ -311,10 +304,73 @@ function render() {
       : "- 远端工作区预编译资源（mock-cdn）**未包含**（构建时 `ZCODE_SKIP_REMOTE_ASSETS=1`）。",
   );
   lines.push("- 每个产物旁的 `.blockmap` 供增量更新使用，与安装包一同附在本 Release。");
+  if (officialNotes) {
+    lines.push("");
+    lines.push(`## 官方更新日志（v${version}）`);
+    lines.push("");
+    lines.push(demoteHeadings(officialNotes));
+    lines.push("");
+    lines.push(
+      "> 来源：官方 update manifest / GitHub Release（zai-org/ZCode），仅收录版本号完全一致的说明。",
+    );
+    lines.push(
+      "> 本安装包由本仓库构建，除官方更新外还包含本仓库的定制改动，完整变更以本仓库提交记录为准。",
+    );
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * 把 Markdown 正文里的标题整体降一级，使它们成为所属小节的子标题；代码围栏内保持原样
+ * （围栏里行首的 # 是代码注释，不是标题）。
+ */
+function demoteHeadings(markdown) {
+  let inFence = false;
+  return markdown
+    .split("\n")
+    .map((line) => {
+      if (/^\s*(`{3,}|~{3,})/u.test(line)) {
+        inFence = !inFence;
+        return line;
+      }
+      return inFence ? line : line.replace(/^(#{1,5})(\s)/u, "#$1$2");
+    })
+    .join("\n");
+}
+
+async function render() {
+  const infoDir = resolve(readArg("info-dir") ?? ".");
+  const outPath = readArg("out");
+  if (!outPath) throw new Error("render 需要 --out");
+
+  const infos = readdirSync(infoDir)
+    .filter((name) => name.endsWith(".json"))
+    .map((name) => readJson(join(infoDir, name)));
+  if (infos.length === 0) throw new Error(`未在 ${infoDir} 找到任何 build-info json`);
+
+  const commit = infos[0].commit;
+  const runUrl =
+    process.env.GITHUB_SERVER_URL && process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID
+      ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
+      : null;
+  // 官方更新日志是增强信息：取不到就省略该节。Release 的产物与校验信息不依赖网络。
+  const official = await fetchOfficialReleaseNotes(infos[0].version);
+  const content = buildReleaseNotes({
+    commit,
+    infos,
+    officialNotes: official?.notes ?? null,
+    runUrl,
+  });
 
   mkdirSync(dirname(resolve(outPath)), { recursive: true });
-  writeFileSync(resolve(outPath), `${lines.join("\n")}\n`, "utf8");
+  writeFileSync(resolve(outPath), `${content}\n`, "utf8");
   console.log(`[release-info] release notes -> ${outPath}`);
+  console.log(
+    official
+      ? `[release-info] official release notes attached (${official.source})`
+      : `[release-info] official release notes unavailable for v${infos[0].version}; section omitted`,
+  );
 
   const auxiliary = infos.flatMap((info) =>
     info.artifacts
@@ -326,16 +382,19 @@ function render() {
   }
 }
 
-function main() {
+async function main() {
   const command = process.argv[2];
   if (command === "collect") return collect();
   if (command === "render") return render();
   throw new Error(`未知子命令：${String(command)}（支持 collect / render）`);
 }
 
-try {
-  main();
-} catch (error) {
-  console.error(`[release-info] ${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
+// 被 workflow 当命令行执行；被测试 import 时只取 buildReleaseNotes，不解析参数、不读写文件。
+if (isCliEntryPoint(import.meta.url)) {
+  try {
+    await main();
+  } catch (error) {
+    console.error(`[release-info] ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  }
 }

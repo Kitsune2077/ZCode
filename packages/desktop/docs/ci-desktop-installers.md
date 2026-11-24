@@ -81,6 +81,26 @@ Windows 的 `zip` target 与 `nsis` 并列输出，zip 内就是 `win-unpacked` 
 Release job 用 `render` 汇总成说明正文（平台/架构/产物/大小/SHA256 表格 + 说明段落），
 并把安装包与 `.blockmap` 一起挂到 Release（blockmap 供 electron-updater 增量更新）。
 
+### 官方更新日志
+
+`render` 按本次发布的版本号（build-info 里的 `version`，取自根 `package.json`）在说明正文里
+附上**官方**（`zai-org/ZCode`）同版本的更新日志，让 fork 的 Release 自带「这一版改了什么」：
+
+- 数据源与取法复用 `scripts/ci/official-release-notes.mjs`——与 `upstream-sync.yml` 给同步 PR
+  贴官方日志同源：先取官方 update manifest（`zcode.z.ai`，stable → preview），未命中再取官方
+  GitHub Release 的正文。**版本号完全一致才采用**，不把相邻版本的说明贴到错误的 Release。
+- 位置在说明正文**末尾**，标题为 `## 官方更新日志（v<版本>）`。官方日志自带的标题整体降一级
+  （代码围栏内不动），成为该节的子标题；节末注明来源与「本安装包由本仓库构建，另含本仓库的
+  定制改动」——官方说明不代表本仓库的完整变更。原有内容（构建来源、产物表格、「说明」）的
+  位置与文字不变。
+- 取不到（官方尚未发布该版本的说明、网络失败、fork 版本号与官方不一致）时**省略整节**：
+  不报错、不影响发布，产物表格与校验信息不依赖网络。
+- GitHub（`.github/workflows/build-desktop.yml`）与 Gitea（`.gitea/workflows/build-desktop-win.yml`）
+  两条发布链路都经同一个 `render`，不在 workflow 里各写一份。
+- 回归守卫：`scripts/ci/desktop-release-info.test.mjs`（登记在 `vitest.fork.config.ts`），
+  覆盖 manifest 提取与版本匹配、两个来源的回退与失败降级、说明正文中该节的有无与位置、
+  标题降级；用例一律注入假 `fetch`，不访问网络。
+
 跨平台逻辑刻意放在 Node 脚本里而不是 workflow 的 shell 步骤：三种 runner 跑同一份代码，
 且**能在本地用真实 dist 目录验证**——workflow 本身在仓库里无法执行验证。
 
